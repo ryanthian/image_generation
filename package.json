@@ -1,0 +1,11 @@
+{
+  "name": "content-ai-production-console",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "node --check public/app.js && node --check src/lib.mjs && node --check src/worker.template.mjs",
+    "test": "node --test"
+  }
+}
