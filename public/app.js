@@ -8,7 +8,7 @@
   const ASSET_DEFS = [
     ["cover", "Final Cover"], ["ingredients", "Ingredients Card"], ["method", "Method Card"], ["closeup", "Final Closeup"]
   ];
-  const state = { recipes: [], filtered: [], recipe: null, images: {}, assets: {}, writable: false, source: "snapshot" };
+  const state = { recipes: [], filtered: [], recipe: null, images: {}, assets: {}, writable: false, source: "snapshot", sheetName: "", sheets: [] };
   const $ = (id) => document.getElementById(id);
   let toastTimer;
 
@@ -46,7 +46,7 @@
   const getStored = (store, key) => idb(store, "readonly", (objectStore) => objectStore.get(key));
   const putStored = (store, key, value) => idb(store, "readwrite", (objectStore) => objectStore.put(value, key));
   const deleteStored = (store, key) => idb(store, "readwrite", (objectStore) => objectStore.delete(key));
-  const keyFor = (name) => `${state.recipe.Content_ID}:${name}`;
+  const keyFor = (name) => `${state.sheetName}:${state.recipe.Content_ID}:${name}`;
 
   function fileSlot(name) {
     const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -211,7 +211,7 @@
 
   function applyRecipe(recipe) {
     state.recipe = recipe;
-    localStorage.setItem("capc:selectedRecipe", recipe.Content_ID);
+    localStorage.setItem(`capc:selectedRecipe:${state.sheetName}`, recipe.Content_ID);
     $("sideRecipe").textContent = recipe.Draft_Title;
     $("sideId").textContent = recipe.Content_ID;
     $("contentId").textContent = recipe.Content_ID;
@@ -430,7 +430,7 @@
       const response = await fetch(`/api/recipes/${encodeURIComponent(state.recipe.Content_ID)}/status`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: "Posted" })
+        body: JSON.stringify({ status: "Posted", sheetName: state.sheetName })
       });
       const result = await response.json();
       if (!response.ok || !result.ok || result.status !== "Posted") throw new Error(result.error || "Status update failed.");
@@ -447,6 +447,7 @@
   }
 
   function bindEvents() {
+    $("sheetSelect").addEventListener("change", (event) => loadSheet(event.target.value));
     $("recipeSelect").addEventListener("change", (event) => {
       const recipe = state.recipes.find((item) => item.Content_ID === event.target.value);
       if (recipe) applyRecipe(recipe);
@@ -468,22 +469,31 @@
     $("downloadAll").addEventListener("click", () => ASSET_DEFS.forEach(([name], index) => setTimeout(() => downloadBlob(state.assets[name].blob, state.assets[name].filename), index * 250)));
   }
 
-  async function start() {
-    bindEvents();
+  function renderSheetOptions() {
+    $("sheetSelect").innerHTML = state.sheets.map((sheet) => `<option value="${sheet.name}">${sheet.label}</option>`).join("");
+    $("sheetSelect").value = state.sheetName;
+  }
+
+  async function loadSheet(sheetName) {
     try {
-      const response = await fetch("/api/recipes");
+      const query = sheetName ? `?${new URLSearchParams({ sheetName })}` : "";
+      const response = await fetch(`/api/recipes${query}`);
       const data = await response.json();
       if (!response.ok || !data.ok || !Array.isArray(data.recipes)) throw new Error(data.error || "Recipe data failed to load.");
       state.recipes = data.recipes;
       state.writable = Boolean(data.writable);
       state.source = data.source;
+      state.sheetName = data.sheetName;
+      state.sheets = data.sheets || [{ name: data.sheetName, label: data.sheetName }];
+      localStorage.setItem("capc:selectedSheet", state.sheetName);
+      renderSheetOptions();
       const connection = $("connection");
       connection.className = `connection ${state.writable ? "live" : "offline"}`;
-      connection.lastElementChild.textContent = state.writable ? "Google Sheet connected" : "Local snapshot · Sheet write offline";
+      connection.lastElementChild.textContent = state.writable ? `Google Sheet connected · ${state.recipes.length} recipes` : "Local snapshot · Sheet write offline";
       $("markPosted").disabled = !state.writable;
       $("writeHint").textContent = state.writable ? "Only the Status field will be updated." : "Configure the private server bridge to enable Status updates.";
       renderOptions(state.recipes);
-      const saved = localStorage.getItem("capc:selectedRecipe");
+      const saved = localStorage.getItem(`capc:selectedRecipe:${state.sheetName}`);
       applyRecipe(state.recipes.find((recipe) => recipe.Content_ID === saved) || state.recipes[0]);
       if (data.warning) toast(data.warning, true);
     } catch (error) {
@@ -491,6 +501,11 @@
       $("connection").lastElementChild.textContent = "Recipe data unavailable";
       toast(error.message, true);
     }
+  }
+
+  async function start() {
+    bindEvents();
+    await loadSheet(localStorage.getItem("capc:selectedSheet") || "");
   }
 
   start();

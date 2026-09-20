@@ -1,11 +1,14 @@
 const ALLOWED_SPREADSHEET_ID = '1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s';
-const ALLOWED_SHEET_NAME = 'Eunice Recipe Draft 20 - 2026-09-19';
+const ALLOWED_SHEET_NAMES = [
+  'Eunice Recipe Draft 20 - 2026-09-19',
+  'Eunice Recipe Draft 100 - 2026-09-20'
+];
 
 function doGet(e) {
   try {
     assertTarget_(e.parameter.spreadsheetId, e.parameter.sheetName);
     if (e.parameter.action !== 'list') throw new Error('Unsupported action.');
-    const sheet = SpreadsheetApp.openById(ALLOWED_SPREADSHEET_ID).getSheetByName(ALLOWED_SHEET_NAME);
+    const sheet = SpreadsheetApp.openById(ALLOWED_SPREADSHEET_ID).getSheetByName(e.parameter.sheetName);
     if (!sheet) throw new Error('Target sheet not found.');
     const values = sheet.getDataRange().getDisplayValues();
     const headers = values.shift() || [];
@@ -23,7 +26,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents || '{}');
     assertTarget_(body.spreadsheetId, body.sheetName);
     if (body.action !== 'markPosted' || body.status !== 'Posted' || !body.contentId) throw new Error('Invalid status request.');
-    const sheet = SpreadsheetApp.openById(ALLOWED_SPREADSHEET_ID).getSheetByName(ALLOWED_SHEET_NAME);
+    const sheet = SpreadsheetApp.openById(ALLOWED_SPREADSHEET_ID).getSheetByName(body.sheetName);
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
     const idColumn = headers.indexOf('Content_ID') + 1;
     const statusColumn = headers.indexOf('Status') + 1;
@@ -43,7 +46,7 @@ function doPost(e) {
 }
 
 function assertTarget_(spreadsheetId, sheetName) {
-  if (spreadsheetId !== ALLOWED_SPREADSHEET_ID || sheetName !== ALLOWED_SHEET_NAME) throw new Error('Target is not allowed.');
+  if (spreadsheetId !== ALLOWED_SPREADSHEET_ID || ALLOWED_SHEET_NAMES.indexOf(sheetName) < 0) throw new Error('Target is not allowed.');
 }
 
 function json_(value) {

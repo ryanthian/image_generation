@@ -3,23 +3,31 @@ const INDEX = __INDEX_HTML__;
 const CSS = __STYLES_CSS__;
 const APP = __APP_JS__;
 const SPREADSHEET_ID = "1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s";
-const SHEET_NAME = "Eunice Recipe Draft 20 - 2026-09-19";
+const SHEETS = [
+  { name: "Eunice Recipe Draft 20 - 2026-09-19", label: "All Eunice recipes · 120" },
+  { name: "Eunice Recipe Draft 100 - 2026-09-20", label: "New ranked batch · 100" }
+];
+const DEFAULT_SHEET = SHEETS[0].name;
+
+function allowedSheet(value) {
+  return SHEETS.some((sheet) => sheet.name === value) ? value : DEFAULT_SHEET;
+}
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
 });
 
-async function bridgeRequest(env, action, payload = {}) {
+async function bridgeRequest(env, action, sheetName, payload = {}) {
   const bridge = env.GOOGLE_SHEETS_BRIDGE_URL;
   if (!bridge) throw new Error("Google Sheets bridge is not configured.");
   const response = action === "list"
-    ? await fetch(`${bridge}?${new URLSearchParams({ action, spreadsheetId: SPREADSHEET_ID, sheetName: SHEET_NAME })}`, { redirect: "follow" })
+    ? await fetch(`${bridge}?${new URLSearchParams({ action, spreadsheetId: SPREADSHEET_ID, sheetName })}`, { redirect: "follow" })
     : await fetch(bridge, {
         method: "POST",
         redirect: "follow",
         headers: { "content-type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action, spreadsheetId: SPREADSHEET_ID, sheetName: SHEET_NAME, ...payload })
+        body: JSON.stringify({ action, spreadsheetId: SPREADSHEET_ID, sheetName, ...payload })
       });
   if (!response.ok) throw new Error(`Sheet bridge returned HTTP ${response.status}.`);
   const result = await response.json();
@@ -29,12 +37,13 @@ async function bridgeRequest(env, action, payload = {}) {
 
 async function handleApi(request, env, url) {
   if (request.method === "GET" && url.pathname === "/api/recipes") {
-    if (!env.GOOGLE_SHEETS_BRIDGE_URL) return json({ ok: true, source: "snapshot", writable: false, ...DATA });
+    const sheetName = allowedSheet(url.searchParams.get("sheetName"));
+    if (!env.GOOGLE_SHEETS_BRIDGE_URL) return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SHEETS, ...DATA });
     try {
-      const result = await bridgeRequest(env, "list");
-      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetName: SHEET_NAME, ...result });
+      const result = await bridgeRequest(env, "list", sheetName);
+      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetName, sheets: SHEETS, ...result });
     } catch (error) {
-      return json({ ok: true, source: "snapshot", writable: false, warning: error.message, ...DATA });
+      return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SHEETS, warning: error.message, ...DATA });
     }
   }
 
@@ -44,7 +53,8 @@ async function handleApi(request, env, url) {
     const body = await request.json().catch(() => ({}));
     if (body.status !== "Posted") return json({ ok: false, error: "Only Status=Posted is allowed." }, 400);
     try {
-      const result = await bridgeRequest(env, "markPosted", { contentId: decodeURIComponent(statusMatch[1]), status: "Posted" });
+      const sheetName = allowedSheet(body.sheetName);
+      const result = await bridgeRequest(env, "markPosted", sheetName, { contentId: decodeURIComponent(statusMatch[1]), status: "Posted" });
       return json({ ok: true, ...result });
     } catch (error) {
       return json({ ok: false, error: error.message }, 502);

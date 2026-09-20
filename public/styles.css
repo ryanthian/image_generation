@@ -44,7 +44,7 @@ button { cursor: pointer; }
 .content { max-width: 1520px; margin: 0 auto; padding: 30px; display: grid; gap: 24px; }
 .card { background: var(--card); border: 0; border-radius: 12px; box-shadow: var(--shadow); }
 .recipe-card { padding: 24px; }
-.recipe-toolbar { display: grid; grid-template-columns: 1.2fr 1.4fr auto; gap: 16px; align-items: end; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
+.recipe-toolbar { display: grid; grid-template-columns: 1fr 1.1fr 1.35fr auto; gap: 16px; align-items: end; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
 label > span { display: block; margin-bottom: 7px; color: #66615b; font-size: .75rem; font-weight: 600; }
 input, select { width: 100%; min-height: 44px; padding: 10px 13px; border: 1px solid #ddd; border-radius: 6px; color: var(--ink); background: #fff; outline: none; }
 input:focus, select:focus { border-color: var(--info); box-shadow: 0 0 0 3px rgba(81,188,218,.14); }
