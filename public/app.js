@@ -306,8 +306,6 @@
     context.textAlign = "center";
     context.font = '700 92px "Noto Sans SC", "PingFang SC", sans-serif';
     drawLines(context, overlay.cover, 720, 205, 1160, 112, 3);
-    context.font = '600 28px Montserrat, sans-serif';
-    context.fillText(state.recipe.Content_ID, 720, 470);
     return canvas;
   }
 

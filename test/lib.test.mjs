@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { buildSessionPrompt, fileSlot, parseOverlay, rowsToRecipes } from "../src/lib.mjs";
 
 const data = JSON.parse(await readFile(new URL("../data/recipes.json", import.meta.url), "utf8"));
+const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 const first = data.recipes[0];
 
 test("snapshot contains exact acceptance recipe and full schema", () => {
@@ -31,4 +32,13 @@ test("overlay and filename mapping preserve exact assets", () => {
   assert.match(overlay.closeup, /香菇会出水/);
   assert.equal(fileSlot("EN-NEW-001_method_M4.png"), "m4");
   assert.equal(fileSlot("closeup.webp"), "closeup");
+});
+
+test("Final Cover renders the Chinese title without internal recipe identifiers", () => {
+  const coverSource = appSource.match(/async function buildCover\(\) \{[\s\S]*?\n  \}/)?.[0];
+  assert.ok(coverSource, "buildCover should exist");
+  assert.match(coverSource, /drawLines\(context, overlay\.cover/);
+  assert.doesNotMatch(coverSource, /Content_ID|recipe_id|content_id|row.?id|database.?id/i);
+  assert.match(appSource, /filename: `\$\{state\.recipe\.Content_ID\}-\$\{name\}-1440x1800\.png`/);
+  assert.match(appSource, /canvas\.width = 1440;\s*canvas\.height = 1800;/);
 });
