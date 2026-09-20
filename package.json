@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "lint": "node --check public/app.js && node --check src/lib.mjs && node --check src/worker.template.mjs",
+    "preview": "node scripts/preview.mjs",
+    "intelligence:replay": "node scripts/replay-facebook-observed-snapshot.mjs",
+    "intelligence:gate-a3": "node scripts/persist-gate-a3-checkpoint.mjs",
+    "lint": "node --check public/app.js && node --check public/intelligence.js && node --check src/lib.mjs && node --check src/intelligence-core.mjs && node --check src/facebook-collection-core.mjs && node --check src/facebook-snapshot-replay.mjs && node --check src/facebook-gate-a3-persistence.mjs && node --check src/local-d1-sqlite.mjs && node --check src/intelligence-server.mjs && node --check src/worker.template.mjs && node --check scripts/replay-facebook-observed-snapshot.mjs && node --check scripts/persist-gate-a3-checkpoint.mjs",
     "test": "node --test"
   }
 }

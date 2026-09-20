@@ -1,7 +1,10 @@
+import { handleIntelligenceApi } from "./intelligence-server.mjs";
+
 const DATA = __RECIPES_JSON__;
 const INDEX = __INDEX_HTML__;
 const CSS = __STYLES_CSS__;
 const APP = __APP_JS__;
+const INTELLIGENCE = __INTELLIGENCE_JS__;
 const SPREADSHEET_ID = "1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s";
 const SHEETS = [
   { name: "Eunice Recipe Draft 20 - 2026-09-19", label: "All Eunice recipes · 120" },
@@ -66,9 +69,11 @@ async function handleApi(request, env, url) {
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/intelligence/")) return handleIntelligenceApi(request, env, url);
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
     if (url.pathname === "/styles.css") return new Response(CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
+    if (url.pathname === "/intelligence.js") return new Response(INTELLIGENCE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/favicon.svg") return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#f96332"/><path d="M18 17h28v30H18z" fill="#fff"/><path d="M23 25h18M23 32h18M23 39h12" stroke="#f96332" stroke-width="4" stroke-linecap="round"/></svg>', { headers: { "content-type": "image/svg+xml" } });
     return new Response(INDEX, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'self'; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'" } });
   }

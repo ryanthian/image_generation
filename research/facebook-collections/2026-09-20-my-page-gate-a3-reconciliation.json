@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-09-20T14:09:15.784Z",
+  "replayed": false,
+  "gate": "A3",
+  "status": "PASS",
+  "expected": {
+    "posts": 200,
+    "metric_snapshots": 403,
+    "raw_observations": 403,
+    "media_references": 200
+  },
+  "canonical_posts": {
+    "expected": 200,
+    "persisted": 200,
+    "unique": 200,
+    "duplicate_count": 0
+  },
+  "metric_snapshots": {
+    "expected": 403,
+    "persisted": 403
+  },
+  "raw_observations": {
+    "expected": 403,
+    "persisted": 403
+  },
+  "media_references": {
+    "expected": 200,
+    "persisted": 200
+  },
+  "quality": {
+    "total_posts": 200,
+    "identity_completeness": 100,
+    "caption_completeness": 99.5,
+    "metric_completeness": 100,
+    "media_completeness": 100,
+    "exact_date_completeness": 0,
+    "verification": {
+      "identity": 100,
+      "caption": 99.5,
+      "metrics": 99,
+      "media": 100
+    },
+    "metric_coverage": {
+      "reaction_count": 98,
+      "like_count": 0,
+      "comment_count": 87.5,
+      "share_count": 57,
+      "view_count": 100,
+      "reach_count": 0,
+      "click_count": 0
+    },
+    "captions": {
+      "full": 199,
+      "collapsed": 0,
+      "missing": 1,
+      "failed": 0
+    },
+    "media": {
+      "image": 0,
+      "carousel": 0,
+      "reel_video": 200,
+      "text": 0,
+      "unknown": 0
+    },
+    "dates": {
+      "exact": 0,
+      "derived": 0,
+      "relative_only": 0,
+      "unknown": 200
+    }
+  },
+  "missing_caption_record": {
+    "external_post_id": "1377429970434769",
+    "discovery_order": 159,
+    "caption": null,
+    "caption_capture_status": "missing",
+    "caption_missing": true
+  },
+  "null_preservation": {
+    "published_at_null": 200,
+    "reach_count_null": 403,
+    "click_count_null": 403,
+    "like_count_null": 403,
+    "published_at_all_null": true,
+    "reach_all_null": true,
+    "click_all_null": true
+  },
+  "provenance": {
+    "sample_type": "observed_sample",
+    "media_scope": "reel_only",
+    "chronology_status": "unverified",
+    "source_checkpoint": "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-200-observed-canonical-checkpoint.json",
+    "limitations": [
+      "200 observed Facebook posts from authenticated browser-visible reels evidence.",
+      "Reel/video-only observed sample, not a complete mixed-format page export.",
+      "Not verified as the latest 200 posts.",
+      "Exact publication date completeness is 0%; discovery order is not publish chronology.",
+      "Reach, clicks, impressions, and demographics are unavailable and remain NULL.",
+      "No recommendation scoring or future-content generation is performed in Gate A3."
+    ],
+    "direct_verification_files": [
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-001.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-002.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-003.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-004.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-005.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-006.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-007.json",
+      "/Users/ryanthian/Documents/Codex_mac/content-ai-production-console/research/facebook-collections/2026-09-20-my-page-direct-verification-batch-008.json"
+    ]
+  },
+  "production_d1_touched": false,
+  "deployment_performed": false
+}

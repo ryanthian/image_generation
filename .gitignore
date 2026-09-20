@@ -4,3 +4,4 @@ dist/
 *.tgz
 .playwright-cli/
 output/
+/research/facebook-collections/gate-a3-local-d1.sqlite

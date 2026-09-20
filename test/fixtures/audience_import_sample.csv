@@ -1,0 +1,5 @@
+post_id,Message,Created Time,Post Type,Reactions,Comments,Shares,Views,Reach,Post Clicks,Permalink
+TEST-AUD-001,"TEST DATA: Family dinner question",2026-09-01T10:00:00Z,Photo,120,18,7,,430,22,https://facebook.example/test-aud-001
+TEST-AUD-002,"TEST DATA: Sarawak recipe",2026-09-02T10:00:00Z,Video,95,11,15,1200,510,,https://facebook.example/test-aud-002
+TEST-AUD-003,"TEST DATA: Caption with missing metrics",2026-09-03T10:00:00Z,Text,,,,,,,https://facebook.example/test-aud-003
+TEST-AUD-004,,2026-09-04T10:00:00Z,Photo,42,3,1,,190,5,https://facebook.example/test-aud-004

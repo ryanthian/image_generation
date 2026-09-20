@@ -17,7 +17,7 @@
         <strong id="sideRecipe">Loading…</strong>
         <span id="sideId" class="muted"></span>
         <nav class="workflow-nav" aria-label="Workflow steps">
-          <a href="#recipe" class="active"><span>01</span>Recipe</a>
+          <a href="#recipe" class="active" data-production-link><span>01</span>Recipe</a>
           <a href="#images"><span>02</span>Images</a>
           <a href="#assets"><span>03</span>Final Assets</a>
           <a href="#publish"><span>04</span>Publish</a>
@@ -26,19 +26,29 @@
           <div class="progress-copy"><span>Images ready</span><b id="progressText">0 / 9</b></div>
           <div class="progress-track"><span id="progressBar"></span></div>
         </div>
+        <p class="eyebrow intelligence-label">CONTENT INTELLIGENCE</p>
+        <nav class="workflow-nav intelligence-nav" aria-label="Content Intelligence">
+          <a href="#intelligence-posts" data-intelligence-route="posts"><span>CI</span>Posts</a>
+          <a href="#intelligence-import" data-intelligence-route="import"><span>CI</span>Import</a>
+        </nav>
       </div>
     </aside>
 
     <main class="main-panel">
       <header class="navbar">
         <div>
-          <p class="eyebrow">PRIVATE PRODUCTION WORKSPACE</p>
-          <h1>Content AI Production Console</h1>
+          <p class="eyebrow" id="workspaceEyebrow">PRIVATE PRODUCTION WORKSPACE</p>
+          <h1 id="workspaceTitle">Content AI Production Console</h1>
         </div>
         <div class="connection" id="connection"><span class="dot"></span><span>Loading sheet</span></div>
+        <nav class="mobile-intelligence-nav" aria-label="Mobile workspace navigation">
+          <a href="#recipe" data-production-link>Production</a>
+          <a href="#intelligence-posts" data-intelligence-route="posts">Posts</a>
+          <a href="#intelligence-import" data-intelligence-route="import">Import</a>
+        </nav>
       </header>
 
-      <div class="content">
+      <div class="content" id="productionView">
         <section class="card recipe-card" id="recipe">
           <div class="recipe-toolbar">
             <label class="select-field">
@@ -103,9 +113,83 @@
           </div>
         </section>
       </div>
+
+      <div class="content intelligence-content" id="intelligenceView" hidden>
+        <section id="intelligencePosts" class="intelligence-page" hidden>
+          <div class="page-heading">
+            <div><p class="eyebrow">CONTENT INTELLIGENCE</p><h2>Imported Facebook posts</h2></div>
+            <button class="btn btn-neutral" id="refreshPosts" type="button">Refresh</button>
+          </div>
+          <div class="card filters-card">
+            <div class="filter-grid">
+              <label><span>Search</span><input id="postSearch" type="search" placeholder="Caption, title, ID or URL"></label>
+              <label><span>Source</span><select id="postSource"><option value="">All sources</option></select></label>
+              <label><span>Role</span><select id="postRole"><option value="">All roles</option><option value="audience">Audience</option><option value="benchmark">Benchmark</option></select></label>
+              <label><span>Topic</span><select id="postTopic"><option value="">All topics</option></select></label>
+              <label><span>Format</span><select id="postFormat"><option value="">All formats</option></select></label>
+              <label><span>Classification</span><select id="postClassification"><option value="">All</option><option value="classified">Classified</option><option value="unclassified">Unclassified</option></select></label>
+              <label><span>From</span><input id="postDateFrom" type="date"></label>
+              <label><span>To</span><input id="postDateTo" type="date"></label>
+              <label><span>Sort</span><select id="postSort"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="reactions">Reactions</option><option value="comments">Comments</option><option value="shares">Shares</option><option value="views">Views</option></select></label>
+            </div>
+          </div>
+          <div class="card table-card">
+            <div class="table-summary"><strong id="postCount">0 posts</strong><span id="postsState" class="muted">Ready</span></div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead><tr><th>Date</th><th>Source</th><th>Role</th><th>Post Preview</th><th>Format</th><th>Topic</th><th>Hook</th><th>Emotion</th><th>Reactions</th><th>Comments</th><th>Shares</th><th>Views</th><th>Reach</th><th>Status</th></tr></thead>
+                <tbody id="postsBody"><tr><td colspan="14" class="empty-cell">No imported posts yet.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="intelligenceImport" class="intelligence-page" hidden>
+          <div class="page-heading"><div><p class="eyebrow">CONTENT INTELLIGENCE</p><h2>Import Facebook post data</h2></div><span class="badge">Preview required</span></div>
+          <div class="import-layout">
+            <div class="card import-card">
+              <div class="step-heading"><span>1</span><div><strong>Choose source and file</strong><small>CSV or JSON, up to 5 MB and 5,000 rows.</small></div></div>
+              <div class="import-fields">
+                <label><span>Facebook source</span><select id="importSource"><option value="">Choose source</option></select></label>
+                <label><span>CSV or JSON file</span><input id="importFile" type="file" accept=".csv,.json,text/csv,application/json"></label>
+                <label><span>Metrics captured at</span><input id="importCapturedAt" type="datetime-local"></label>
+                <label><span>Metric scope</span><select id="importMetricScope"><option value="public">Public metrics</option><option value="page_insights">Page Insights</option><option value="business_suite">Meta Business Suite</option></select></label>
+              </div>
+              <button class="btn btn-info" id="previewImport" type="button">Parse and Preview</button>
+            </div>
+
+            <div class="card import-card" id="mappingCard" hidden>
+              <div class="step-heading"><span>2</span><div><strong>Review field mapping</strong><small>Ambiguous fields are never guessed silently.</small></div></div>
+              <div id="mappingGrid" class="mapping-grid"></div>
+              <button class="btn btn-neutral" id="applyMapping" type="button">Apply Mapping and Revalidate</button>
+            </div>
+
+            <div class="card import-card" id="qualityCard" hidden>
+              <div class="step-heading"><span>3</span><div><strong>Validate import quality</strong><small>Unknown values remain blank, never zero.</small></div></div>
+              <div id="qualityMetrics" class="quality-grid"></div>
+              <div><p class="eyebrow section-label">METRIC COVERAGE</p><div id="coverageMetrics" class="coverage-grid"></div></div>
+              <div id="importWarnings" class="validation-messages"></div>
+            </div>
+
+            <div class="card import-card" id="previewCard" hidden>
+              <div class="step-heading"><span>4</span><div><strong>Preview source rows</strong><small>Review before anything is stored.</small></div></div>
+              <div class="table-scroll"><table class="data-table"><thead><tr><th>Row</th><th>Post ID</th><th>Date</th><th>Caption</th><th>Format</th><th>Reactions</th><th>Comments</th><th>Shares</th><th>Status</th></tr></thead><tbody id="importPreviewBody"></tbody></table></div>
+              <label class="confirm-check" id="reprocessLabel" hidden><input id="allowReprocess" type="checkbox"> Reprocess this previously imported file</label>
+              <button class="btn btn-primary" id="confirmImport" type="button" disabled>Confirm Import</button>
+              <div id="importResult" class="import-result" hidden></div>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="post-drawer" id="postDrawer" aria-label="Post details" aria-hidden="true">
+    <div class="drawer-header"><div><p class="eyebrow">POST DETAIL</p><h2 id="drawerTitle">Facebook post</h2></div><button id="closeDrawer" class="icon-button" type="button" aria-label="Close post details">×</button></div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
+  <script src="/intelligence.js" defer></script>
 </body>
 </html>
