@@ -20,9 +20,16 @@ const output = template
   .replace("__INTELLIGENCE_JS__", JSON.stringify(intelligence));
 await mkdir("dist/server", { recursive: true });
 await mkdir("dist/.openai", { recursive: true });
+await mkdir("dist/.openai/drizzle/meta", { recursive: true });
 await writeFile("dist/server/index.js", output);
 await copyFile("src/intelligence-core.mjs", "dist/server/intelligence-core.mjs");
 await copyFile("src/intelligence-server.mjs", "dist/server/intelligence-server.mjs");
 await copyFile("src/facebook-collection-core.mjs", "dist/server/facebook-collection-core.mjs");
 await copyFile(".openai/hosting.json", "dist/.openai/hosting.json");
+await Promise.all([
+  copyFile("db/migrations/0001_content_intelligence.sql", "dist/.openai/drizzle/0001_content_intelligence.sql"),
+  copyFile("db/migrations/0002_facebook_observed_collection.sql", "dist/.openai/drizzle/0002_facebook_observed_collection.sql"),
+  copyFile("db/migrations/0003_gate_a3_dataset_provenance.sql", "dist/.openai/drizzle/0003_gate_a3_dataset_provenance.sql")
+]);
+await writeFile("dist/.openai/drizzle/meta/_journal.json", `${JSON.stringify({ version: "7", dialect: "sqlite", entries: [] }, null, 2)}\n`);
 console.log("Built dist/server/index.js");
