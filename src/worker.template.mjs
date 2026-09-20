@@ -1,19 +1,27 @@
 import { handleIntelligenceApi } from "./intelligence-server.mjs";
 
 const DATA = __RECIPES_JSON__;
+const CANARY = __CANARY_JSON__;
 const INDEX = __INDEX_HTML__;
 const CSS = __STYLES_CSS__;
 const APP = __APP_JS__;
+const CONTENT_MODEL = __CONTENT_MODEL_JS__;
 const INTELLIGENCE = __INTELLIGENCE_JS__;
 const SPREADSHEET_ID = "1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s";
 const SHEETS = [
   { name: "Eunice Recipe Draft 20 - 2026-09-19", label: "All Eunice recipes · 120" },
   { name: "Eunice Recipe Draft 100 - 2026-09-20", label: "New ranked batch · 100" }
 ];
+const CANARY_SOURCE = { name: CANARY.sourceName, label: CANARY.label };
+const SOURCES = [...SHEETS, CANARY_SOURCE];
 const DEFAULT_SHEET = SHEETS[0].name;
 
 function allowedSheet(value) {
   return SHEETS.some((sheet) => sheet.name === value) ? value : DEFAULT_SHEET;
+}
+
+function allowedSource(value) {
+  return SOURCES.some((source) => source.name === value) ? value : DEFAULT_SHEET;
 }
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -40,13 +48,15 @@ async function bridgeRequest(env, action, sheetName, payload = {}) {
 
 async function handleApi(request, env, url) {
   if (request.method === "GET" && url.pathname === "/api/recipes") {
-    const sheetName = allowedSheet(url.searchParams.get("sheetName"));
-    if (!env.GOOGLE_SHEETS_BRIDGE_URL) return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SHEETS, ...DATA });
+    const requestedSource = allowedSource(url.searchParams.get("sheetName"));
+    if (requestedSource === CANARY_SOURCE.name) return json({ ok: true, source: "canary", writable: false, sheetName: CANARY_SOURCE.name, sheets: SOURCES, records: CANARY.records });
+    const sheetName = allowedSheet(requestedSource);
+    if (!env.GOOGLE_SHEETS_BRIDGE_URL) return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SOURCES, ...DATA });
     try {
       const result = await bridgeRequest(env, "list", sheetName);
-      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetName, sheets: SHEETS, ...result });
+      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetName, sheets: SOURCES, ...result });
     } catch (error) {
-      return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SHEETS, warning: error.message, ...DATA });
+      return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SOURCES, warning: error.message, ...DATA });
     }
   }
 
@@ -73,6 +83,7 @@ export default {
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
     if (url.pathname === "/styles.css") return new Response(CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
+    if (url.pathname === "/content-model.js") return new Response(CONTENT_MODEL, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/intelligence.js") return new Response(INTELLIGENCE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/favicon.svg") return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#f96332"/><path d="M18 17h28v30H18z" fill="#fff"/><path d="M23 25h18M23 32h18M23 39h12" stroke="#f96332" stroke-width="4" stroke-linecap="round"/></svg>', { headers: { "content-type": "image/svg+xml" } });
     return new Response(INDEX, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'self'; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'" } });

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Private recipe image production dashboard">
+  <meta name="description" content="Private multi-format content production dashboard">
   <title>Content AI Production Console</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
@@ -13,11 +13,11 @@
     <aside class="sidebar" aria-label="Production progress">
       <div class="brand"><span class="brand-mark">CP</span><span>Content Production</span></div>
       <div class="sidebar-body">
-        <p class="eyebrow">CURRENT RECIPE</p>
+        <p class="eyebrow">CURRENT CONTENT</p>
         <strong id="sideRecipe">Loading…</strong>
         <span id="sideId" class="muted"></span>
         <nav class="workflow-nav" aria-label="Workflow steps">
-          <a href="#recipe" class="active" data-production-link><span>01</span>Recipe</a>
+          <a href="#recipe" class="active" data-production-link><span>01</span>Content</a>
           <a href="#images"><span>02</span>Images</a>
           <a href="#assets"><span>03</span>Final Assets</a>
           <a href="#publish"><span>04</span>Publish</a>
@@ -52,28 +52,35 @@
         <section class="card recipe-card" id="recipe">
           <div class="recipe-toolbar">
             <label class="select-field">
-              <span>Google Sheet source</span>
-              <select id="sheetSelect" aria-label="Select Google Sheet source"></select>
+              <span>Content source</span>
+              <select id="sheetSelect" aria-label="Select content source"></select>
             </label>
             <label class="search-field">
-              <span>Search recipe</span>
-              <input id="search" type="search" placeholder="Content ID, title or category">
+              <span>Search content</span>
+              <input id="search" type="search" placeholder="ID, title, topic, content type or template">
             </label>
             <label class="select-field">
-              <span>Recipe</span>
-              <select id="recipeSelect" aria-label="Select recipe"></select>
+              <span>Content record</span>
+              <select id="recipeSelect" aria-label="Select content record"></select>
             </label>
             <div class="pager">
-              <button id="prev" class="btn btn-neutral" type="button" aria-label="Previous recipe">← Previous</button>
-              <button id="next" class="btn btn-neutral" type="button" aria-label="Next recipe">Next →</button>
+              <button id="prev" class="btn btn-neutral" type="button" aria-label="Previous content">← Previous</button>
+              <button id="next" class="btn btn-neutral" type="button" aria-label="Next content">Next →</button>
             </div>
           </div>
           <div class="recipe-summary">
             <div>
               <div class="meta-line"><code id="contentId">—</code><span id="category" class="badge">—</span><span id="status" class="badge badge-status">—</span></div>
-              <h2 id="title">Loading recipe…</h2>
+              <h2 id="title">Loading content…</h2>
             </div>
             <div class="completion-ring" id="completionRing" aria-label="Completion"><strong>0%</strong><span>complete</span></div>
+          </div>
+          <div class="content-meta-grid" aria-label="Universal content model">
+            <div><span>Content Type</span><strong id="contentType">—</strong></div>
+            <div><span>Template</span><strong id="templateType">—</strong></div>
+            <div><span>Visual Profile</span><strong id="visualProfile">—</strong></div>
+            <div><span>Hook Type</span><strong id="hookType">—</strong></div>
+            <div class="hook-meta"><span>Resolved Hook</span><strong id="hookText">—</strong></div>
           </div>
           <div class="action-grid">
             <button id="copyPrompt" class="btn btn-primary" type="button"><span>01</span>Copy ChatGPT Image Prompt</button>
@@ -84,17 +91,25 @@
           <input id="allFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
         </section>
 
+        <section class="card manifest-card" aria-labelledby="manifestTitle">
+          <div class="card-header">
+            <div><p class="eyebrow">GENERATION MANIFEST</p><h2 id="manifestTitle">Canonical asset order</h2></div>
+            <p class="helper" id="manifestCount">—</p>
+          </div>
+          <ol id="manifestList" class="manifest-list"></ol>
+        </section>
+
         <section class="card" id="images">
           <div class="card-header">
-            <div><p class="eyebrow">SOURCE IMAGES</p><h2>9 production slots</h2></div>
-            <p class="helper">Drop one image into a slot, or import nine files in sequence: Cover → Ingredients → M1–M6 → Closeup.</p>
+            <div><p class="eyebrow">SOURCE IMAGES</p><h2 id="slotHeading">Generation slots</h2></div>
+            <p class="helper" id="slotHelper">Slots follow the resolved Generation Manifest.</p>
           </div>
           <div id="slots" class="slot-grid"></div>
         </section>
 
         <section class="card" id="assets">
           <div class="card-header">
-            <div><p class="eyebrow">1440 × 1800</p><h2>Final Facebook assets</h2></div>
+            <div><p class="eyebrow">1440 × 1800</p><h2 id="assetHeading">Final Facebook assets</h2></div>
             <button id="downloadAll" class="btn btn-neutral" type="button" disabled>Download All</button>
           </div>
           <div id="assetGrid" class="asset-grid"></div>
@@ -189,7 +204,7 @@
     <div class="drawer-body" id="drawerBody"></div>
   </aside>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js" defer></script>
+  <script src="/app.js" type="module"></script>
   <script src="/intelligence.js" defer></script>
 </body>
 </html>

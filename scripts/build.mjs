@@ -1,18 +1,22 @@
 import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 
-const [template, data, index, css, app, intelligence] = await Promise.all([
+const [template, data, canary, index, css, app, contentModel, intelligence] = await Promise.all([
   readFile("src/worker.template.mjs", "utf8"),
   readFile("data/recipes.json", "utf8"),
+  readFile("data/content-v4-canary.json", "utf8"),
   readFile("public/index.html", "utf8"),
   readFile("public/styles.css", "utf8"),
   readFile("public/app.js", "utf8"),
+  readFile("src/content-model.mjs", "utf8"),
   readFile("public/intelligence.js", "utf8")
 ]);
 const output = template
   .replace("__RECIPES_JSON__", data.trim())
+  .replace("__CANARY_JSON__", canary.trim())
   .replace("__INDEX_HTML__", JSON.stringify(index))
   .replace("__STYLES_CSS__", JSON.stringify(css))
   .replace("__APP_JS__", JSON.stringify(app))
+  .replace("__CONTENT_MODEL_JS__", JSON.stringify(contentModel))
   .replace("__INTELLIGENCE_JS__", JSON.stringify(intelligence));
 await mkdir("dist/server", { recursive: true });
 await mkdir("dist/.openai", { recursive: true });

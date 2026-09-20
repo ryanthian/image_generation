@@ -17,12 +17,12 @@ test("snapshot contains exact acceptance recipe and full schema", () => {
 
 test("session prompt is one ordered controller with all nine stages", () => {
   const prompt = buildSessionPrompt(first);
-  assert.match(prompt, /Commands: N = generate the next stage; R = regenerate/);
+  assert.match(prompt, /Commands: N = generate the next asset; R = regenerate/);
   assert.match(prompt, /exactly ONE image per response/);
-  assert.match(prompt, /COVER → INGREDIENTS → M1 → M2 → M3 → M4 → M5 → M6 → CLOSEUP/);
-  assert.equal((prompt.match(/\nM[1-6]:/g) || []).length, 6);
-  assert.ok(prompt.indexOf("COVER:") < prompt.indexOf("INGREDIENTS:"));
-  assert.ok(prompt.indexOf("M6:") < prompt.indexOf("CLOSEUP:"));
+  assert.match(prompt, /01 Cover → 02 Ingredients → 03 M1 → 04 M2 → 05 M3 → 06 M4 → 07 M5 → 08 M6 → 09 Closeup/);
+  assert.equal((prompt.match(/\d\d M[1-6] \[METHOD\]/g) || []).length, 6);
+  assert.ok(prompt.indexOf("01 Cover") < prompt.indexOf("02 Ingredients"));
+  assert.ok(prompt.indexOf("08 M6") < prompt.indexOf("09 Closeup"));
 });
 
 test("overlay and filename mapping preserve exact assets", () => {
@@ -35,10 +35,10 @@ test("overlay and filename mapping preserve exact assets", () => {
 });
 
 test("Final Cover renders the Chinese title without internal recipe identifiers", () => {
-  const coverSource = appSource.match(/async function buildCover\(\) \{[\s\S]*?\n  \}/)?.[0];
-  assert.ok(coverSource, "buildCover should exist");
-  assert.match(coverSource, /drawLines\(context, overlay\.cover/);
+  const coverSource = appSource.match(/async function buildCoverAsset\(assetItem\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(coverSource, "buildCoverAsset should exist");
+  assert.match(coverSource, /assetItem\.overlay_text \|\| state\.content\.hookText \|\| state\.content\.title/);
   assert.doesNotMatch(coverSource, /Content_ID|recipe_id|content_id|row.?id|database.?id/i);
-  assert.match(appSource, /filename: `\$\{state\.recipe\.Content_ID\}-\$\{name\}-1440x1800\.png`/);
+  assert.match(appSource, /filename: buildAssetFilename\(state\.content, assetItem\)/);
   assert.match(appSource, /canvas\.width = 1440;\s*canvas\.height = 1800;/);
 });
