@@ -10,7 +10,8 @@ const INTELLIGENCE = __INTELLIGENCE_JS__;
 const SPREADSHEET_ID = "1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s";
 const SHEETS = [
   { name: "Eunice Recipe Draft 20 - 2026-09-19", label: "All Eunice recipes · 120" },
-  { name: "Eunice Recipe Draft 100 - 2026-09-20", label: "New ranked batch · 100" }
+  { name: "Eunice Recipe Draft 100 - 2026-09-20", label: "New ranked batch · 100" },
+  { name: "V4_CANARY", label: "V4 Google Sheet canary · 10" }
 ];
 const CANARY_SOURCE = { name: CANARY.sourceName, label: CANARY.label };
 const SOURCES = [...SHEETS, CANARY_SOURCE];

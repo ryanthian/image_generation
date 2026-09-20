@@ -90,6 +90,69 @@ test("unsupported price and percentage claims are downgraded", () => {
   assert.equal(percentage.hookText, "很多人第一步就做错");
 });
 
+test("Sheet Asset_Plan_JSON round-trips Unicode, quotes, newlines and optional slots", () => {
+  const assetPlan = [
+    { sequence: 1, asset_id: "01-hook", asset_type: "HOOK", title: "Hook", purpose: "问题", image_prompt: "Real kitchen capture with a quoted cue: \"good\".", overlay_text: "第一行\n第二行", layout_type: "cover_overlay", required: true },
+    { sequence: 2, asset_id: "02-technique", asset_type: "TECHNIQUE", title: "Technique", purpose: "方法", image_prompt: "Hands demonstrating the technique, no text.", overlay_text: "保留中文引号“正确”", layout_type: "information_card", required: false },
+    { sequence: 3, asset_id: "03-result", asset_type: "FINAL_RESULT", title: "Result", purpose: "结果", image_prompt: "Finished result, no text.", overlay_text: "完成", layout_type: "detail_overlay", required: true }
+  ];
+  const content = normalizeContentRecord({
+    Schema_Version: 4,
+    Content_ID: "GS-V4-ROUNDTRIP",
+    Title: "中文与“引号”测试",
+    Topic: "KITCHEN",
+    Content_Type: "KITCHEN_HACK",
+    Template_Type: "KITCHEN_TECHNIQUE",
+    Source_References: "Sheet source reference",
+    Content_Body: "第一行\n第二行",
+    Asset_Plan_JSON: JSON.stringify(assetPlan)
+  });
+  assert.equal(content.source, "Sheet source reference");
+  assert.equal(content.contentBody, "第一行\n第二行");
+  assert.deepEqual(content.resolvedAssetPlan.map((item) => item.asset_id), ["01-hook", "02-technique", "03-result"]);
+  assert.deepEqual(buildGenerationManifest(content).entries.map((entry) => entry.required), [true, false, true]);
+  assert.match(content.resolvedAssetPlan[0].image_prompt, /"good"/);
+  assert.equal(content.resolvedAssetPlan[0].overlay_text, "第一行\n第二行");
+});
+
+test("Sheet Asset_Plan_JSON rejects malformed data and uses template defaults when empty", () => {
+  const base = {
+    Schema_Version: 4,
+    Content_ID: "GS-V4-JSON",
+    Title: "JSON test",
+    Topic: "KITCHEN",
+    Content_Type: "KITCHEN_HACK",
+    Template_Type: "KITCHEN_TECHNIQUE"
+  };
+  assert.throws(() => normalizeContentRecord({ ...base, Asset_Plan_JSON: "[{bad json}]" }), /Invalid Asset Plan JSON/);
+  const empty = normalizeContentRecord({ ...base, Asset_Plan_JSON: "" });
+  assert.equal(empty.resolvedAssetPlan.length, TEMPLATE_REGISTRY.KITCHEN_TECHNIQUE.default_asset_plan.length);
+});
+
+test("Sheet records resolve 3 through 7 assets while legacy Recipe remains compatible", () => {
+  const requiredTypes = {
+    3: ["HOOK", "TECHNIQUE", "FINAL_RESULT"],
+    4: ["HOOK", "PROBLEM", "TECHNIQUE", "FINAL_RESULT"],
+    5: ["HOOK", "PROBLEM", "TECHNIQUE", "SEQUENCE", "FINAL_RESULT"],
+    6: ["HOOK", "PROBLEM", "TECHNIQUE", "DETAIL", "SEQUENCE", "FINAL_RESULT"],
+    7: ["HOOK", "PROBLEM", "TECHNIQUE", "DETAIL", "SEQUENCE", "CHECKPOINT", "FINAL_RESULT"]
+  };
+  for (const [count, types] of Object.entries(requiredTypes)) {
+    const content = normalizeContentRecord({
+      Schema_Version: 4,
+      Content_ID: `GS-V4-${count}`,
+      Title: `Sheet ${count}`,
+      Topic: "KITCHEN",
+      Content_Type: "KITCHEN_HACK",
+      Template_Type: "KITCHEN_TECHNIQUE",
+      Asset_Plan_JSON: JSON.stringify(types.map((assetType, index) => ({ sequence: index + 1, asset_id: `${index + 1}-${assetType}`, asset_type: assetType, title: assetType, purpose: assetType, image_prompt: assetType, layout_type: index ? "information_card" : "cover_overlay", required: true })))
+    });
+    assert.equal(content.resolvedAssetPlan.length, Number(count));
+    assert.equal(buildGenerationManifest(content).expectedAssets, Number(count));
+  }
+  assert.equal(normalizeContentRecord(legacyData.recipes[0]).schemaVersion, 2);
+});
+
 test("longform belief template encodes non-scientific framing", () => {
   assert.match(TEMPLATE_REGISTRY.LONGFORM_GUIDE.visual_consistency_rules.join(" "), /tradition|custom|personal sharing/i);
 });

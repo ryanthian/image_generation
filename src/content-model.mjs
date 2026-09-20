@@ -156,7 +156,7 @@ function withGenerationInputs(assetItem, index, visualProfile) {
     label: input.label || `${result.title || result.asset_type} ${inputIndex + 1}`,
     image_prompt: input.image_prompt || result.image_prompt || "",
     overlay_text: input.overlay_text || "",
-    required: input.required !== false
+    required: input.required === undefined ? result.required : input.required !== false
   }));
   return result;
 }
@@ -246,7 +246,7 @@ export function adaptV4Record(record) {
     hookText,
     caption: record.Caption || record.Ready_To_Post_Caption || record.caption || "",
     contentBody: record.Content_Body || record.content_body || "",
-    source: record.Source || record.source || "",
+    source: record.Source || record.Source_References || record.source || "",
     affiliateFit: record.Affiliate_Fit || record.affiliate_fit || "NONE",
     monetizationAngle: record.Monetization_Angle || record.monetization_angle || "",
     productCategory: record.Product_Category || record.product_category || "",
