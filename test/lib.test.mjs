@@ -50,7 +50,21 @@ test("dynamic method composition uses stable source IDs and downloads final asse
   assert.ok(methodSource, "buildMethodGrid should exist");
   assert.match(methodSource, /state\.images\[input\.slot_id\]/);
   assert.match(methodSource, /assetItem\.generation_inputs\.length/);
-  assert.match(appSource, /layout_type === "method_grid_2x3" && assetItem\.generation_inputs\.length > 1/);
+  assert.match(appSource, /\["method_grid_2x3", "method_grid_adaptive"\]\.includes\(assetItem\.layout_type\) && assetItem\.generation_inputs\.length > 1/);
   assert.match(appSource, /state\.plan\.forEach\(\(item, index\)/);
   assert.doesNotMatch(appSource, /state\.manifest\.entries\.forEach\(\(item, index\).*downloadBlob/s);
+});
+
+test("V4.1 renderer uses adaptive Ingredients and Method layouts", () => {
+  assert.match(appSource, /calculateAdaptivePanel/);
+  assert.match(appSource, /calculateMethodGrid/);
+  assert.match(appSource, /assetItem\.asset_type === "INGREDIENTS"/);
+  assert.match(appSource, /"method_grid_adaptive"/);
+  assert.match(appSource, /state\.content\.schemaVersion < 4/);
+  assert.doesNotMatch(appSource, /state\.content\.title, 130, 1125/);
+});
+
+test("deterministic QC surfaces NOT READY TO POST while preview build remains available", () => {
+  assert.match(appSource, /status === "FAIL" \? "NOT READY TO POST"/);
+  assert.match(appSource, /markPosted.*status === "FAIL"/s);
 });

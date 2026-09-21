@@ -148,17 +148,33 @@ function withGenerationInputs(assetItem, index, visualProfile) {
   result.aspect_ratio = result.aspect_ratio || "4:5";
   result.required = result.required !== false;
   result.qc_rules = Array.isArray(result.qc_rules) ? result.qc_rules : ["IMAGE_PRESENT", "OUTPUT_1440X1800", "NO_VISIBLE_CONTENT_ID"];
-  const inputs = Array.isArray(result.generation_inputs) && result.generation_inputs.length
+  const inputs = Array.isArray(result.generation_inputs)
     ? result.generation_inputs
-    : [{ slot_id: result.asset_id, label: result.title || result.asset_type, image_prompt: result.image_prompt || "" }];
+    : Array.isArray(result.source_input_ids)
+      ? []
+      : [{ slot_id: result.asset_id, label: result.title || result.asset_type, image_prompt: result.image_prompt || "" }];
   result.generation_inputs = inputs.map((input, inputIndex) => ({
     slot_id: safeId(input.slot_id || `${result.asset_id}-${inputIndex + 1}`).toLowerCase(),
     label: input.label || `${result.title || result.asset_type} ${inputIndex + 1}`,
     image_prompt: input.image_prompt || result.image_prompt || "",
     overlay_text: input.overlay_text || "",
+    source_role: input.source_role || result.asset_type,
+    method_step_id: input.method_step_id || "",
+    step_heading: input.step_heading || String(input.overlay_text || "").split(/\n/)[0] || "",
+    step_supporting_text: input.step_supporting_text || String(input.overlay_text || "").split(/\n/).slice(1).join(" ") || "",
+    regen_required_reason: input.regen_required_reason || "",
     required: input.required === undefined ? result.required : input.required !== false
   }));
   return result;
+}
+
+function validateMethodMappings(plan) {
+  for (const item of plan.filter((assetItem) => assetItem.asset_type === "METHOD" && assetItem.generation_inputs.length > 1)) {
+    const ids = item.generation_inputs.map((input, index) => input.method_step_id || (/^m\d+$/i.test(input.slot_id) ? input.slot_id.toUpperCase() : `M${index + 1}`));
+    if (new Set(ids).size !== ids.length) throw new Error(`Duplicate Method step mapping in ${item.asset_id}.`);
+    const expected = ids.map((_, index) => `M${index + 1}`);
+    if (ids.some((id, index) => String(id).toUpperCase() !== expected[index])) throw new Error(`Missing or reordered Method step mapping in ${item.asset_id}; expected ${expected.join(" → ")}.`);
+  }
 }
 
 export function resolveAssetPlan(record, registry = TEMPLATE_REGISTRY) {
@@ -173,6 +189,11 @@ export function resolveAssetPlan(record, registry = TEMPLATE_REGISTRY) {
   if (missing.length) throw new Error(`${record.templateType} is missing required assets: ${missing.join(", ")}`);
   for (const item of plan) {
     if (!definition.allowed_asset_types.includes(item.asset_type)) throw new Error(`${item.asset_type} is not allowed by ${record.templateType}`);
+  }
+  validateMethodMappings(plan);
+  const generatedIds = new Set(plan.flatMap((item) => item.generation_inputs.map((input) => input.slot_id)));
+  for (const item of plan) {
+    for (const sourceId of item.source_input_ids || []) if (!generatedIds.has(sourceId)) throw new Error(`Unknown composition source input ID: ${sourceId}`);
   }
   return plan;
 }
@@ -219,14 +240,18 @@ export function adaptLegacyRecipe(record) {
   return normalized;
 }
 
-function parseAssetOverrides(record) {
-  if (Array.isArray(record.assets)) return record.assets;
-  if (Array.isArray(record.asset_plan)) return record.asset_plan;
+function parseAssetConfiguration(record) {
+  if (Array.isArray(record.assets)) return { assets: record.assets };
+  if (Array.isArray(record.asset_plan)) return { assets: record.asset_plan };
   const serialized = record.Asset_Plan_JSON || record.Asset_Plan || "";
-  if (!serialized) return null;
+  if (!serialized) return { assets: null };
   try {
     const parsed = JSON.parse(serialized);
-    return Array.isArray(parsed) ? parsed : parsed.assets;
+    return Array.isArray(parsed) ? { assets: parsed } : {
+      assets: parsed.assets,
+      coveragePoints: parsed.coverage_points,
+      sourceIngredients: parsed.source_ingredients
+    };
   } catch (error) {
     throw new Error(`Invalid Asset Plan JSON for ${record.Content_ID || record.content_id}: ${error.message}`);
   }
@@ -234,6 +259,7 @@ function parseAssetOverrides(record) {
 
 export function adaptV4Record(record) {
   const { hookText, priceVerified } = applyClaimSafety(record);
+  const assetConfiguration = parseAssetConfiguration(record);
   const normalized = {
     schemaVersion: Number(record.Schema_Version || record.schema_version || 4),
     contentId: record.Content_ID || record.content_id,
@@ -261,7 +287,9 @@ export function adaptV4Record(record) {
       verifiedDate: record.Price_Verified_Date || "",
       verified: priceVerified
     },
-    assetOverrides: parseAssetOverrides(record),
+    assetOverrides: assetConfiguration.assets,
+    coveragePoints: Array.isArray(assetConfiguration.coveragePoints) ? assetConfiguration.coveragePoints : [],
+    sourceIngredients: Array.isArray(assetConfiguration.sourceIngredients) ? assetConfiguration.sourceIngredients : [],
     consistencyRules: Array.isArray(record.visual_consistency_rules) ? record.visual_consistency_rules : [],
     qualityRules: Array.isArray(record.qc_rules) ? record.qc_rules : [],
     raw: record
@@ -269,6 +297,80 @@ export function adaptV4Record(record) {
   if (!normalized.contentId || !normalized.title || !normalized.contentType || !normalized.templateType) throw new Error("V4 content requires Content_ID, Title, Content_Type and Template_Type.");
   normalized.resolvedAssetPlan = resolveAssetPlan(normalized);
   return normalized;
+}
+
+export function calculateAdaptivePanel({ label = "", heading = "", body = "", width = 1180, measure = (text) => Array.from(String(text)).length * 38 }) {
+  const lineCount = (text, fontScale = 1) => {
+    if (!text) return 0;
+    let lines = 0;
+    for (const paragraph of String(text).split(/\n/)) {
+      let current = 0;
+      for (const token of Array.from(paragraph || " ")) {
+        const tokenWidth = measure(token) * fontScale;
+        if (current && current + tokenWidth > width) { lines += 1; current = tokenWidth; }
+        else current += tokenWidth;
+      }
+      lines += 1;
+    }
+    return lines;
+  };
+  const labelLines = label ? 1 : 0;
+  const headingLines = lineCount(heading, 1.45);
+  const bodyLines = lineCount(body, 1);
+  const contentHeight = 72 + labelLines * 48 + headingLines * 72 + bodyLines * 58 + 58;
+  const panelHeight = Math.max(460, Math.min(780, contentHeight));
+  return { panelHeight, imageHeight: 1800 - panelHeight, labelLines, headingLines, bodyLines };
+}
+
+export function calculateMethodGrid(stepCount) {
+  if (!Number.isInteger(stepCount) || stepCount < 2) throw new Error("Method grid requires at least two steps.");
+  const rowCount = Math.ceil(stepCount / 2);
+  const rowHeight = 1800 / rowCount;
+  return Array.from({ length: stepCount }, (_, index) => {
+    const isFullWidthFinal = stepCount % 2 === 1 && index === stepCount - 1;
+    const row = isFullWidthFinal ? rowCount - 1 : Math.floor(index / 2);
+    const column = index % 2;
+    return {
+      index,
+      x: isFullWidthFinal ? 0 : column * 720,
+      y: row * rowHeight,
+      width: isFullWidthFinal ? 1440 : 720,
+      height: rowHeight,
+      fullWidth: isFullWidthFinal
+    };
+  });
+}
+
+export function runContentQc(content) {
+  const failures = [];
+  const warnings = [];
+  const plan = content.resolvedAssetPlan || [];
+  const covered = new Set(plan.flatMap((item) => Array.isArray(item.coverage_point_ids) ? item.coverage_point_ids : []));
+  for (const point of content.coveragePoints || []) {
+    if (point.required !== false && !covered.has(point.id)) failures.push({ code: "UNCOVERED_SOURCE_POINT", detail: point.text || point.id });
+  }
+  const ingredientsAsset = plan.find((item) => item.asset_type === "INGREDIENTS");
+  if (ingredientsAsset && (content.sourceIngredients || []).length) {
+    const actual = new Set((ingredientsAsset.ingredient_items || []).map((item) => typeof item === "string" ? item : item.name));
+    for (const ingredient of content.sourceIngredients) if (!actual.has(ingredient)) failures.push({ code: "MISSING_REQUIRED_INGREDIENT", detail: ingredient });
+    for (const ingredient of actual) if (!content.sourceIngredients.includes(ingredient)) failures.push({ code: "UNSUPPORTED_INGREDIENT", detail: ingredient });
+  }
+  const purposeKeys = new Map();
+  for (const item of plan) {
+    const key = `${item.local_heading || item.title}|${(item.coverage_point_ids || []).slice().sort().join(",")}`;
+    if (purposeKeys.has(key) && key !== "|") warnings.push({ code: "REDUNDANT_ASSET_PURPOSE", detail: `${purposeKeys.get(key)} and ${item.asset_id}` });
+    purposeKeys.set(key, item.asset_id);
+    if (item.asset_type !== "COVER" && item.local_heading === content.title) warnings.push({ code: "TITLE_REPETITION", detail: item.asset_id });
+  }
+  const method = plan.find((item) => item.asset_type === "METHOD" && item.generation_inputs.length > 1);
+  if (method) {
+    method.generation_inputs.forEach((input, index) => {
+      const expected = `M${index + 1}`;
+      const actual = String(input.method_step_id || input.slot_id).toUpperCase();
+      if (actual !== expected) failures.push({ code: "METHOD_MAPPING_MISMATCH", detail: `${actual} != ${expected}` });
+    });
+  }
+  return { status: failures.length ? "FAIL" : warnings.length ? "WARNING" : "PASS", failures, warnings, manualChecks: ["Visual realism", "Subject continuity", "Image and text visual alignment", "Wrong-example plausibility", "Composition quality"] };
 }
 
 export function normalizeContentRecord(record) {
@@ -291,6 +393,8 @@ export function buildGenerationManifest(content) {
         assetType: assetItem.asset_type,
         imagePrompt: input.image_prompt,
         overlayText: input.overlay_text,
+        semanticKey: `${input.image_prompt}\n${input.overlay_text}`,
+        regenRequiredReason: input.regen_required_reason,
         required: input.required !== false
       });
     }

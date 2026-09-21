@@ -2,8 +2,11 @@ import {
   buildAssetFilename,
   buildGenerationManifest,
   buildSessionPrompt,
+  calculateAdaptivePanel,
+  calculateMethodGrid,
   matchGenerationSlot,
-  normalizeContentRecord
+  normalizeContentRecord,
+  runContentQc
 } from "/content-model.js";
 
 const state = {
@@ -58,6 +61,7 @@ const getStored = (store, key) => idb(store, "readonly", (objectStore) => object
 const putStored = (store, key, value) => idb(store, "readwrite", (objectStore) => objectStore.put(value, key));
 const deleteStored = (store, key) => idb(store, "readwrite", (objectStore) => objectStore.delete(key));
 const keyFor = (kind, name) => `${state.sourceName}:${state.content.contentId}:${kind}:${name}`;
+const assetSemanticKey = (item) => JSON.stringify({ layout: item.layout_type, text: item.overlay_text, heading: item.local_heading, inputs: item.generation_inputs.map((input) => [input.slot_id, input.overlay_text]), sources: item.source_input_ids || [] });
 
 async function copyText(value, message) {
   try {
@@ -93,12 +97,13 @@ function renderSlots() {
   for (const entry of state.manifest.entries) {
     const stored = state.images[entry.slotId];
     const node = document.createElement("article");
-    node.className = `slot${stored ? " ready" : ""}`;
+    const stale = Boolean(stored && entry.regenRequiredReason && stored.semanticKey !== entry.semanticKey);
+    node.className = `slot${stored ? " ready" : ""}${stale ? " stale" : ""}`;
     node.dataset.slot = entry.slotId;
     node.innerHTML = `
       <div class="slot-preview">${stored ? `<img alt="${escapeHtml(entry.label)} imported image">` : `<div class="slot-empty"><b>${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</b><span>${escapeHtml(entry.assetType)} · Drop PNG, JPG or WebP</span></div>`}</div>
       <div class="slot-footer">
-        <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stored ? "Complete" : entry.required ? "Required" : "Optional"}</div></div>
+        <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stale ? `REGEN REQUIRED · ${escapeHtml(entry.regenRequiredReason)}` : stored ? "Complete" : entry.required ? "Required" : "Optional"}</div></div>
         <div class="slot-actions"><button type="button" data-choose>${stored ? "Replace" : "Choose"}</button>${stored ? '<button type="button" data-remove>Remove</button>' : ""}</div>
         <input type="file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>`;
@@ -147,16 +152,19 @@ function updateProgress() {
 async function saveImage(slotId, file) {
   if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return toast("Use a PNG, JPG or WebP image.", true);
   if (file.size > 35 * 1024 * 1024) return toast("Image is larger than 35 MB.", true);
-  const value = { blob: file, name: file.name, type: file.type, updatedAt: Date.now() };
+  const entry = state.manifest.entries.find((item) => item.slotId === slotId);
+  const value = { blob: file, name: file.name, type: file.type, semanticKey: entry?.semanticKey || "", updatedAt: Date.now() };
   await putStored("images", keyFor("image", slotId), value);
   state.images[slotId] = value;
   renderSlots();
+  renderQc();
 }
 
 async function removeImage(slotId) {
   await deleteStored("images", keyFor("image", slotId));
   delete state.images[slotId];
   renderSlots();
+  renderQc();
   toast("Image removed. Import a replacement before building.");
 }
 
@@ -198,10 +206,11 @@ async function loadContentState() {
   }));
   await Promise.all(state.plan.map(async (item) => {
     const value = await getStored("assets", keyFor("asset", item.asset_id));
-    if (value) state.assets[item.asset_id] = value;
+    if (value?.semanticKey === assetSemanticKey(item)) state.assets[item.asset_id] = value;
   }));
   renderSlots();
   renderAssets();
+  renderQc();
 }
 
 function applyContent(content) {
@@ -226,8 +235,25 @@ function applyContent(content) {
   $("slotHeading").textContent = `${state.manifest.expectedAssets} generation slots`;
   $("slotHelper").textContent = `Import in manifest order: ${state.manifest.entries.map((entry) => entry.label).join(" → ")}.`;
   $("assetHeading").textContent = `${state.plan.length} final Facebook assets`;
+  renderQc();
   renderManifest();
   loadContentState().catch((error) => toast(error.message, true));
+}
+
+function renderQc() {
+  const qc = runContentQc(state.content);
+  const stale = state.manifest.entries.filter((entry) => entry.regenRequiredReason && state.images[entry.slotId] && state.images[entry.slotId].semanticKey !== entry.semanticKey);
+  const status = qc.failures.length ? "FAIL" : stale.length || qc.warnings.length ? "WARNING" : "PASS";
+  const details = [
+    ...qc.failures.map((item) => `${item.code}: ${item.detail}`),
+    ...qc.warnings.map((item) => `${item.code}: ${item.detail}`),
+    ...stale.map((entry) => `REGEN REQUIRED: ${entry.label} — ${entry.regenRequiredReason}`)
+  ];
+  $("qcSummary").className = `qc-summary qc-${status.toLowerCase()}`;
+  $("qcStatus").textContent = status;
+  $("qcDetails").textContent = details.length ? details.join("\n") : "All deterministic source, ingredient, mapping and purpose checks passed.";
+  $("publishHeading").textContent = status === "FAIL" ? "NOT READY TO POST" : "Ready to publish";
+  $("markPosted").disabled = !state.writable || status === "FAIL";
 }
 
 function renderOptions(records) {
@@ -303,7 +329,7 @@ function gradient(context, y, height, top) {
 }
 
 async function firstImageFor(assetItem) {
-  const slotId = assetItem.generation_inputs[0]?.slot_id;
+  const slotId = assetItem.generation_inputs[0]?.slot_id || assetItem.source_input_ids?.[0];
   if (!slotId || !state.images[slotId]) throw new Error(`Missing image for ${assetItem.title}.`);
   return loadImage(state.images[slotId].blob);
 }
@@ -324,18 +350,29 @@ async function buildInformationAsset(assetItem) {
   const { canvas, context } = canvas2d();
   context.fillStyle = "#f4f3ef";
   context.fillRect(0, 0, 1440, 1800);
-  coverDraw(context, await firstImageFor(assetItem), 0, 0, 1440, 1010);
+  const isIngredients = assetItem.layout_type === "ingredients_compact" || assetItem.asset_type === "INGREDIENTS";
+  const label = assetItem.section_label || (isIngredients ? "食材" : assetItem.title);
+  const heading = assetItem.local_heading || (state.content.schemaVersion < 4 || assetItem.asset_type === "COVER" ? state.content.title : "");
+  const body = String(assetItem.overlay_text || assetItem.purpose).replace(/；/g, "\n").replace(/。$/g, "");
+  context.font = '500 38px "Noto Sans SC", "PingFang SC", sans-serif';
+  const metrics = calculateAdaptivePanel({ label, heading, body, measure: (text) => context.measureText(text).width });
+  coverDraw(context, await firstImageFor(assetItem), 0, 0, 1440, metrics.imageHeight + 70);
   context.fillStyle = "#fff";
-  context.fillRect(70, 920, 1300, 810);
+  context.fillRect(70, metrics.imageHeight, 1300, metrics.panelHeight - 70);
   context.fillStyle = "#f96332";
   context.font = '700 36px Montserrat, "Noto Sans SC", sans-serif';
-  context.fillText(assetItem.title, 130, 1035);
+  context.fillText(label, 130, metrics.imageHeight + 100);
+  let cursorY = metrics.imageHeight + 145;
+  if (heading) {
+    context.fillStyle = "#252422";
+    context.font = '700 58px "Noto Sans SC", "PingFang SC", sans-serif';
+    context.textBaseline = "top";
+    cursorY += drawLines(context, heading, 130, cursorY, 1170, 72, 3) * 72 + 18;
+  }
   context.fillStyle = "#252422";
-  context.font = '700 58px "Noto Sans SC", "PingFang SC", sans-serif';
-  context.fillText(state.content.title, 130, 1125);
   context.font = '500 38px "Noto Sans SC", "PingFang SC", sans-serif';
   context.textBaseline = "top";
-  drawLines(context, String(assetItem.overlay_text || assetItem.purpose).replace(/；/g, "\n").replace(/。$/g, ""), 130, 1195, 1170, 58, 9);
+  drawLines(context, body, 130, cursorY, 1170, 58, 10);
   return canvas;
 }
 
@@ -343,19 +380,15 @@ async function buildMethodGrid(assetItem) {
   const { canvas, context } = canvas2d();
   context.fillStyle = "#f4f3ef";
   context.fillRect(0, 0, 1440, 1800);
-  const columns = assetItem.generation_inputs.length === 1 ? 1 : 2;
-  const rows = Math.ceil(assetItem.generation_inputs.length / columns);
-  const cellWidth = 1440 / columns;
-  const cellHeight = 1800 / rows;
-  const imageHeight = Math.round(cellHeight * 0.65);
-  const captionHeight = cellHeight - imageHeight;
+  const tiles = calculateMethodGrid(assetItem.generation_inputs.length);
   for (let index = 0; index < assetItem.generation_inputs.length; index += 1) {
     const input = assetItem.generation_inputs[index];
-    const col = index % columns;
-    const row = Math.floor(index / columns);
-    const lastRowIsPartial = row === rows - 1 && assetItem.generation_inputs.length % columns !== 0;
-    const x = lastRowIsPartial ? (1440 - cellWidth) / 2 : col * cellWidth;
-    const y = row * cellHeight;
+    const { x, y, width: cellWidth, height: cellHeight } = tiles[index];
+    const [title, ...bodyParts] = String(input.overlay_text || input.label).split(/\n/);
+    context.font = '500 24px "Noto Sans SC", "PingFang SC", sans-serif';
+    const bodyLines = Math.max(1, linesFor(context, bodyParts.join(" "), cellWidth - 155).length);
+    const captionHeight = Math.max(142, Math.min(Math.round(cellHeight * 0.3), 92 + bodyLines * 34));
+    const imageHeight = cellHeight - captionHeight;
     const image = await loadImage(state.images[input.slot_id].blob);
     coverDraw(context, image, x + 8, y + 8, cellWidth - 16, imageHeight - 8);
     context.fillStyle = "#fff";
@@ -369,7 +402,6 @@ async function buildMethodGrid(assetItem) {
     context.textBaseline = "middle";
     context.font = "700 30px Montserrat, sans-serif";
     context.fillText(String(index + 1), x + 61, y + imageHeight + 56);
-    const [title, ...bodyParts] = String(input.overlay_text || input.label).split(/\n/);
     context.textAlign = "left";
     context.textBaseline = "top";
     context.fillStyle = "#252422";
@@ -398,7 +430,7 @@ async function buildDetailAsset(assetItem) {
 }
 
 async function buildAssetCanvas(assetItem) {
-  if (assetItem.layout_type === "method_grid_2x3" && assetItem.generation_inputs.length > 1) return buildMethodGrid(assetItem);
+  if (["method_grid_2x3", "method_grid_adaptive"].includes(assetItem.layout_type) && assetItem.generation_inputs.length > 1) return buildMethodGrid(assetItem);
   if (assetItem.layout_type === "cover_overlay") return buildCoverAsset(assetItem);
   if (assetItem.layout_type === "detail_overlay") return buildDetailAsset(assetItem);
   return buildInformationAsset(assetItem);
@@ -425,6 +457,7 @@ async function buildAssets() {
           width: 1440,
           height: 1800,
           qc_status: "PASS",
+          semanticKey: assetSemanticKey(assetItem),
           updatedAt: Date.now()
         };
         await putStored("assets", keyFor("asset", assetItem.asset_id), value);
@@ -434,6 +467,7 @@ async function buildAssets() {
       }
     }
     renderAssets();
+    renderQc();
     toast(`${state.plan.length} final assets are ready.`);
   } catch (error) {
     renderAssets();

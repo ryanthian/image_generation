@@ -7,9 +7,12 @@ import {
   buildAssetFilename,
   buildGenerationManifest,
   buildSessionPrompt,
+  calculateAdaptivePanel,
+  calculateMethodGrid,
   matchGenerationSlot,
   normalizeContentRecord,
-  validateResolvedContent
+  validateResolvedContent,
+  runContentQc
 } from "../src/content-model.mjs";
 
 const legacyData = JSON.parse(await readFile(new URL("../data/recipes.json", import.meta.url), "utf8"));
@@ -220,4 +223,68 @@ test("Sheet records resolve 3 through 7 assets while legacy Recipe remains compa
 
 test("longform belief template encodes non-scientific framing", () => {
   assert.match(TEMPLATE_REGISTRY.LONGFORM_GUIDE.visual_consistency_rules.join(" "), /tradition|custom|personal sharing/i);
+});
+
+test("adaptive information panels shrink for short copy and grow for long copy", () => {
+  const short = calculateAdaptivePanel({ label: "食材", body: "鸡腿｜姜｜蒜｜酱油｜白饭" });
+  const long = calculateAdaptivePanel({ label: "食材", heading: "准备这些", body: Array(18).fill("长内容").join("\n") });
+  assert.ok(short.panelHeight < long.panelHeight);
+  assert.ok(short.imageHeight > long.imageHeight);
+  assert.equal(short.panelHeight + short.imageHeight, 1800);
+  assert.ok(short.imageHeight / 1800 >= 0.65);
+});
+
+test("adaptive Method grids balance 4, 5, 6 and 7 steps without an orphan", () => {
+  assert.deepEqual(calculateMethodGrid(4).map((tile) => tile.fullWidth), [false, false, false, false]);
+  const five = calculateMethodGrid(5);
+  assert.equal(five[4].fullWidth, true);
+  assert.equal(five[4].width, 1440);
+  assert.equal(five[4].x, 0);
+  assert.ok(calculateMethodGrid(6).every((tile) => !tile.fullWidth));
+  assert.equal(calculateMethodGrid(7)[6].fullWidth, true);
+});
+
+test("content QC reports source coverage, ingredient fidelity and redundant purposes", () => {
+  const content = normalizeContentRecord({
+    Schema_Version: 4, Content_ID: "QC-1", Title: "Recipe", Topic: "RECIPE", Content_Type: "RECIPE", Template_Type: "RECIPE_STANDARD",
+    Asset_Plan_JSON: JSON.stringify({
+      coverage_points: [{ id: "A", text: "Point A" }, { id: "B", text: "Point B" }],
+      source_ingredients: ["排骨", "淀粉"],
+      assets: [
+        { asset_type: "COVER", title: "Cover", purpose: "Cover", layout_type: "cover_overlay", coverage_point_ids: ["A"] },
+        { asset_type: "INGREDIENTS", title: "食材", purpose: "Ingredients", layout_type: "ingredients_compact", ingredient_items: ["排骨", "姜"] },
+        { asset_type: "METHOD", title: "做法", purpose: "Method", layout_type: "method_grid_adaptive", generation_inputs: [1, 2].map((n) => ({ slot_id: `m${n}`, method_step_id: `M${n}`, overlay_text: `步骤${n}` })) },
+        { asset_type: "CLOSEUP", title: "Closeup", purpose: "Closeup", layout_type: "detail_overlay" }
+      ]
+    })
+  });
+  const qc = runContentQc(content);
+  assert.equal(qc.status, "FAIL");
+  assert.ok(qc.failures.some((item) => item.code === "UNCOVERED_SOURCE_POINT" && item.detail === "Point B"));
+  assert.ok(qc.failures.some((item) => item.code === "MISSING_REQUIRED_INGREDIENT" && item.detail === "淀粉"));
+  assert.ok(qc.failures.some((item) => item.code === "UNSUPPORTED_INGREDIENT" && item.detail === "姜"));
+});
+
+test("complete source coverage and exact ingredients pass deterministic QC", () => {
+  const content = normalizeContentRecord({
+    Schema_Version: 4, Content_ID: "QC-2", Title: "Recipe", Topic: "RECIPE", Content_Type: "RECIPE", Template_Type: "RECIPE_STANDARD",
+    Asset_Plan_JSON: JSON.stringify({ coverage_points: [{ id: "A", text: "A" }], source_ingredients: ["排骨", "淀粉"], assets: [
+      { asset_type: "COVER", title: "Cover", purpose: "Cover", layout_type: "cover_overlay", coverage_point_ids: ["A"] },
+      { asset_type: "INGREDIENTS", title: "食材", purpose: "Ingredients", layout_type: "ingredients_compact", ingredient_items: ["排骨", "淀粉"] },
+      { asset_type: "METHOD", title: "做法", purpose: "Method", layout_type: "method_grid_adaptive", generation_inputs: [1, 2].map((n) => ({ slot_id: `m${n}`, method_step_id: `M${n}` })) },
+      { asset_type: "CLOSEUP", title: "Closeup", purpose: "Closeup", layout_type: "detail_overlay" }
+    ] })
+  });
+  assert.equal(runContentQc(content).status, "PASS");
+});
+
+test("duplicate or reordered Method step mappings are rejected", () => {
+  const base = { Schema_Version: 4, Content_ID: "QC-METHOD", Title: "Recipe", Topic: "RECIPE", Content_Type: "RECIPE", Template_Type: "RECIPE_STANDARD" };
+  const assets = (ids) => [
+    { asset_type: "COVER", title: "Cover", layout_type: "cover_overlay" },
+    { asset_type: "METHOD", title: "Method", layout_type: "method_grid_adaptive", generation_inputs: ids.map((id, index) => ({ slot_id: `slot-${index}`, method_step_id: id })) },
+    { asset_type: "CLOSEUP", title: "Closeup", layout_type: "detail_overlay" }
+  ];
+  assert.throws(() => normalizeContentRecord({ ...base, assets: assets(["M1", "M1"]) }), /Duplicate Method step mapping/);
+  assert.throws(() => normalizeContentRecord({ ...base, assets: assets(["M1", "M3"]) }), /Missing or reordered Method step mapping/);
 });

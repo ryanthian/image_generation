@@ -67,6 +67,16 @@ code { color: var(--primary); font-weight: 700; font-size: .86rem; }
 .badge { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 10px; border-radius: 12px; background: rgba(81,188,218,.13); color: #2987a0; font-size: .72rem; font-weight: 700; }
 .badge-status { background: rgba(251,198,88,.2); color: #a9770d; }
 .badge-status.posted { background: rgba(107,208,152,.18); color: #2f8e5a; }
+.qc-summary { margin: 18px 0; padding: 14px 16px; display: grid; grid-template-columns: 155px 1fr; gap: 18px; border-radius: 8px; border-left: 4px solid var(--success); background: rgba(107,208,152,.09); }
+.qc-summary > div { display: grid; gap: 3px; align-content: start; }
+.qc-summary strong { font-size: .9rem; color: #2f8e5a; }
+.qc-summary pre { margin: 0; white-space: pre-wrap; font: .78rem/1.55 inherit; color: #4d4b47; }
+.qc-summary.qc-warning { border-left-color: var(--warning); background: rgba(251,198,88,.1); }
+.qc-summary.qc-warning strong { color: #a9770d; }
+.qc-summary.qc-fail { border-left-color: var(--danger); background: rgba(239,129,121,.1); }
+.qc-summary.qc-fail strong { color: #b4463e; }
+.slot.stale { border-color: var(--warning); background: rgba(251,198,88,.08); }
+.slot.stale .slot-state { color: #a9770d; font-weight: 700; }
 .completion-ring { width: 94px; height: 94px; flex: 0 0 94px; display: grid; place-content: center; text-align: center; border-radius: 50%; background: conic-gradient(var(--primary) var(--progress, 0%), #efefef 0); position: relative; }
 .completion-ring::before { content: ""; position: absolute; inset: 7px; background: #fff; border-radius: inherit; }
 .completion-ring strong, .completion-ring span { position: relative; }

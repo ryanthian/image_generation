@@ -82,6 +82,10 @@
             <div><span>Hook Type</span><strong id="hookType">—</strong></div>
             <div class="hook-meta"><span>Resolved Hook</span><strong id="hookText">—</strong></div>
           </div>
+          <div class="qc-summary qc-pass" id="qcSummary" aria-live="polite">
+            <div><span class="eyebrow">CONTENT ASSET QC</span><strong id="qcStatus">PASS</strong></div>
+            <pre id="qcDetails">Checking current plan…</pre>
+          </div>
           <div class="action-grid">
             <button id="copyPrompt" class="btn btn-primary" type="button"><span>01</span>Copy ChatGPT Image Prompt</button>
             <button id="importAll" class="btn btn-info" type="button"><span>02</span>Import Generated Images</button>
@@ -118,7 +122,7 @@
         <section class="card publish-card" id="publish">
           <div>
             <p class="eyebrow">FACEBOOK CAPTION</p>
-            <h2>Ready to publish</h2>
+            <h2 id="publishHeading">Ready to publish</h2>
             <pre id="captionPreview"></pre>
           </div>
           <div class="publish-actions">
