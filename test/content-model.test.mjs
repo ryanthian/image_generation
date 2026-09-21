@@ -74,6 +74,71 @@ test("generation manifest drives filename matching and V4 export order", () => {
   assert.equal(buildAssetFilename(content, content.resolvedAssetPlan[5]), "V4-SG-001_06_CLOSEUP.png");
 });
 
+test("V4 generation inputs remain independent from final assets", () => {
+  const content = normalizeContentRecord({
+    Schema_Version: 4,
+    Content_ID: "GS-V4-N-TO-M",
+    Title: "N to M",
+    Topic: "RECIPE",
+    Content_Type: "RECIPE",
+    Template_Type: "RECIPE_STANDARD",
+    assets: [
+      { asset_type: "COVER", asset_id: "cover", title: "Cover", layout_type: "cover_overlay", generation_inputs: [{ slot_id: "cover", label: "Cover", image_prompt: "cover" }] },
+      { asset_type: "METHOD", asset_id: "method", title: "Method", layout_type: "method_grid_2x3", generation_inputs: [1, 2, 3, 4, 5].map((step) => ({ slot_id: `m${step}`, label: `M${step}`, image_prompt: `step ${step}`, overlay_text: `步骤 ${step}` })) },
+      { asset_type: "CLOSEUP", asset_id: "closeup", title: "Closeup", layout_type: "detail_overlay", generation_inputs: [{ slot_id: "closeup", label: "Closeup", image_prompt: "closeup" }] }
+    ]
+  });
+  const manifest = buildGenerationManifest(content);
+  assert.equal(manifest.expectedAssets, 7);
+  assert.equal(content.resolvedAssetPlan.length, 3);
+  assert.deepEqual(content.resolvedAssetPlan[1].generation_inputs.map((input) => input.slot_id), ["m1", "m2", "m3", "m4", "m5"]);
+  assert.match(buildSessionPrompt(content), /GENERATION MANIFEST — 7 IMAGES/);
+});
+
+test("generation manifest rejects duplicate stable input IDs", () => {
+  const content = normalizeContentRecord({
+    Schema_Version: 4,
+    Content_ID: "GS-V4-DUPLICATE",
+    Title: "Duplicate",
+    Topic: "RECIPE",
+    Content_Type: "RECIPE",
+    Template_Type: "RECIPE_STANDARD",
+    assets: [
+      { asset_type: "COVER", title: "Cover", layout_type: "cover_overlay", generation_inputs: [{ slot_id: "same", image_prompt: "cover" }] },
+      { asset_type: "METHOD", title: "Method", layout_type: "information_card", generation_inputs: [{ slot_id: "same", image_prompt: "method" }] },
+      { asset_type: "CLOSEUP", title: "Closeup", layout_type: "detail_overlay", generation_inputs: [{ slot_id: "closeup", image_prompt: "closeup" }] }
+    ]
+  });
+  assert.throws(() => buildGenerationManifest(content), /Duplicate generation input ID: same/);
+});
+
+test("generic generation-to-final mappings remain data-defined", () => {
+  for (const [generationCount, finalCount] of [[4, 4], [5, 3], [6, 4], [7, 5], [9, 4]]) {
+    const finalTypes = ["COVER", "METHOD", "CLOSEUP", "INGREDIENTS", "TIP"].slice(0, finalCount);
+    const extraInputs = generationCount - finalCount;
+    const content = normalizeContentRecord({
+      Schema_Version: 4,
+      Content_ID: `MAP-${generationCount}-${finalCount}`,
+      Title: "Mapping",
+      Topic: "RECIPE",
+      Content_Type: "RECIPE",
+      Template_Type: "RECIPE_STANDARD",
+      assets: finalTypes.map((assetType, index) => ({
+        asset_type: assetType,
+        title: assetType,
+        layout_type: assetType === "METHOD" ? "method_grid_2x3" : "information_card",
+        generation_inputs: Array.from({ length: index === 1 ? extraInputs + 1 : 1 }, (_, inputIndex) => ({
+          slot_id: `${index}-${inputIndex}`,
+          label: `${assetType} ${inputIndex + 1}`,
+          image_prompt: `${assetType} ${inputIndex + 1}`
+        }))
+      }))
+    });
+    assert.equal(buildGenerationManifest(content).expectedAssets, generationCount);
+    assert.equal(content.resolvedAssetPlan.length, finalCount);
+  }
+});
+
 test("unsupported price and percentage claims are downgraded", () => {
   const price = normalizeContentRecord(canaryData.records.find((item) => item.Content_ID === "V4-KH-002"));
   assert.equal(price.priceClaim.verified, false);

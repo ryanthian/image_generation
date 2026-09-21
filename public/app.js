@@ -81,7 +81,7 @@ function imageUrl(value) {
 }
 
 function renderManifest() {
-  $("manifestCount").textContent = `${state.manifest.expectedAssets} generated image${state.manifest.expectedAssets === 1 ? "" : "s"} → ${state.plan.length} final asset${state.plan.length === 1 ? "" : "s"}`;
+  $("manifestCount").textContent = `Generation Images: ${state.manifest.expectedAssets} · Final Assets: ${state.plan.length}`;
   $("manifestList").innerHTML = state.manifest.entries.map((entry) =>
     `<li><b>${String(entry.sequence).padStart(2, "0")}</b><span>${escapeHtml(entry.label)}</span><small>${escapeHtml(entry.assetType)}</small></li>`
   ).join("");
@@ -343,34 +343,41 @@ async function buildMethodGrid(assetItem) {
   const { canvas, context } = canvas2d();
   context.fillStyle = "#f4f3ef";
   context.fillRect(0, 0, 1440, 1800);
+  const columns = assetItem.generation_inputs.length === 1 ? 1 : 2;
+  const rows = Math.ceil(assetItem.generation_inputs.length / columns);
+  const cellWidth = 1440 / columns;
+  const cellHeight = 1800 / rows;
+  const imageHeight = Math.round(cellHeight * 0.65);
+  const captionHeight = cellHeight - imageHeight;
   for (let index = 0; index < assetItem.generation_inputs.length; index += 1) {
     const input = assetItem.generation_inputs[index];
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const x = col * 720;
-    const y = row * 600;
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const lastRowIsPartial = row === rows - 1 && assetItem.generation_inputs.length % columns !== 0;
+    const x = lastRowIsPartial ? (1440 - cellWidth) / 2 : col * cellWidth;
+    const y = row * cellHeight;
     const image = await loadImage(state.images[input.slot_id].blob);
-    coverDraw(context, image, x + 8, y + 8, 704, 390);
+    coverDraw(context, image, x + 8, y + 8, cellWidth - 16, imageHeight - 8);
     context.fillStyle = "#fff";
-    context.fillRect(x + 8, y + 398, 704, 194);
+    context.fillRect(x + 8, y + imageHeight, cellWidth - 16, captionHeight - 8);
     context.fillStyle = "#f96332";
     context.beginPath();
-    context.arc(x + 61, y + 453, 34, 0, Math.PI * 2);
+    context.arc(x + 61, y + imageHeight + 55, 34, 0, Math.PI * 2);
     context.fill();
     context.fillStyle = "#fff";
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.font = "700 30px Montserrat, sans-serif";
-    context.fillText(String(index + 1), x + 61, y + 454);
+    context.fillText(String(index + 1), x + 61, y + imageHeight + 56);
     const [title, ...bodyParts] = String(input.overlay_text || input.label).split(/\n/);
     context.textAlign = "left";
     context.textBaseline = "top";
     context.fillStyle = "#252422";
     context.font = '700 31px "Noto Sans SC", "PingFang SC", sans-serif';
-    context.fillText(title, x + 111, y + 422);
+    context.fillText(title, x + 111, y + imageHeight + 24);
     context.fillStyle = "#66615b";
     context.font = '500 24px "Noto Sans SC", "PingFang SC", sans-serif';
-    drawLines(context, bodyParts.join(" "), x + 111, y + 469, 565, 34, 3);
+    drawLines(context, bodyParts.join(" "), x + 111, y + imageHeight + 71, cellWidth - 155, 34, Math.max(2, Math.floor((captionHeight - 80) / 34)));
   }
   return canvas;
 }
@@ -391,7 +398,7 @@ async function buildDetailAsset(assetItem) {
 }
 
 async function buildAssetCanvas(assetItem) {
-  if (assetItem.layout_type === "method_grid_2x3" && assetItem.generation_inputs.length === 6) return buildMethodGrid(assetItem);
+  if (assetItem.layout_type === "method_grid_2x3" && assetItem.generation_inputs.length > 1) return buildMethodGrid(assetItem);
   if (assetItem.layout_type === "cover_overlay") return buildCoverAsset(assetItem);
   if (assetItem.layout_type === "detail_overlay") return buildDetailAsset(assetItem);
   return buildInformationAsset(assetItem);

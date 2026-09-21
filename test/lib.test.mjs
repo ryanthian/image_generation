@@ -17,8 +17,10 @@ test("snapshot contains exact acceptance recipe and full schema", () => {
 
 test("session prompt is one ordered controller with all nine stages", () => {
   const prompt = buildSessionPrompt(first);
-  assert.match(prompt, /Commands: N = generate the next asset; R = regenerate/);
+  assert.match(prompt, /Commands: N = generate the next image; R = regenerate the current image only/);
   assert.match(prompt, /exactly ONE image per response/);
+  assert.match(prompt, /GENERATION MANIFEST — 9 IMAGES/);
+  assert.match(prompt, /After the final generation input, N must not create another stage/);
   assert.match(prompt, /01 Cover → 02 Ingredients → 03 M1 → 04 M2 → 05 M3 → 06 M4 → 07 M5 → 08 M6 → 09 Closeup/);
   assert.equal((prompt.match(/\d\d M[1-6] \[METHOD\]/g) || []).length, 6);
   assert.ok(prompt.indexOf("01 Cover") < prompt.indexOf("02 Ingredients"));
@@ -41,4 +43,14 @@ test("Final Cover renders the Chinese title without internal recipe identifiers"
   assert.doesNotMatch(coverSource, /Content_ID|recipe_id|content_id|row.?id|database.?id/i);
   assert.match(appSource, /filename: buildAssetFilename\(state\.content, assetItem\)/);
   assert.match(appSource, /canvas\.width = 1440;\s*canvas\.height = 1800;/);
+});
+
+test("dynamic method composition uses stable source IDs and downloads final assets only", () => {
+  const methodSource = appSource.match(/async function buildMethodGrid\(assetItem\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(methodSource, "buildMethodGrid should exist");
+  assert.match(methodSource, /state\.images\[input\.slot_id\]/);
+  assert.match(methodSource, /assetItem\.generation_inputs\.length/);
+  assert.match(appSource, /layout_type === "method_grid_2x3" && assetItem\.generation_inputs\.length > 1/);
+  assert.match(appSource, /state\.plan\.forEach\(\(item, index\)/);
+  assert.doesNotMatch(appSource, /state\.manifest\.entries\.forEach\(\(item, index\).*downloadBlob/s);
 });

@@ -278,8 +278,11 @@ export function normalizeContentRecord(record) {
 
 export function buildGenerationManifest(content) {
   const entries = [];
+  const slotIds = new Set();
   for (const assetItem of content.resolvedAssetPlan) {
     for (const input of assetItem.generation_inputs) {
+      if (slotIds.has(input.slot_id)) throw new Error(`Duplicate generation input ID: ${input.slot_id}`);
+      slotIds.add(input.slot_id);
       entries.push({
         sequence: entries.length + 1,
         slotId: input.slot_id,
@@ -302,12 +305,12 @@ export function buildSessionPrompt(content) {
   return [
     `CHATGPT IMAGE SESSION — ${content.contentId} — ${content.title}`,
     `Content Type: ${content.contentType}\nTemplate: ${content.templateType}\nVisual Profile: ${content.visualProfile}\nHook Type: ${content.hookType}`,
-    `Commands: N = generate the next asset; R = regenerate the current asset; FIX: ... = correct only the current asset. Start at ${manifest.entries[0]?.label || "the first asset"}. Never advance unless I send N.`,
-    "Generate exactly ONE image per response. Do not skip assets. Do not render text, letters, numbers, logos or watermarks inside photographs; controlled typography is added later by the Production Console.",
+    `Commands: N = generate the next image; R = regenerate the current image only; FIX: ... = correct the current image only. Start at ${manifest.entries[0]?.label || "the first image"}. Never advance after R or FIX. Advance exactly one generation input only when I send N. After the final generation input, N must not create another stage.`,
+    "Generate exactly ONE image per response. Do not skip generation inputs. Do not render text, letters, numbers, logos or watermarks inside photographs; controlled typography is added later by the Production Console.",
     `${sourceLabel}:\n${content.contentBody}`,
     content.consistencyRules.length ? `VISUAL CONSISTENCY:\n${content.consistencyRules.join("\n")}` : "",
     content.qualityRules.length ? `QUALITY CHECK:\n${content.qualityRules.join("\n")}` : "",
-    `GENERATION MANIFEST — ${manifest.expectedAssets} ASSETS\n${stages}`,
+    `GENERATION MANIFEST — ${manifest.expectedAssets} IMAGES\n${stages}`,
     ...manifest.entries.map((entry) => `${String(entry.sequence).padStart(2, "0")} ${entry.label} [${entry.assetType}]\n${entry.imagePrompt}${entry.overlayText ? `\nConsole overlay: ${entry.overlayText}` : ""}`)
   ].filter(Boolean).join("\n\n");
 }
