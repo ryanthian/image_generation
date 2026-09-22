@@ -22,10 +22,10 @@ test("EXP-001 strict generation-ready candidate passes and appends atomically", 
   assert.equal(result.ok, true); assert.equal(result.appended, true); assert.equal(result.manifest.expectedAssets, 6); assert.equal(writes, 1);
 });
 
-test("current EXP-002 DRINK_STANDARD is rejected before append", async () => {
-  const invalid = { ...recipe("GS-V4-EXP-002"), Content_Type: "LOCAL_DRINK_HACK", Template_Type: "DRINK_STANDARD" };
-  let writes = 0; const result = await appendCompiledV4CanaryCandidate(invalid, async () => { writes += 1; });
-  assert.equal(result.status, "REJECTED"); assert.match(result.reason, /Unknown Template_Type: DRINK_STANDARD/); assert.match(result.reason, /DRINK \+ RECIPE_STANDARD/); assert.equal(writes, 0);
+test("EXP-002 LOCAL_DRINK_HACK with DRINK_STANDARD passes and appends atomically", async () => {
+  const candidate = { ...recipe("GS-V4-EXP-002"), Content_Type: "LOCAL_DRINK_HACK", Template_Type: "DRINK_STANDARD" };
+  let writes = 0; const result = await appendCompiledV4CanaryCandidate(candidate, async (row) => { writes += 1; assert.equal(row[1], "GS-V4-EXP-002"); });
+  assert.equal(result.ok, true); assert.equal(result.status, "PASS"); assert.equal(result.content.contentType, "LOCAL_DRINK_HACK"); assert.equal(result.content.templateType, "DRINK_STANDARD"); assert.equal(result.manifest.expectedAssets, 6); assert.equal(writes, 1);
 });
 
 test("current EXP-043 HOW_TO_GUIDE is rejected before append", () => {

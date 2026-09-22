@@ -13,13 +13,13 @@ export const V4_CANARY_HEADERS = Object.freeze([
 ]);
 
 const requiredRowFields = ["Content_ID", "Title", "Content_Type", "Template_Type", "Visual_Profile", "Hook_Type", "Hook_Text", "Content_Body", "Asset_Plan_JSON"];
-const recipeAdvice = "Suggested supported contract: DRINK + RECIPE_STANDARD.";
-
 function rejected(record, error) {
   const contentId = String(record?.Content_ID || record?.content_id || "(missing)");
   const templateType = String(record?.Template_Type || record?.template_type || "(missing)");
   const detail = String(error?.message || error);
-  const suggestion = templateType === "DRINK_STANDARD" ? ` ${recipeAdvice}` : "";
+  const suggestion = !TEMPLATE_REGISTRY[templateType] && templateType === "DRINK_STANDARD"
+    ? " Suggested supported contract: DRINK + RECIPE_STANDARD."
+    : "";
   return {
     ok: false,
     status: "REJECTED",
