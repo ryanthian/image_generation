@@ -28,6 +28,20 @@ export const TEMPLATE_REGISTRY = Object.freeze({
       asset("CLOSEUP", "Closeup", "Show final texture and doneness", "detail_overlay")
     ]
   },
+  DRINK_STANDARD: {
+    compatible_content_types: ["DRINK", "LOCAL_DRINK_HACK"],
+    min_assets: 3,
+    recommended_max_assets: 6,
+    allowed_asset_types: ["COVER", "INGREDIENTS", "METHOD", "CLOSEUP", "TIP"],
+    required_asset_types: ["COVER", "METHOD", "CLOSEUP"],
+    visual_consistency_rules: ["Keep the same drink identity, glassware, ingredients, lighting and preparation state across assets"],
+    default_asset_plan: [
+      asset("COVER", "Cover", "Introduce the finished drink", "cover_overlay"),
+      asset("INGREDIENTS", "Ingredients", "Show the exact drink ingredients", "information_card"),
+      asset("METHOD", "Method", "Teach the drink preparation sequence", "method_grid_2x3"),
+      asset("CLOSEUP", "Closeup", "Show the finished drink texture and presentation", "detail_overlay")
+    ]
+  },
   MISTAKE_BEFORE_AFTER: {
     compatible_content_types: ["MISTAKE_FIX"],
     min_assets: 3,
