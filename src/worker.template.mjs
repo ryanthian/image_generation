@@ -1,5 +1,6 @@
 import { handleIntelligenceApi } from "./intelligence-server.mjs";
 import { buildOpportunityCanary, normalizePerformance } from "./opportunity-engine.mjs";
+import { compileV4CanaryCandidate, V4_CANARY_HEADERS } from "./v4-preappend.mjs";
 
 const DATA = __RECIPES_JSON__;
 const CANARY = __CANARY_JSON__;
@@ -51,6 +52,23 @@ async function bridgeRequest(env, action, sheetName, payload = {}) {
 }
 
 async function handleApi(request, env, url) {
+  if (request.method === "POST" && url.pathname === "/api/v4-canary/append") {
+    if (env.V4_APPEND_ENABLED !== "true" || !env.V4_APPEND_GATE_TOKEN || !env.V4_APPEND_API_TOKEN) return json({ ok: false, error: "The V4 append gate is not enabled." }, 503);
+    if (request.headers.get("x-v4-append-api-token") !== env.V4_APPEND_API_TOKEN) return json({ ok: false, error: "V4 append authorization failed." }, 401);
+    const body = await request.json().catch(() => ({}));
+    const compiled = compileV4CanaryCandidate(body.record);
+    if (!compiled.ok) return json(compiled, 422);
+    try {
+      const result = await bridgeRequest(env, "appendV4Candidate", "V4_CANARY", {
+        gateToken: env.V4_APPEND_GATE_TOKEN,
+        headers: V4_CANARY_HEADERS,
+        row: V4_CANARY_HEADERS.map((header) => compiled.record[header] ?? "")
+      });
+      return json({ ok: true, status: "APPENDED", contentId: compiled.content.contentId, rowNumber: result.rowNumber });
+    } catch (error) {
+      return json({ ok: false, error: error.message }, 502);
+    }
+  }
   if (request.method === "GET" && url.pathname === "/api/opportunities/canary") {
     const historical = V42_HISTORY.records.map(normalizePerformance);
     return json({ ok: true, engine: "v4.2-explainable-opportunity-engine", historical, opportunities: buildOpportunityCanary(historical) });

@@ -29,6 +29,8 @@ await writeFile("dist/server/index.js", output);
 await copyFile("src/intelligence-core.mjs", "dist/server/intelligence-core.mjs");
 await copyFile("src/intelligence-server.mjs", "dist/server/intelligence-server.mjs");
 await copyFile("src/opportunity-engine.mjs", "dist/server/opportunity-engine.mjs");
+await copyFile("src/content-model.mjs", "dist/server/content-model.mjs");
+await copyFile("src/v4-preappend.mjs", "dist/server/v4-preappend.mjs");
 await copyFile("src/facebook-collection-core.mjs", "dist/server/facebook-collection-core.mjs");
 await copyFile(".openai/hosting.json", "dist/.openai/hosting.json");
 await Promise.all([
