@@ -30,16 +30,16 @@ export const TEMPLATE_REGISTRY = Object.freeze({
   },
   DRINK_STANDARD: {
     compatible_content_types: ["DRINK", "LOCAL_DRINK_HACK"],
-    min_assets: 3,
+    min_assets: 4,
     recommended_max_assets: 6,
-    allowed_asset_types: ["COVER", "INGREDIENTS", "METHOD", "CLOSEUP", "TIP"],
-    required_asset_types: ["COVER", "METHOD", "CLOSEUP"],
+    allowed_asset_types: ["COVER", "INGREDIENTS", "MIX", "FINAL", "TIP", "DETAIL"],
+    required_asset_types: ["COVER", "INGREDIENTS", "MIX", "FINAL"],
     visual_consistency_rules: ["Keep the same drink identity, glassware, ingredients, lighting and preparation state across assets"],
     default_asset_plan: [
       asset("COVER", "Cover", "Introduce the finished drink", "cover_overlay"),
       asset("INGREDIENTS", "Ingredients", "Show the exact drink ingredients", "information_card"),
-      asset("METHOD", "Method", "Teach the drink preparation sequence", "method_grid_2x3"),
-      asset("CLOSEUP", "Closeup", "Show the finished drink texture and presentation", "detail_overlay")
+      asset("MIX", "Mix", "Show the drink preparation action", "information_card"),
+      asset("FINAL", "Final", "Show the completed drink and payoff", "detail_overlay")
     ]
   },
   MISTAKE_BEFORE_AFTER: {
@@ -387,8 +387,11 @@ export function runContentQc(content) {
   const warnings = [];
   const plan = content.resolvedAssetPlan || [];
   const covered = new Set(plan.flatMap((item) => Array.isArray(item.coverage_point_ids) ? item.coverage_point_ids : []));
+  const hasRequiredDrinkStandardAssets = content.templateType === "DRINK_STANDARD"
+    && TEMPLATE_REGISTRY.DRINK_STANDARD.required_asset_types.every((assetType) => plan.some((item) => item.asset_type === assetType));
   for (const point of content.coveragePoints || []) {
-    if (point.required !== false && !covered.has(point.id)) failures.push({ code: "UNCOVERED_SOURCE_POINT", detail: point.text || point.id });
+    const coreDrinkCoverage = point.id === "CORE" && hasRequiredDrinkStandardAssets;
+    if (point.required !== false && !covered.has(point.id) && !coreDrinkCoverage) failures.push({ code: "UNCOVERED_SOURCE_POINT", detail: point.text || point.id });
   }
   const ingredientsAsset = plan.find((item) => item.asset_type === "INGREDIENTS");
   if (ingredientsAsset && (content.sourceIngredients || []).length) {
@@ -417,6 +420,26 @@ export function runContentQc(content) {
 export function normalizeContentRecord(record) {
   const schema = Number(record.Schema_Version || record.schema_version || 0);
   return schema >= 4 || record.Content_Type || record.content_type ? adaptV4Record(record) : adaptLegacyRecipe(record);
+}
+
+export function identifyContentRecord(record, index = 0) {
+  return String(record?.Content_ID || record?.content_id || record?.Title || record?.title || `row ${index + 1}`);
+}
+
+export function normalizeContentRecordsSafely(rawRecords = []) {
+  const records = [];
+  const rejected = [];
+  rawRecords.forEach((record, index) => {
+    try {
+      records.push(normalizeContentRecord(record));
+    } catch (error) {
+      rejected.push({
+        contentId: identifyContentRecord(record, index),
+        message: error.message
+      });
+    }
+  });
+  return { records, rejected };
 }
 
 export function buildGenerationManifest(content) {

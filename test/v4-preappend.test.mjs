@@ -16,6 +16,17 @@ function recipe(id = "GS-V4-EXP-001") {
   return { Schema_Version: "4", Content_ID: id, Title: "菠萝酸柑 Asam Boi 气泡饮", Topic: "DRINK", Content_Type: "DRINK", Template_Type: "RECIPE_STANDARD", Visual_Profile: "REALISTIC_KOPITIAM", Hook_Type: "LOCAL_TWIST", Hook_Text: "菠萝很甜？加酸柑和 asam boi，味道马上不一样", Ready_To_Post_Caption: "简单冰饮。", Content_Body: "准备菠萝、酸柑、asam boi、气泡水和冰块，依序组合。", Source_References: "Source note", Affiliate_Fit: "MEDIUM", Monetization_Angle: "", Status: "CONTENT_READY", Asset_Plan_JSON: JSON.stringify({ coverage_points: [{ id: "combine", text: "组合所有列出的材料", required: true }], source_ingredients: ["菠萝", "酸柑", "asam boi", "气泡水", "冰块"], assets }) };
 }
 
+function drinkStandard(id = "GS-V4-EXP-002") {
+  const title = "荔枝酸柑话梅冰饮";
+  const assets = [
+    { sequence: 1, asset_id: "01-cover", asset_type: "COVER", title: "Cover", purpose: "Introduce the finished drink", layout_type: "cover_overlay", overlay_text: title, image_prompt: "Photorealistic finished lychee calamansi sour plum iced drink in a Malaysian kopitiam setting, no text, no logo.", required: true },
+    { sequence: 2, asset_id: "02-ingredients", asset_type: "INGREDIENTS", title: "Ingredients", purpose: "Show the exact drink ingredients", layout_type: "information_card", overlay_text: "荔枝｜酸柑｜话梅｜冰块｜气泡水", image_prompt: "Only lychee, calamansi, sour plum, ice and sparkling water arranged as drink ingredients, no extra garnish, no text.", required: true },
+    { sequence: 3, asset_id: "03-mix", asset_type: "MIX", title: "Mix", purpose: "Show the drink preparation action", layout_type: "information_card", overlay_text: "酸柑和话梅先入杯，再加荔枝和冰", image_prompt: "Hands preparing the drink by adding calamansi and sour plum into a glass with lychee and ice, realistic kopitiam counter, no text.", required: true },
+    { sequence: 4, asset_id: "04-final", asset_type: "FINAL", title: "Final", purpose: "Show the completed drink", layout_type: "information_card", overlay_text: "酸甜清爽，话梅味刚好", image_prompt: "Completed lychee calamansi sour plum iced sparkling drink, consistent glass and ingredients, realistic photography, no text.", required: true }
+  ];
+  return { Schema_Version: "4", Content_ID: id, Title: title, Topic: "DRINK", Content_Type: "LOCAL_DRINK_HACK", Template_Type: "DRINK_STANDARD", Visual_Profile: "REALISTIC_KOPITIAM", Hook_Type: "LOCAL_TWIST", Hook_Text: "荔枝太甜？加酸柑和话梅，味道更有层次", Ready_To_Post_Caption: "荔枝、酸柑和话梅放在一起，甜酸味会更有层次。", Content_Body: "准备荔枝、酸柑、话梅、冰块和气泡水，先把酸柑和话梅放进杯里，再加入荔枝、冰块和气泡水。", Source_References: "Staging row", Affiliate_Fit: "MEDIUM", Monetization_Angle: "", Status: "CONTENT_READY", Asset_Plan_JSON: JSON.stringify({ coverage_points: [{ id: "CORE", text: title, required: true }], assets }) };
+}
+
 test("EXP-001 strict generation-ready candidate passes and appends atomically", async () => {
   let writes = 0;
   const result = await appendCompiledV4CanaryCandidate(recipe(), async (row) => { writes += 1; assert.equal(row[1], "GS-V4-EXP-001"); });
@@ -23,9 +34,9 @@ test("EXP-001 strict generation-ready candidate passes and appends atomically", 
 });
 
 test("EXP-002 LOCAL_DRINK_HACK with DRINK_STANDARD passes and appends atomically", async () => {
-  const candidate = { ...recipe("GS-V4-EXP-002"), Content_Type: "LOCAL_DRINK_HACK", Template_Type: "DRINK_STANDARD" };
+  const candidate = drinkStandard("GS-V4-EXP-002");
   let writes = 0; const result = await appendCompiledV4CanaryCandidate(candidate, async (row) => { writes += 1; assert.equal(row[1], "GS-V4-EXP-002"); });
-  assert.equal(result.ok, true); assert.equal(result.status, "PASS"); assert.equal(result.content.contentType, "LOCAL_DRINK_HACK"); assert.equal(result.content.templateType, "DRINK_STANDARD"); assert.equal(result.manifest.expectedAssets, 6); assert.equal(writes, 1);
+  assert.equal(result.ok, true); assert.equal(result.status, "PASS"); assert.equal(result.content.contentType, "LOCAL_DRINK_HACK"); assert.equal(result.content.templateType, "DRINK_STANDARD"); assert.deepEqual(result.content.resolvedAssetPlan.map((asset) => asset.asset_type), ["COVER", "INGREDIENTS", "MIX", "FINAL"]); assert.equal(result.manifest.expectedAssets, 4); assert.equal(writes, 1);
 });
 
 test("current EXP-043 HOW_TO_GUIDE is rejected before append", () => {

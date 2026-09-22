@@ -6,6 +6,7 @@ import {
   calculateMethodGrid,
   matchGenerationSlot,
   normalizeContentRecord,
+  normalizeContentRecordsSafely,
   runContentQc
 } from "/content-model.js";
 
@@ -33,6 +34,13 @@ function toast(message, error) {
   node.className = `toast show${error ? " error" : ""}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { node.className = "toast"; }, 3600);
+}
+
+function reportRejectedRecords(rejected) {
+  if (!rejected.length) return;
+  console.warn("Skipped invalid content records", rejected);
+  const sample = rejected.slice(0, 3).map((item) => item.contentId).join(", ");
+  toast(`${rejected.length} record${rejected.length === 1 ? "" : "s"} skipped due to validation error: ${sample}`, true);
 }
 
 function openDb() {
@@ -551,7 +559,9 @@ async function loadSource(sourceName) {
       const approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]");
       const rawRecords = approved.map((item) => item.production_draft).filter(Boolean);
       if (!rawRecords.length) throw new Error("No V4.2 opportunities have been approved for production yet.");
-      state.records = rawRecords.map(normalizeContentRecord);
+      const normalized = normalizeContentRecordsSafely(rawRecords);
+      state.records = normalized.records;
+      if (!state.records.length) throw new Error(`No valid approved V4.2 drafts loaded. First rejected: ${normalized.rejected[0]?.contentId || "unknown"} — ${normalized.rejected[0]?.message || "validation error"}`);
       state.writable = false;
       state.source = "approved-opportunities";
       state.sourceName = APPROVED_OPPORTUNITIES_SOURCE;
@@ -564,6 +574,7 @@ async function loadSource(sourceName) {
       $("writeHint").textContent = "Approved opportunity handoff. Review and produce through the existing V4.1 workflow; nothing is published automatically.";
       renderOptions(state.records);
       applyContent(state.records[0]);
+      reportRejectedRecords(normalized.rejected);
       return;
     }
     const query = sourceName ? `?${new URLSearchParams({ sheetName: sourceName })}` : "";
@@ -571,7 +582,9 @@ async function loadSource(sourceName) {
     const data = await response.json();
     const rawRecords = data.records || data.recipes;
     if (!response.ok || !data.ok || !Array.isArray(rawRecords)) throw new Error(data.error || "Content data failed to load.");
-    state.records = rawRecords.map(normalizeContentRecord);
+    const normalized = normalizeContentRecordsSafely(rawRecords);
+    state.records = normalized.records;
+    if (!state.records.length) throw new Error(`No valid content records loaded. First rejected: ${normalized.rejected[0]?.contentId || "unknown"} — ${normalized.rejected[0]?.message || "validation error"}`);
     state.writable = Boolean(data.writable);
     state.source = data.source;
     state.sourceName = data.sheetName || data.sourceName;
@@ -587,6 +600,7 @@ async function loadSource(sourceName) {
     const saved = localStorage.getItem(`capc:selectedContent:${state.sourceName}`);
     applyContent(state.records.find((content) => content.contentId === saved) || state.records[0]);
     if (data.warning) toast(data.warning, true);
+    reportRejectedRecords(normalized.rejected);
   } catch (error) {
     $("connection").className = "connection offline";
     $("connection").lastElementChild.textContent = "Content data unavailable";

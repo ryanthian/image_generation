@@ -11,6 +11,7 @@ import {
   calculateMethodGrid,
   matchGenerationSlot,
   normalizeContentRecord,
+  normalizeContentRecordsSafely,
   validateResolvedContent,
   runContentQc
 } from "../src/content-model.mjs";
@@ -276,6 +277,79 @@ test("complete source coverage and exact ingredients pass deterministic QC", () 
     ] })
   });
   assert.equal(runContentQc(content).status, "PASS");
+});
+
+test("DRINK_STANDARD accepts the staging drink contract without recipe assets", () => {
+  const title = "荔枝酸柑话梅冰饮";
+  const content = normalizeContentRecord({
+    Schema_Version: 4,
+    Content_ID: "GS-V4-EXP-002",
+    Title: title,
+    Topic: "DRINK",
+    Content_Type: "LOCAL_DRINK_HACK",
+    Template_Type: "DRINK_STANDARD",
+    Visual_Profile: "REALISTIC_KOPITIAM",
+    Hook_Type: "LOCAL_TWIST",
+    Hook_Text: "荔枝太甜？加酸柑和话梅，味道更有层次",
+    Content_Body: "准备荔枝、酸柑、话梅、冰块和气泡水。",
+    Asset_Plan_JSON: JSON.stringify({
+      coverage_points: [{ id: "CORE", text: title, required: true }],
+      assets: [
+        { asset_id: "01-cover", asset_type: "COVER", title: "Cover", purpose: "Finished drink", layout_type: "cover_overlay", overlay_text: title, image_prompt: "Finished drink", required: true },
+        { asset_id: "02-ingredients", asset_type: "INGREDIENTS", title: "Ingredients", purpose: "Ingredients", layout_type: "information_card", overlay_text: "荔枝｜酸柑｜话梅｜冰块｜气泡水", image_prompt: "Ingredients", required: true },
+        { asset_id: "03-mix", asset_type: "MIX", title: "Mix", purpose: "Mixing action", layout_type: "information_card", overlay_text: "先加酸柑和话梅", image_prompt: "Mixing", required: true },
+        { asset_id: "04-final", asset_type: "FINAL", title: "Final", purpose: "Completed drink", layout_type: "information_card", overlay_text: "完成", image_prompt: "Final", required: true }
+      ]
+    })
+  });
+  assert.deepEqual(content.resolvedAssetPlan.map((asset) => asset.asset_type), ["COVER", "INGREDIENTS", "MIX", "FINAL"]);
+  assert.equal(buildGenerationManifest(content).expectedAssets, 4);
+  assert.equal(runContentQc(content).status, "PASS");
+});
+
+test("safe source normalization skips invalid rows while preserving later valid records", () => {
+  const valid = {
+    Schema_Version: 4,
+    Content_ID: "SAFE-VALID",
+    Title: "Valid",
+    Topic: "KITCHEN",
+    Content_Type: "KITCHEN_HACK",
+    Template_Type: "KITCHEN_TECHNIQUE"
+  };
+  const result = normalizeContentRecordsSafely([
+    valid,
+    { ...valid, Content_ID: "SAFE-BAD-TEMPLATE", Template_Type: "HOW_TO_GUIDE" },
+    { ...valid, Content_ID: "SAFE-AFTER" }
+  ]);
+  assert.deepEqual(result.records.map((record) => record.contentId), ["SAFE-VALID", "SAFE-AFTER"]);
+  assert.deepEqual(result.rejected.map((record) => record.contentId), ["SAFE-BAD-TEMPLATE"]);
+  assert.match(result.rejected[0].message, /Unknown Template_Type/);
+});
+
+test("safe source normalization reports unknown template, incompatible type and malformed JSON independently", () => {
+  const valid = {
+    Schema_Version: 4,
+    Content_ID: "SAFE-VALID",
+    Title: "Valid",
+    Topic: "KITCHEN",
+    Content_Type: "KITCHEN_HACK",
+    Template_Type: "KITCHEN_TECHNIQUE"
+  };
+  const allValid = normalizeContentRecordsSafely([{ ...valid, Content_ID: "SAFE-1" }, { ...valid, Content_ID: "SAFE-2" }]);
+  assert.deepEqual(allValid.records.map((record) => record.contentId), ["SAFE-1", "SAFE-2"]);
+  assert.equal(allValid.rejected.length, 0);
+
+  const result = normalizeContentRecordsSafely([
+    { ...valid, Content_ID: "SAFE-UNKNOWN", Template_Type: "HOW_TO_GUIDE" },
+    { ...valid, Content_ID: "SAFE-INCOMPATIBLE", Content_Type: "RECIPE" },
+    { ...valid, Content_ID: "SAFE-BAD-JSON", Asset_Plan_JSON: "{bad json}" },
+    { ...valid, Content_ID: "SAFE-AFTER" }
+  ]);
+  assert.deepEqual(result.records.map((record) => record.contentId), ["SAFE-AFTER"]);
+  assert.deepEqual(result.rejected.map((record) => record.contentId), ["SAFE-UNKNOWN", "SAFE-INCOMPATIBLE", "SAFE-BAD-JSON"]);
+  assert.match(result.rejected[0].message, /Unknown Template_Type/);
+  assert.match(result.rejected[1].message, /not compatible/);
+  assert.match(result.rejected[2].message, /Invalid Asset Plan JSON/);
 });
 
 test("duplicate or reordered Method step mappings are rejected", () => {
