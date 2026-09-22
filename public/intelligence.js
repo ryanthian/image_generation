@@ -31,13 +31,14 @@
   }
 
   function showRoute() {
-    const route = location.hash === "#intelligence-import" ? "import" : location.hash === "#intelligence-posts" ? "posts" : "production";
+    const route = location.hash === "#intelligence-import" ? "import" : location.hash === "#intelligence-posts" ? "posts" : location.hash === "#opportunities" ? "opportunities" : "production";
     byId("productionView").hidden = route !== "production";
     byId("intelligenceView").hidden = route === "production";
     byId("intelligencePosts").hidden = route !== "posts";
     byId("intelligenceImport").hidden = route !== "import";
-    byId("workspaceEyebrow").textContent = route === "production" ? "PRIVATE PRODUCTION WORKSPACE" : "FACEBOOK DATA FOUNDATION";
-    byId("workspaceTitle").textContent = route === "production" ? "Content AI Production Console" : route === "posts" ? "Content Intelligence · Posts" : "Content Intelligence · Import";
+    byId("intelligenceOpportunities").hidden = route !== "opportunities";
+    byId("workspaceEyebrow").textContent = route === "production" ? "PRIVATE PRODUCTION WORKSPACE" : route === "opportunities" ? "PERFORMANCE-AWARE PLANNING" : "FACEBOOK DATA FOUNDATION";
+    byId("workspaceTitle").textContent = route === "production" ? "Content AI Production Console" : route === "posts" ? "Content Intelligence · Posts" : route === "import" ? "Content Intelligence · Import" : "Content Opportunities";
     document.querySelectorAll(".workflow-nav a").forEach((link) => link.classList.toggle("active", route !== "production" && link.dataset.intelligenceRoute === route));
     if (route === "production") document.querySelector('[data-production-link]')?.classList.add("active");
     if (route === "posts") loadPosts();

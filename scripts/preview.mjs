@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { handleIntelligenceApi, MemoryIntelligenceStore } from "../src/intelligence-server.mjs";
+import { buildOpportunityCanary, normalizePerformance } from "../src/opportunity-engine.mjs";
 
 const port = Number(process.env.PORT || 4173);
 const store = new MemoryIntelligenceStore();
@@ -10,10 +11,12 @@ const files = {
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/content-model.js": ["src/content-model.mjs", "text/javascript; charset=utf-8"],
   "/intelligence.js": ["public/intelligence.js", "text/javascript; charset=utf-8"],
+  "/opportunities.js": ["public/opportunities.js", "text/javascript; charset=utf-8"],
   "/favicon.svg": ["public/favicon.svg", "image/svg+xml"]
 };
 const recipes = JSON.parse(await readFile("data/recipes.json", "utf8"));
 const canary = JSON.parse(await readFile("data/content-v4-canary.json", "utf8"));
+const opportunityHistory = JSON.parse(await readFile("data/v4-2-historical-performance.json", "utf8"));
 const sources = [
   { name: "Local verification snapshot", label: "Local verification snapshot · 20" },
   { name: canary.sourceName, label: canary.label }
@@ -28,6 +31,12 @@ createServer(async (incoming, outgoing) => {
     const response = await handleIntelligenceApi(request, {}, url, store);
     outgoing.writeHead(response.status, Object.fromEntries(response.headers));
     outgoing.end(Buffer.from(await response.arrayBuffer()));
+    return;
+  }
+  if (incoming.method === "GET" && url.pathname === "/api/opportunities/canary") {
+    const historical = opportunityHistory.records.map(normalizePerformance);
+    outgoing.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    outgoing.end(JSON.stringify({ ok: true, engine: "v4.2-explainable-opportunity-engine", historical, opportunities: buildOpportunityCanary(historical) }));
     return;
   }
   if (incoming.method === "GET" && url.pathname === "/api/recipes") {

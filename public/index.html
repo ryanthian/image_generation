@@ -30,6 +30,7 @@
         <nav class="workflow-nav intelligence-nav" aria-label="Content Intelligence">
           <a href="#intelligence-posts" data-intelligence-route="posts"><span>CI</span>Posts</a>
           <a href="#intelligence-import" data-intelligence-route="import"><span>CI</span>Import</a>
+          <a href="#opportunities" data-intelligence-route="opportunities"><span>CI</span>Opportunities</a>
         </nav>
       </div>
     </aside>
@@ -45,6 +46,7 @@
           <a href="#recipe" data-production-link>Production</a>
           <a href="#intelligence-posts" data-intelligence-route="posts">Posts</a>
           <a href="#intelligence-import" data-intelligence-route="import">Import</a>
+          <a href="#opportunities" data-intelligence-route="opportunities">Plan</a>
         </nav>
       </header>
 
@@ -199,6 +201,12 @@
             </div>
           </div>
         </section>
+        <section id="intelligenceOpportunities" class="intelligence-page" hidden>
+          <div class="page-heading"><div><p class="eyebrow">V4.2 · PERFORMANCE-AWARE PLANNING</p><h2>Content Opportunities</h2><p class="helper">Explainable canary suggestions based on supplied historical performance. They are not forecasts and never enter production without your approval.</p></div><span class="badge" id="opportunityCount">Loading…</span></div>
+          <div class="card opportunity-guardrail"><strong>Human approval is mandatory.</strong><span>Approve creates an approved V4-compatible draft only. It does not publish, create a batch, generate images, or add affiliate links.</span></div>
+          <div id="opportunityDetail" class="card opportunity-detail" hidden></div>
+          <div id="opportunityGrid" class="opportunity-grid" aria-live="polite"></div>
+        </section>
       </div>
     </main>
   </div>
@@ -210,5 +218,6 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" type="module"></script>
   <script src="/intelligence.js" defer></script>
+  <script src="/opportunities.js" defer></script>
 </body>
 </html>

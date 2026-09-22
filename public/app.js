@@ -22,6 +22,7 @@ const state = {
   sourceName: "",
   sources: []
 };
+const APPROVED_OPPORTUNITIES_SOURCE = "V4.2 Approved Opportunities";
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value = "") => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 let toastTimer;
@@ -546,6 +547,25 @@ function renderSourceOptions() {
 
 async function loadSource(sourceName) {
   try {
+    if (sourceName === APPROVED_OPPORTUNITIES_SOURCE) {
+      const approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]");
+      const rawRecords = approved.map((item) => item.production_draft).filter(Boolean);
+      if (!rawRecords.length) throw new Error("No V4.2 opportunities have been approved for production yet.");
+      state.records = rawRecords.map(normalizeContentRecord);
+      state.writable = false;
+      state.source = "approved-opportunities";
+      state.sourceName = APPROVED_OPPORTUNITIES_SOURCE;
+      state.sources = [...(state.sources || []), { name: APPROVED_OPPORTUNITIES_SOURCE, label: "V4.2 approved opportunities · local handoff" }].filter((item, index, values) => values.findIndex((candidate) => candidate.name === item.name) === index);
+      localStorage.setItem("capc:selectedSource", state.sourceName);
+      renderSourceOptions();
+      $("connection").className = "connection offline";
+      $("connection").lastElementChild.textContent = `Approved V4.2 drafts · ${state.records.length} record${state.records.length === 1 ? "" : "s"} · read-only`;
+      $("markPosted").disabled = true;
+      $("writeHint").textContent = "Approved opportunity handoff. Review and produce through the existing V4.1 workflow; nothing is published automatically.";
+      renderOptions(state.records);
+      applyContent(state.records[0]);
+      return;
+    }
     const query = sourceName ? `?${new URLSearchParams({ sheetName: sourceName })}` : "";
     const response = await fetch(`/api/recipes${query}`);
     const data = await response.json();
@@ -555,7 +575,7 @@ async function loadSource(sourceName) {
     state.writable = Boolean(data.writable);
     state.source = data.source;
     state.sourceName = data.sheetName || data.sourceName;
-    state.sources = data.sheets || data.sources || [{ name: state.sourceName, label: state.sourceName }];
+    state.sources = [...(data.sheets || data.sources || [{ name: state.sourceName, label: state.sourceName }]), { name: APPROVED_OPPORTUNITIES_SOURCE, label: "V4.2 approved opportunities · local handoff" }];
     localStorage.setItem("capc:selectedSource", state.sourceName);
     renderSourceOptions();
     const connection = $("connection");
@@ -576,6 +596,7 @@ async function loadSource(sourceName) {
 
 async function start() {
   bindEvents();
+  window.addEventListener("capc-approved-opportunity", () => loadSource(APPROVED_OPPORTUNITIES_SOURCE));
   await loadSource(localStorage.getItem("capc:selectedSource") || "");
 }
 

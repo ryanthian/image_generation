@@ -89,6 +89,33 @@ export const TEMPLATE_REGISTRY = Object.freeze({
       asset("FINAL_RESULT", "Final result", "Show the finished improvement", "detail_overlay")
     ]
   },
+  SAVEABLE_GUIDE: {
+    compatible_content_types: ["SELECTION_GUIDE", "REFERENCE_GUIDE", "COMPARISON_GUIDE", "PRODUCT_GUIDE"],
+    min_assets: 3,
+    recommended_max_assets: 6,
+    allowed_asset_types: ["COVER", "GUIDE_POINT", "COMPARE", "CHECKLIST", "SUMMARY"],
+    required_asset_types: ["COVER", "CHECKLIST"],
+    visual_consistency_rules: ["Use realistic photography with concise mobile-readable guidance; do not present cultural beliefs as facts"],
+    default_asset_plan: [
+      asset("COVER", "Cover", "Introduce the practical question", "cover_overlay"),
+      asset("GUIDE_POINT", "Guide point", "Explain a visible decision point", "information_card"),
+      asset("GUIDE_POINT", "Guide point", "Explain another visible decision point", "information_card"),
+      asset("CHECKLIST", "Quick reference", "Provide a saveable recap", "information_card")
+    ]
+  },
+  COLLECTION_GUIDE: {
+    compatible_content_types: ["COLLECTION"],
+    min_assets: 3,
+    recommended_max_assets: 8,
+    allowed_asset_types: ["COVER", "COLLECTION_GROUP", "COLLECTION_ITEM", "SUMMARY", "SAVE_CARD"],
+    required_asset_types: ["COVER", "SUMMARY"],
+    visual_consistency_rules: ["Collection items must be factually distinct and retain a coherent visual hierarchy"],
+    default_asset_plan: [
+      asset("COVER", "Cover", "Introduce the collection", "cover_overlay"),
+      asset("COLLECTION_GROUP", "Collection", "Show a practical group", "information_card"),
+      asset("SUMMARY", "Quick reference", "Summarise the collection", "information_card")
+    ]
+  },
   COLLECTION_GRID: {
     compatible_content_types: ["COLLECTION"],
     min_assets: 3,
