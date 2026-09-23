@@ -11,6 +11,7 @@ import {
   calculateMethodGrid,
   matchGenerationSlot,
   normalizeContentRecord,
+  normalizeContentRecordsSafely,
   validateResolvedContent,
   runContentQc
 } from "../src/content-model.mjs";
@@ -287,4 +288,44 @@ test("duplicate or reordered Method step mappings are rejected", () => {
   ];
   assert.throws(() => normalizeContentRecord({ ...base, assets: assets(["M1", "M1"]) }), /Duplicate Method step mapping/);
   assert.throws(() => normalizeContentRecord({ ...base, assets: assets(["M1", "M3"]) }), /Missing or reordered Method step mapping/);
+});
+
+
+test("DRINK_STANDARD supports staged local drink hack structure", () => {
+  const content = normalizeContentRecord({
+    Schema_Version: 4,
+    Content_ID: "GS-V4-EXP-TEST",
+    Title: "Local drink",
+    Topic: "DRINK",
+    Content_Type: "LOCAL_DRINK_HACK",
+    Template_Type: "DRINK_STANDARD",
+    Asset_Plan_JSON: JSON.stringify({
+      coverage_points: [{ id: "CORE", text: "Local drink", required: true }],
+      assets: [
+        { asset_type: "COVER", asset_id: "01-cover", title: "Cover", purpose: "Primary hook", layout_type: "cover_overlay", image_prompt: "cover", coverage_point_ids: ["CORE"] },
+        { asset_type: "INGREDIENTS", asset_id: "02-ingredients", title: "Ingredients", purpose: "Ingredients", layout_type: "information_card", image_prompt: "ingredients" },
+        { asset_type: "MIX", asset_id: "03-mix", title: "Mix", purpose: "Mix", layout_type: "information_card", image_prompt: "mix" },
+        { asset_type: "FINAL", asset_id: "04-final", title: "Final", purpose: "Final", layout_type: "detail_overlay", image_prompt: "final" }
+      ]
+    })
+  });
+  assert.deepEqual(content.resolvedAssetPlan.map((item) => item.asset_type), ["COVER", "INGREDIENTS", "MIX", "FINAL"]);
+  assert.equal(buildGenerationManifest(content).expectedAssets, 4);
+});
+
+test("safe record normalization isolates invalid rows and keeps later valid rows", () => {
+  const valid = (id) => ({
+    Schema_Version: 4,
+    Content_ID: id,
+    Title: id,
+    Topic: "DRINK",
+    Content_Type: "LOCAL_DRINK_HACK",
+    Template_Type: "DRINK_STANDARD"
+  });
+  const invalid = { ...valid("BAD"), Template_Type: "UNKNOWN_TEMPLATE" };
+  const result = normalizeContentRecordsSafely([valid("GOOD-1"), invalid, valid("GOOD-2")]);
+  assert.deepEqual(result.valid.map((item) => item.contentId), ["GOOD-1", "GOOD-2"]);
+  assert.equal(result.rejected.length, 1);
+  assert.equal(result.rejected[0].contentId, "BAD");
+  assert.match(result.rejected[0].error, /Unknown Template_Type/);
 });
