@@ -6,6 +6,7 @@ import {
   calculateMethodGrid,
   matchGenerationSlot,
   normalizeContentRecord,
+  normalizeContentRecordsSafely,
   runContentQc
 } from "/content-model.js";
 
@@ -551,7 +552,13 @@ async function loadSource(sourceName) {
       const approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]");
       const rawRecords = approved.map((item) => item.production_draft).filter(Boolean);
       if (!rawRecords.length) throw new Error("No V4.2 opportunities have been approved for production yet.");
-      state.records = rawRecords.map(normalizeContentRecord);
+      const normalized = normalizeContentRecordsSafely(rawRecords);
+      state.records = normalized.valid;
+      if (!state.records.length) throw new Error(normalized.rejected[0]?.error || "No valid content records could be loaded.");
+      if (normalized.rejected.length) {
+        console.warn("Skipped invalid content records:", normalized.rejected);
+        toast(`${normalized.rejected.length} record${normalized.rejected.length === 1 ? "" : "s"} skipped due to validation error.`, true);
+      }
       state.writable = false;
       state.source = "approved-opportunities";
       state.sourceName = APPROVED_OPPORTUNITIES_SOURCE;
@@ -571,7 +578,13 @@ async function loadSource(sourceName) {
     const data = await response.json();
     const rawRecords = data.records || data.recipes;
     if (!response.ok || !data.ok || !Array.isArray(rawRecords)) throw new Error(data.error || "Content data failed to load.");
-    state.records = rawRecords.map(normalizeContentRecord);
+    const normalized = normalizeContentRecordsSafely(rawRecords);
+    state.records = normalized.valid;
+    if (!state.records.length) throw new Error(normalized.rejected[0]?.error || "No valid content records could be loaded.");
+    if (normalized.rejected.length) {
+      console.warn("Skipped invalid content records:", normalized.rejected);
+      toast(`${normalized.rejected.length} record${normalized.rejected.length === 1 ? "" : "s"} skipped due to validation error.`, true);
+    }
     state.writable = Boolean(data.writable);
     state.source = data.source;
     state.sourceName = data.sheetName || data.sourceName;
