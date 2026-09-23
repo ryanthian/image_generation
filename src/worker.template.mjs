@@ -34,11 +34,15 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
 });
 
+function appendBridgeQuery(bridge, params) {
+  return `${bridge}${bridge.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`;
+}
+
 async function bridgeRequest(env, action, sheetName, payload = {}) {
   const bridge = env.GOOGLE_SHEETS_BRIDGE_URL;
   if (!bridge) throw new Error("Google Sheets bridge is not configured.");
   const response = action === "list"
-    ? await fetch(`${bridge}?${new URLSearchParams({ action, spreadsheetId: SPREADSHEET_ID, sheetName })}`, { redirect: "follow" })
+    ? await fetch(appendBridgeQuery(bridge, { action, spreadsheetId: SPREADSHEET_ID, sheetName }), { redirect: "follow" })
     : await fetch(bridge, {
         method: "POST",
         redirect: "follow",
