@@ -38,11 +38,20 @@ function appendBridgeQuery(bridge, params) {
   return `${bridge}${bridge.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`;
 }
 
+async function fetchBridgeList(url) {
+  const response = await fetch(url, { redirect: "manual" });
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get("location");
+    if (location) return fetch(location, { redirect: "follow" });
+  }
+  return response;
+}
+
 async function bridgeRequest(env, action, sheetName, payload = {}) {
   const bridge = env.GOOGLE_SHEETS_BRIDGE_URL;
   if (!bridge) throw new Error("Google Sheets bridge is not configured.");
   const response = action === "list"
-    ? await fetch(appendBridgeQuery(bridge, { action, spreadsheetId: SPREADSHEET_ID, sheetName }), { redirect: "follow" })
+    ? await fetchBridgeList(appendBridgeQuery(bridge, { action, spreadsheetId: SPREADSHEET_ID, sheetName }))
     : await fetch(bridge, {
         method: "POST",
         redirect: "follow",
