@@ -30,16 +30,16 @@ export const TEMPLATE_REGISTRY = Object.freeze({
   },
   DRINK_STANDARD: {
     compatible_content_types: ["DRINK", "LOCAL_DRINK_HACK"],
-    min_assets: 3,
+    min_assets: 4,
     recommended_max_assets: 6,
-    allowed_asset_types: ["COVER", "INGREDIENTS", "METHOD", "CLOSEUP", "TIP"],
-    required_asset_types: ["COVER", "METHOD", "CLOSEUP"],
+    allowed_asset_types: ["COVER", "INGREDIENTS", "MIX", "FINAL", "TIP", "DETAIL"],
+    required_asset_types: ["COVER", "INGREDIENTS", "MIX", "FINAL"],
     visual_consistency_rules: ["Keep the same drink identity, glassware, ingredients, lighting and preparation state across assets"],
     default_asset_plan: [
       asset("COVER", "Cover", "Introduce the finished drink", "cover_overlay"),
-      asset("INGREDIENTS", "Ingredients", "Show the exact drink ingredients", "information_card"),
-      asset("METHOD", "Method", "Teach the drink preparation sequence", "method_grid_2x3"),
-      asset("CLOSEUP", "Closeup", "Show the finished drink texture and presentation", "detail_overlay")
+      asset("INGREDIENTS", "Ingredients", "Show the drink ingredients", "information_card"),
+      asset("MIX", "Mix", "Show the drink preparation or mixing action", "information_card"),
+      asset("FINAL", "Final", "Show the completed drink", "detail_overlay")
     ]
   },
   MISTAKE_BEFORE_AFTER: {
@@ -417,6 +417,22 @@ export function runContentQc(content) {
 export function normalizeContentRecord(record) {
   const schema = Number(record.Schema_Version || record.schema_version || 0);
   return schema >= 4 || record.Content_Type || record.content_type ? adaptV4Record(record) : adaptLegacyRecipe(record);
+}
+
+export function normalizeContentRecordsSafely(records = []) {
+  const valid = [];
+  const rejected = [];
+  for (const record of records) {
+    try {
+      valid.push(normalizeContentRecord(record));
+    } catch (error) {
+      rejected.push({
+        contentId: record?.Content_ID || record?.content_id || record?.contentId || "UNKNOWN",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  return { valid, rejected };
 }
 
 export function buildGenerationManifest(content) {
