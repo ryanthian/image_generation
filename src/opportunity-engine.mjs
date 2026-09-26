@@ -108,10 +108,10 @@ export const OPPORTUNITY_CANARY_SEEDS = Object.freeze([
 export function buildOpportunityCanary(historical) { return OPPORTUNITY_CANARY_SEEDS.map((candidate) => buildOpportunity(candidate, historical)); }
 
 export function approveOpportunity(opportunity) {
-  if (!opportunity || opportunity.approval_status === "APPROVED") throw new Error("Opportunity must be pending before approval.");
+  if (!opportunity || !["PENDING", "REVIEWED"].includes(opportunity.approval_status || "PENDING")) throw new Error("Opportunity must be pending development approval.");
   const claimPrefix = opportunity.topic === "JEWELRY_CRYSTAL_CULTURE" ? "在一些佩戴文化中，" : "";
   return {
-    ...opportunity, approval_status: "APPROVED", approved_at: new Date().toISOString(),
-    production_draft: { Schema_Version: 4, Content_ID: `V4-2-${opportunity.opportunity_id}`, Title: opportunity.title, Topic: opportunity.topic, Content_Type: opportunity.recommended_template === "COLLECTION_GUIDE" ? "COLLECTION" : opportunity.recommended_template === "MISTAKE_BEFORE_AFTER" ? "MISTAKE_FIX" : opportunity.recommended_template === "RECIPE_STANDARD" ? "RECIPE" : opportunity.recommended_template === "KITCHEN_TECHNIQUE" ? "KITCHEN_HACK" : "SELECTION_GUIDE", Template_Type: opportunity.recommended_template, Hook_Type: opportunity.hook_pattern, Hook_Text: `${claimPrefix}${opportunity.title}`, Caption: "", Status: "APPROVED_FOR_PRODUCTION", Opportunity_ID: opportunity.opportunity_id }
+    ...opportunity, approval_status: "APPROVED_FOR_DEVELOPMENT", approved_at: new Date().toISOString(),
+    production_draft: { Schema_Version: 4, Content_ID: `V4-2-${opportunity.opportunity_id}`, Title: opportunity.title, Topic: opportunity.topic, USER_NEED: opportunity.user_need, Content_Mechanism: opportunity.content_mechanism, Content_Type: opportunity.recommended_template === "COLLECTION_GUIDE" ? "COLLECTION" : opportunity.recommended_template === "MISTAKE_BEFORE_AFTER" ? "MISTAKE_FIX" : opportunity.recommended_template === "RECIPE_STANDARD" ? "RECIPE" : opportunity.recommended_template === "KITCHEN_TECHNIQUE" ? "KITCHEN_HACK" : "SELECTION_GUIDE", Template_Type: opportunity.recommended_template, Hook_Type: opportunity.hook_pattern, Hook_Text: `${claimPrefix}${opportunity.title}`, Caption: "", Editorial_Review_JSON: JSON.stringify({ review_status: "NOT_REVIEWED", audience_need: opportunity.user_need, opportunity_evidence_notes: opportunity.evidence_notes || [] }), Status: "APPROVED_FOR_DEVELOPMENT", Opportunity_ID: opportunity.opportunity_id }
   };
 }

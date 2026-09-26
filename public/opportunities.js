@@ -10,7 +10,7 @@
   function save(items) { localStorage.setItem("content-ai-v4-2-approved", JSON.stringify(items)); }
   function productionDraft(opportunity) {
     const contentType = opportunity.recommended_template === "COLLECTION_GUIDE" ? "COLLECTION" : opportunity.recommended_template === "MISTAKE_BEFORE_AFTER" ? "MISTAKE_FIX" : opportunity.recommended_template === "RECIPE_STANDARD" ? "RECIPE" : opportunity.recommended_template === "KITCHEN_TECHNIQUE" ? "KITCHEN_HACK" : "SELECTION_GUIDE";
-    return { Schema_Version: 4, Content_ID: `V4-2-${opportunity.opportunity_id}`, Title: opportunity.title, Topic: opportunity.topic, Content_Type: contentType, Template_Type: opportunity.recommended_template, Hook_Type: opportunity.hook_pattern, Hook_Text: opportunity.topic === "JEWELRY_CRYSTAL_CULTURE" ? `在一些佩戴文化中，${opportunity.title}` : opportunity.title, Caption: "", Status: "APPROVED_FOR_PRODUCTION", Opportunity_ID: opportunity.opportunity_id };
+    return { Schema_Version: 4, Content_ID: `V4-2-${opportunity.opportunity_id}`, Title: opportunity.title, Topic: opportunity.topic, USER_NEED: opportunity.user_need, Content_Mechanism: opportunity.content_mechanism, Content_Type: contentType, Template_Type: opportunity.recommended_template, Hook_Type: opportunity.hook_pattern, Hook_Text: opportunity.topic === "JEWELRY_CRYSTAL_CULTURE" ? `在一些佩戴文化中，${opportunity.title}` : opportunity.title, Caption: "", Editorial_Review_JSON: JSON.stringify({ review_status: "NOT_REVIEWED", audience_need: opportunity.user_need, opportunity_evidence_notes: opportunity.evidence_notes || [] }), Status: "APPROVED_FOR_DEVELOPMENT", Opportunity_ID: opportunity.opportunity_id };
   }
   function render() {
     const approved = new Set(stored().map((item) => item.opportunity_id));
@@ -20,7 +20,7 @@
       <dl class="opportunity-meta"><div><dt>User need</dt><dd>${escapeHtml(readable(item.user_need))}</dd></div><div><dt>Mechanism</dt><dd>${escapeHtml(readable(item.content_mechanism))}</dd></div></dl>
       <div class="signal-grid">${signals.map(([key, label]) => `<div><span>${label}</span><b class="signal-${escapeHtml(String(item[key]).toLowerCase())}">${escapeHtml(readable(item[key]))}</b></div>`).join("")}</div>
       <section class="opportunity-evidence"><p class="eyebrow">WHY THIS WAS SURFACED</p><ul>${item.evidence_notes.slice(0, 4).map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></section>
-      <div class="opportunity-actions"><button class="btn btn-neutral" data-review="${escapeHtml(item.opportunity_id)}">Review evidence</button><button class="btn btn-primary" data-approve="${escapeHtml(item.opportunity_id)}" ${approved.has(item.opportunity_id) ? "disabled" : ""}>${approved.has(item.opportunity_id) ? "Approved for Production" : "Approve for Production"}</button><button class="text-action" data-skip="${escapeHtml(item.opportunity_id)}">Skip</button></div>
+      <div class="opportunity-actions"><button class="btn btn-neutral" data-review="${escapeHtml(item.opportunity_id)}">Review evidence</button><button class="btn btn-primary" data-approve="${escapeHtml(item.opportunity_id)}" ${approved.has(item.opportunity_id) ? "disabled" : ""}>${approved.has(item.opportunity_id) ? "Approved for Development" : "Approve for Development"}</button><button class="text-action" data-skip="${escapeHtml(item.opportunity_id)}">Skip</button></div>
     </article>`).join("");
   }
   function showDetail(item) {
@@ -37,9 +37,9 @@
       if (event.target.dataset.skip) { event.target.closest("article").hidden = true; return; }
       const approvals = stored();
       if (approvals.some((approved) => approved.opportunity_id === id)) return;
-      approvals.push({ ...item, approval_status: "APPROVED", approved_at: new Date().toISOString(), production_draft: productionDraft(item) }); save(approvals); localStorage.setItem("capc:selectedSource", "V4.2 Approved Opportunities"); window.dispatchEvent(new Event("capc-approved-opportunity")); render();
+      approvals.push({ ...item, approval_status: "APPROVED_FOR_DEVELOPMENT", approved_at: new Date().toISOString(), production_draft: productionDraft(item) }); save(approvals); localStorage.setItem("capc:selectedSource", "V4.2 Approved Opportunities"); window.dispatchEvent(new Event("capc-approved-opportunity")); render();
       $("opportunityDetail").hidden = false;
-      $("opportunityDetail").innerHTML = `<p class="eyebrow">APPROVED · PRODUCTION HANDOFF READY</p><h3>${escapeHtml(item.title)}</h3><p>This opportunity is now an approved V4-compatible draft in this browser. It has not created images, final assets, a Sheet record, a batch, or a Facebook post.</p><a class="btn btn-success" href="#recipe">Open existing V4.1 production workflow</a>`;
+      $("opportunityDetail").innerHTML = `<p class="eyebrow">APPROVED FOR DEVELOPMENT · SPECIFICATION NOT READY</p><h3>${escapeHtml(item.title)}</h3><p>This browser-local handoff records an idea for development only. It is not a complete V4 production specification and has not passed editorial review. It has not created images, final assets, a Sheet record, a batch, or a Facebook post.</p><a class="btn btn-success" href="#recipe">Open development review in the V4 workflow</a>`;
     });
   }
   document.addEventListener("DOMContentLoaded", async () => {

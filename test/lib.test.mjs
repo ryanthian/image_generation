@@ -64,7 +64,14 @@ test("V4.1 renderer uses adaptive Ingredients and Method layouts", () => {
   assert.doesNotMatch(appSource, /state\.content\.title, 130, 1125/);
 });
 
-test("deterministic QC surfaces NOT READY TO POST while preview build remains available", () => {
-  assert.match(appSource, /status === "FAIL" \? "NOT READY TO POST"/);
-  assert.match(appSource, /markPosted.*status === "FAIL"/s);
+test("separate production gates block posting while keeping final-asset preview available", () => {
+  assert.match(appSource, /publishing\.status === "PUBLISHED" \? "Already published" : publishing\.ready \? "Ready to post" : "NOT READY TO POST"/);
+  assert.match(appSource, /markPosted.*!publishing\.ready/s);
+  assert.match(appSource, /function buildAssets\(\) \{/);
+  assert.match(appSource, /copyPrompt.*generationReadiness/s);
+  assert.match(appSource, /\.disabled = editorial\.status !== "PASS"/);
+  assert.match(appSource, /Caption is not cleared for reader use/);
+  assert.match(appSource, /isStoredAssetStale\(item, value, state\.images\)/);
+  assert.match(appSource, /stored && !stored\.stale \? "" : "disabled"/);
+  assert.match(appSource, /built\.sourceRevision === assetSourceRevision\(item\)/);
 });

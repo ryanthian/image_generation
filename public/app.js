@@ -1,13 +1,18 @@
 import {
   buildAssetFilename,
+  buildAssetSourceRevision,
   buildGenerationManifest,
   buildSessionPrompt,
   calculateAdaptivePanel,
   calculateMethodGrid,
+  deriveGenerationReadiness,
+  derivePublishingReadiness,
+  isStoredAssetStale,
   matchGenerationSlot,
   normalizeContentRecord,
   normalizeContentRecordsSafely,
-  runContentQc
+  runContentQc,
+  runEditorialReview
 } from "/content-model.js";
 
 const state = {
@@ -21,9 +26,25 @@ const state = {
   writable: false,
   source: "snapshot",
   sourceName: "",
-  sources: []
+  sourceId: null,
+  sourceInfo: null,
+  sources: [],
+  profiles: [],
+  templates: [],
+  pageProfile: null,
+  pageProfileComplete: false,
+  editorialReviewRecord: null,
+  workflow: null,
+  resultsSummary: null,
+  currentPublicationId: "",
+  visualQcConfirmedFor: "",
+  currentSheet: null,
+  contentLoadToken: 0,
+  editingProfileId: ""
 };
 const APPROVED_OPPORTUNITIES_SOURCE = "V4.2 Approved Opportunities";
+const WORKFLOW_STAGES = ["IDEA", "COPY_DRAFT", "EDITORIAL_REVIEW", "COPY_APPROVED", "VISUAL_VIDEO_PROMPT", "ASSET_CREATED", "QC_PASSED", "SCHEDULED_PUBLISHED", "RESULTS_RECORDED"];
+const WORKFLOW_LABELS = ["Idea", "Copy draft", "Editorial review", "Copy approved", "Visual/video prompt", "Asset created", "QC passed", "Scheduled / published", "Results recorded"];
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value = "") => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 let toastTimer;
@@ -69,8 +90,30 @@ async function idb(store, mode, action) {
 const getStored = (store, key) => idb(store, "readonly", (objectStore) => objectStore.get(key));
 const putStored = (store, key, value) => idb(store, "readwrite", (objectStore) => objectStore.put(value, key));
 const deleteStored = (store, key) => idb(store, "readwrite", (objectStore) => objectStore.delete(key));
-const keyFor = (kind, name) => `${state.sourceName}:${state.content.contentId}:${kind}:${name}`;
+const sourceKey = () => state.sourceId ? String(state.sourceId) : state.sourceName;
+const writeHeaders = () => ({ "content-type": "application/json", "x-content-intelligence-request": "1" });
+const splitLines = (value) => String(value || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+const keyFor = (kind, name) => `${sourceKey()}:${state.content.contentId}:${kind}:${name}`;
 const assetSemanticKey = (item) => JSON.stringify({ layout: item.layout_type, text: item.overlay_text, heading: item.local_heading, inputs: item.generation_inputs.map((input) => [input.slot_id, input.overlay_text]), sources: item.source_input_ids || [] });
+const assetSourceRevision = (item) => buildAssetSourceRevision(item, state.images);
+
+async function apiJson(path, options = {}) {
+  const response = await fetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    const error = new Error(data.error || `Request failed (${response.status}).`);
+    Object.assign(error, data);
+    throw error;
+  }
+  return data;
+}
+
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 async function copyText(value, message) {
   try {
@@ -105,6 +148,7 @@ function renderSlots() {
   container.innerHTML = "";
   for (const entry of state.manifest.entries) {
     const stored = state.images[entry.slotId];
+    const generationBlocked = !state.generationReadiness?.ready;
     const node = document.createElement("article");
     const stale = Boolean(stored && entry.regenRequiredReason && stored.semanticKey !== entry.semanticKey);
     node.className = `slot${stored ? " ready" : ""}${stale ? " stale" : ""}`;
@@ -113,7 +157,7 @@ function renderSlots() {
       <div class="slot-preview">${stored ? `<img alt="${escapeHtml(entry.label)} imported image">` : `<div class="slot-empty"><b>${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</b><span>${escapeHtml(entry.assetType)} · Drop PNG, JPG or WebP</span></div>`}</div>
       <div class="slot-footer">
         <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stale ? `REGEN REQUIRED · ${escapeHtml(entry.regenRequiredReason)}` : stored ? "Complete" : entry.required ? "Required" : "Optional"}</div></div>
-        <div class="slot-actions"><button type="button" data-choose>${stored ? "Replace" : "Choose"}</button>${stored ? '<button type="button" data-remove>Remove</button>' : ""}</div>
+        <div class="slot-actions"><button type="button" data-choose ${generationBlocked ? "disabled" : ""}>${stored ? "Replace" : "Choose"}</button>${stored ? `<button type="button" data-remove ${generationBlocked ? "disabled" : ""}>Remove</button>` : ""}</div>
         <input type="file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>`;
     if (stored) node.querySelector("img").src = imageUrl(stored);
@@ -121,9 +165,9 @@ function renderSlots() {
     node.querySelector("[data-choose]").addEventListener("click", () => input.click());
     input.addEventListener("change", () => input.files[0] && saveImage(entry.slotId, input.files[0]));
     node.querySelector("[data-remove]")?.addEventListener("click", () => removeImage(entry.slotId));
-    for (const event of ["dragenter", "dragover"]) node.addEventListener(event, (e) => { e.preventDefault(); node.classList.add("dragover"); });
+    for (const event of ["dragenter", "dragover"]) node.addEventListener(event, (e) => { e.preventDefault(); if (!generationBlocked) node.classList.add("dragover"); });
     for (const event of ["dragleave", "drop"]) node.addEventListener(event, (e) => { e.preventDefault(); node.classList.remove("dragover"); });
-    node.addEventListener("drop", (e) => e.dataTransfer.files[0] && saveImage(entry.slotId, e.dataTransfer.files[0]));
+    node.addEventListener("drop", (e) => { if (!generationBlocked && e.dataTransfer.files[0]) saveImage(entry.slotId, e.dataTransfer.files[0]); });
     container.appendChild(node);
   }
   updateProgress();
@@ -135,21 +179,21 @@ function renderAssets() {
   for (const assetItem of state.plan) {
     const stored = state.assets[assetItem.asset_id];
     const node = document.createElement("article");
-    node.className = "asset";
+    node.className = `asset${stored?.stale ? " stale" : ""}`;
     node.dataset.asset = assetItem.asset_id;
-    node.innerHTML = `<div class="asset-preview">${stored ? `<img alt="${escapeHtml(assetItem.title)}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(assetItem.sequence).padStart(2, "0")} · ${escapeHtml(assetItem.title)}</strong><small>${escapeHtml(assetItem.asset_type)}</small></div><button type="button" ${stored ? "" : "disabled"}>Download</button></div>`;
+    node.innerHTML = `<div class="asset-preview">${stored ? `<img alt="${escapeHtml(assetItem.title)}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(assetItem.sequence).padStart(2, "0")} · ${escapeHtml(assetItem.title)}</strong><small>${escapeHtml(assetItem.asset_type)}${stored?.stale ? " · REBUILD REQUIRED" : ""}</small></div><button type="button" ${stored && !stored.stale ? "" : "disabled"}>Download</button></div>`;
     if (stored) node.querySelector("img").src = imageUrl(stored);
-    node.querySelector("button").addEventListener("click", () => stored && downloadBlob(stored.blob, stored.filename));
+    node.querySelector("button").addEventListener("click", () => stored && !stored.stale && downloadBlob(stored.blob, stored.filename));
     container.appendChild(node);
   }
-  $("downloadAll").disabled = state.plan.some((item) => item.required && !state.assets[item.asset_id]);
+  $("downloadAll").disabled = state.plan.some((item) => item.required && (!state.assets[item.asset_id] || state.assets[item.asset_id].stale));
   updateProgress();
 }
 
 function updateProgress() {
   const requiredEntries = state.manifest.entries.filter((entry) => entry.required);
   const imported = requiredEntries.filter((entry) => state.images[entry.slotId]).length;
-  const built = state.plan.filter((item) => state.assets[item.asset_id]).length;
+  const built = state.plan.filter((item) => state.assets[item.asset_id] && !state.assets[item.asset_id].stale).length;
   const total = requiredEntries.length + state.plan.length;
   const percent = total ? Math.round(((imported + built) / total) * 100) : 0;
   $("progressText").textContent = `${imported} / ${requiredEntries.length}`;
@@ -159,25 +203,39 @@ function updateProgress() {
 }
 
 async function saveImage(slotId, file) {
+  if (!state.generationReadiness?.ready) return toast("Generation is blocked. Complete the editorial and specification gate before importing source images.", true);
   if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return toast("Use a PNG, JPG or WebP image.", true);
   if (file.size > 35 * 1024 * 1024) return toast("Image is larger than 35 MB.", true);
   const entry = state.manifest.entries.find((item) => item.slotId === slotId);
   const value = { blob: file, name: file.name, type: file.type, semanticKey: entry?.semanticKey || "", updatedAt: Date.now() };
   await putStored("images", keyFor("image", slotId), value);
   state.images[slotId] = value;
+  state.visualQcConfirmedFor = "";
+  for (const assetItem of state.plan) {
+    const sourceIds = [...(assetItem.generation_inputs || []).map((input) => input.slot_id), ...(assetItem.source_input_ids || [])];
+    if (sourceIds.includes(slotId) && state.assets[assetItem.asset_id]) state.assets[assetItem.asset_id].stale = true;
+  }
   renderSlots();
+  renderAssets();
   renderQc();
 }
 
 async function removeImage(slotId) {
   await deleteStored("images", keyFor("image", slotId));
   delete state.images[slotId];
+  state.visualQcConfirmedFor = "";
+  for (const assetItem of state.plan) {
+    const sourceIds = [...(assetItem.generation_inputs || []).map((input) => input.slot_id), ...(assetItem.source_input_ids || [])];
+    if (sourceIds.includes(slotId) && state.assets[assetItem.asset_id]) state.assets[assetItem.asset_id].stale = true;
+  }
   renderSlots();
+  renderAssets();
   renderQc();
   toast("Image removed. Import a replacement before building.");
 }
 
 async function importMany(files) {
+  if (!state.generationReadiness?.ready) return toast("Generation is blocked until the editorial review and production specification pass.", true);
   const valid = Array.from(files).filter((file) => /^image\/(png|jpeg|webp)$/.test(file.type));
   if (!valid.length) return toast("No supported images selected.", true);
   const byId = new Map(state.manifest.entries.map((entry) => [entry.slotId, entry]));
@@ -206,63 +264,389 @@ async function importMany(files) {
   $("allFiles").value = "";
 }
 
-async function loadContentState() {
+async function loadContentState(token = state.contentLoadToken) {
   state.images = {};
   state.assets = {};
   await Promise.all(state.manifest.entries.map(async (entry) => {
-    const value = await getStored("images", keyFor("image", entry.slotId));
+    const stableKey = keyFor("image", entry.slotId);
+    const legacyKey = `${state.sourceName}:${state.content.contentId}:image:${entry.slotId}`;
+    const value = await getStored("images", stableKey) || (legacyKey !== stableKey ? await getStored("images", legacyKey) : null);
+    if (token !== state.contentLoadToken) return;
     if (value) state.images[entry.slotId] = value;
+    if (value && stableKey !== legacyKey && !await getStored("images", stableKey)) await putStored("images", stableKey, value);
   }));
   await Promise.all(state.plan.map(async (item) => {
-    const value = await getStored("assets", keyFor("asset", item.asset_id));
-    if (value?.semanticKey === assetSemanticKey(item)) state.assets[item.asset_id] = value;
+    const stableKey = keyFor("asset", item.asset_id);
+    const legacyKey = `${state.sourceName}:${state.content.contentId}:asset:${item.asset_id}`;
+    const value = await getStored("assets", stableKey) || (legacyKey !== stableKey ? await getStored("assets", legacyKey) : null);
+    if (token !== state.contentLoadToken) return;
+    if (value?.semanticKey === assetSemanticKey(item)) {
+      const sourceRevision = assetSourceRevision(item);
+      state.assets[item.asset_id] = { ...value, sourceRevision: value.sourceRevision || sourceRevision, stale: isStoredAssetStale(item, value, state.images) };
+      if (stableKey !== legacyKey && !await getStored("assets", stableKey)) await putStored("assets", stableKey, value);
+    }
   }));
+  if (token !== state.contentLoadToken) return;
   renderSlots();
   renderAssets();
   renderQc();
 }
 
 function applyContent(content) {
-  state.content = content;
-  state.plan = content.resolvedAssetPlan;
-  state.manifest = buildGenerationManifest(content);
-  localStorage.setItem(`capc:selectedContent:${state.sourceName}`, content.contentId);
-  $("sideRecipe").textContent = content.title;
-  $("sideId").textContent = content.contentId;
-  $("contentId").textContent = content.contentId;
-  $("category").textContent = content.topic;
-  $("status").textContent = content.lifecycleStatus;
-  $("status").classList.toggle("posted", content.lifecycleStatus === "PUBLISHED" || content.lifecycleStatus === "Posted");
-  $("title").textContent = content.title;
-  $("captionPreview").textContent = content.caption;
-  $("recipeSelect").value = content.contentId;
-  $("contentType").textContent = content.contentType;
-  $("templateType").textContent = content.templateType;
-  $("visualProfile").textContent = content.visualProfile;
-  $("hookType").textContent = content.hookType;
-  $("hookText").textContent = content.hookText;
+  state.contentLoadToken += 1;
+  const token = state.contentLoadToken;
+  state.content = { ...content, pageProfile: state.pageProfile || content.pageProfile || null };
+  state.images = {};
+  state.assets = {};
+  state.editorialReviewRecord = null;
+  state.workflow = null;
+  state.currentPublicationId = "";
+  state.visualQcConfirmedFor = "";
+  state.plan = state.content.resolvedAssetPlan;
+  state.manifest = buildGenerationManifest(state.content);
+  localStorage.setItem(`capc:selectedContent:${sourceKey()}`, state.content.contentId);
+  $("sideRecipe").textContent = state.content.title;
+  $("sideId").textContent = state.content.contentId;
+  $("contentId").textContent = state.content.contentId;
+  $("category").textContent = state.content.topic;
+  $("status").textContent = state.content.lifecycleStatus;
+  $("status").classList.toggle("posted", state.content.lifecycleStatus === "PUBLISHED" || state.content.lifecycleStatus === "Posted");
+  $("title").textContent = state.content.title;
+  $("captionPreview").textContent = state.content.caption;
+  $("recipeSelect").value = state.content.contentId;
+  $("contentType").textContent = state.content.contentType;
+  $("templateType").textContent = state.content.templateType;
+  $("visualProfile").textContent = state.content.visualProfile;
+  $("hookType").textContent = state.content.hookType;
+  $("hookText").textContent = state.content.hookText;
   $("slotHeading").textContent = `${state.manifest.expectedAssets} generation slots`;
   $("slotHelper").textContent = `Import in manifest order: ${state.manifest.entries.map((entry) => entry.label).join(" → ")}.`;
   $("assetHeading").textContent = `${state.plan.length} final Facebook assets`;
+  renderEditorialForm(state.content.editorialReview || {});
   renderQc();
   renderManifest();
-  loadContentState().catch((error) => toast(error.message, true));
+  renderWorkflow();
+  renderResults();
+  loadContentState(token).catch((error) => toast(error.message, true));
+  loadContentOperations(token).catch((error) => toast(`Editorial/workflow state could not be loaded: ${error.message}`, true));
 }
 
 function renderQc() {
   const qc = runContentQc(state.content);
+  const editorial = runEditorialReview(state.content);
+  const generation = deriveGenerationReadiness(state.content, { structuralQc: qc, editorialReview: editorial });
   const stale = state.manifest.entries.filter((entry) => entry.regenRequiredReason && state.images[entry.slotId] && state.images[entry.slotId].semanticKey !== entry.semanticKey);
-  const status = qc.failures.length ? "FAIL" : stale.length || qc.warnings.length ? "WARNING" : "PASS";
+  const contractStatus = qc.failures.length ? "FAIL" : stale.length || qc.warnings.length ? "WARNING" : "PASS";
+  const allFinalAssetsBuilt = state.plan.length > 0 && state.plan.every((item) => {
+    const built = state.assets[item.asset_id];
+    return built?.qc_status === "PASS" && !built.stale && built.sourceRevision === assetSourceRevision(item);
+  });
+  const requiredImagesPresent = state.manifest.entries.filter((entry) => entry.required).every((entry) => Boolean(state.images[entry.slotId]));
+  const visualQcStatus = !allFinalAssetsBuilt ? "NOT RUN" : state.visualQcConfirmedFor === state.content.contentId ? "PASS" : "REVIEW REQUIRED";
+  const publishing = derivePublishingReadiness(state.content, {
+    generationReadiness: generation,
+    requiredImagesPresent,
+    finalAssetsPresent: allFinalAssetsBuilt,
+    visualQcStatus: visualQcStatus === "REVIEW REQUIRED" ? "NOT CONFIRMED" : visualQcStatus
+  });
+  const combinedStatus = contractStatus === "FAIL" ? "fail" : editorial.status === "BLOCKED" ? "blocked" : editorial.status === "REVIEW" || generation.status === "GENERATION_BLOCKED" ? "review" : "pass";
   const details = [
     ...qc.failures.map((item) => `${item.code}: ${item.detail}`),
     ...qc.warnings.map((item) => `${item.code}: ${item.detail}`),
-    ...stale.map((entry) => `REGEN REQUIRED: ${entry.label} — ${entry.regenRequiredReason}`)
+    ...stale.map((entry) => `REGEN REQUIRED: ${entry.label} — ${entry.regenRequiredReason}`),
+    ...editorial.issues.map((item) => `${item.severity} · ${item.code}: ${item.detail}`),
+    ...generation.blockers.map((item) => `GENERATION BLOCKER: ${item}`),
+    ...publishing.blockers.map((item) => `PUBLISHING BLOCKER: ${item}`)
   ];
-  $("qcSummary").className = `qc-summary qc-${status.toLowerCase()}`;
-  $("qcStatus").textContent = status;
-  $("qcDetails").textContent = details.length ? details.join("\n") : "All deterministic source, ingredient, mapping and purpose checks passed.";
-  $("publishHeading").textContent = status === "FAIL" ? "NOT READY TO POST" : "Ready to publish";
-  $("markPosted").disabled = !state.writable || status === "FAIL";
+  $("qcSummary").className = `qc-summary qc-${combinedStatus}`;
+  setGate("contractGate", "qcStatus", contractStatus);
+  setGate("editorialGate", "editorialStatus", editorial.status);
+  setGate("generationGate", "generationStatus", generation.status.replace("GENERATION_", ""));
+  setGate("visualGate", "visualStatus", visualQcStatus);
+  setGate("publishingGate", "publishingStatus", publishing.status);
+  $("qcDetails").textContent = details.length ? details.join("\n") : "Contract checks pass. No editorial or production blockers are recorded.";
+  $("editorialNote").textContent = "Editorial PASS requires complete review metadata, a named reviewer and timestamp. Rule checks do not independently prove factual accuracy.";
+  $("publishHeading").textContent = publishing.status === "PUBLISHED" ? "Already published" : publishing.ready ? "Ready to post" : "NOT READY TO POST";
+  const publicationRecorded = (state.resultsSummary?.rows || []).some((row) => row.contentId === state.content.contentId && row.pageProfileId === state.pageProfile?.profileId && row.postUrl && Number.isFinite(Date.parse(row.publishedAt)));
+  const workflowPublished = ["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(state.workflow?.stage);
+  $("markPosted").disabled = !state.writable || !publishing.ready || !publicationRecorded || !workflowPublished;
+  $("visualQcCheck").disabled = !allFinalAssetsBuilt;
+  $("visualQcCheck").checked = state.visualQcConfirmedFor === state.content.contentId;
+  $("visualQcHint").textContent = allFinalAssetsBuilt
+    ? "Review every final preview for source fidelity, readability and image/text match. This confirmation is session-only and resets when you switch content or reload."
+    : "Build all final assets before recording a visual review.";
+  $("copyPrompt").disabled = !generation.ready;
+  $("importAll").disabled = !generation.ready;
+  $("buildAssets").disabled = !generation.ready || !requiredImagesPresent;
+  $("copyCaption").disabled = editorial.status !== "PASS";
+  $("copyCaptionBottom").disabled = editorial.status !== "PASS";
+  $("writeHint").textContent = state.writable
+    ? (publishing.ready && publicationRecorded && workflowPublished ? "Production gates and publication record pass. Mark Posted writes only the Status field." : `Sheet status write is blocked: ${publishing.blockers[0] || (!publicationRecorded ? "save the matching post URL and publish date" : "advance the workflow to Scheduled / Published")}`)
+    : "This source is read-only; production data will not be changed.";
+  state.editorialReview = editorial;
+  state.generationReadiness = generation;
+  state.publishingReadiness = publishing;
+}
+
+function setGate(containerId, statusId, value) {
+  const container = $(containerId);
+  container.className = `quality-gate ${String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  $(statusId).textContent = value;
+}
+
+function setFormValue(id, value) {
+  const node = $(id);
+  if (node) node.value = value ?? "";
+}
+
+function renderEditorialForm(review = {}) {
+  const fields = {
+    editorReviewer: review.reviewer, editorDecision: review.review_status || "REVIEW",
+    editorAudienceNeed: review.audience_need, editorReaderValue: review.reader_value,
+    editorSourceNotes: review.source_notes, editorClaimEvidence: review.claim_evidence,
+    editorLimitations: review.limitations, editorReviewNote: review.review_note,
+    editorInternalNotes: [review.internal_claim_notes, review.editorial_notes].filter(Boolean).join("\n"),
+    editorTiming: review.timing_guidance, editorTemperature: review.temperature_guidance,
+    editorServing: review.serving_expectation, editorMistakeProblem: review.mistake_problem,
+    editorCause: review.cause_explanation, editorConsequence: review.consequence,
+    editorExpectedResult: review.expected_result, editorSuitability: review.option_suitability,
+    editorTradeoffs: review.tradeoffs, editorDecisionLogic: review.decision_logic
+  };
+  for (const [id, value] of Object.entries(fields)) setFormValue(id, value);
+  $("editorEvidenceVerified").checked = review.source_evidence_status === "VERIFIED";
+  $("editorCaptionApproved").checked = review.caption_review_status === "PASS";
+  $("editorPageFitApproved").checked = review.page_fit_status === "PASS";
+  $("editorRecipeApproximate").checked = review.approximate_recipe === true || review.recipe_precision === "APPROXIMATE";
+  $("editorTemperatureRequired").checked = review.temperature_required === true;
+  $("reviewSavedState").textContent = review.reviewed_at ? `Saved · ${review.review_status || "REVIEW"}` : "Not saved";
+  const disabled = !state.content || !state.sourceId || state.source === "approved-opportunities";
+  $("saveEditorialReview").disabled = disabled;
+  for (const id of ["editorReviewer", "editorDecision", ...Object.keys(fields).filter((field) => field !== "editorReviewer" && field !== "editorDecision"), "editorEvidenceVerified", "editorCaptionApproved", "editorPageFitApproved", "editorRecipeApproximate", "editorTemperatureRequired"]) {
+    if ($(id)) $(id).disabled = disabled;
+  }
+}
+
+function renderPageProfiles() {
+  const profiles = state.profiles || [];
+  const assignedId = state.currentSheet?.targetPageProfileId || "";
+  const options = [`<option value="">No page profile assigned</option>`, ...profiles.map((profile) => `<option value="${escapeHtml(profile.profileId)}">${escapeHtml(profile.displayName)} · ${profile.active ? "Active" : "Draft"}</option>`)].join("");
+  $("targetPageProfile").innerHTML = options;
+  $("targetPageProfile").value = assignedId;
+  $("sourceActive").checked = Boolean(state.currentSheet?.active);
+  $("sourceActive").disabled = !state.currentSheet;
+  $("assignPageProfile").disabled = !state.sourceId || state.source === "approved-opportunities";
+  const selected = profiles.find((profile) => profile.profileId === assignedId) || null;
+  state.pageProfile = selected;
+  state.pageProfileComplete = Boolean(selected?.active && selected.facebookPageId && selected.audience && selected.primaryLanguage && selected.toneGuidance && selected.avoidTopics?.length);
+  const readiness = state.currentSheet?.setupStatus || "NEEDS_SETUP";
+  $("sourceSetupStatus").textContent = readiness.replaceAll("_", " ");
+  $("sourceSetupStatus").className = `badge ${readiness === "READY" ? "badge-success" : "badge-warning"}`;
+  $("pageProfileHint").textContent = state.currentSheet?.setupReasons?.join(" ") || (state.pageProfileComplete
+    ? `Assigned to ${selected.displayName}. Page-specific audience, language, tone and exclusions are included in the generation prompt.`
+    : "A complete, active Facebook Page profile is required before editorial PASS and generation. The Console does not fetch Page analytics automatically.");
+  const newProfileOptions = [`<option value="">Assign later</option>`, ...profiles.filter((profile) => profile.active).map((profile) => `<option value="${escapeHtml(profile.profileId)}">${escapeHtml(profile.displayName)}</option>`)].join("");
+  $("newSheetPageProfile").innerHTML = newProfileOptions;
+}
+
+function fillProfileForm(profile = {}) {
+  state.editingProfileId = profile.profileId || "";
+  setFormValue("profileFacebookPageId", profile.facebookPageId);
+  setFormValue("profileDisplayName", profile.displayName);
+  setFormValue("profileAudience", profile.audience);
+  setFormValue("profileLanguage", profile.primaryLanguage);
+  setFormValue("profileTone", profile.toneGuidance);
+  setFormValue("profilePillars", (profile.contentPillars || []).join("\n"));
+  setFormValue("profileFormats", (profile.suitableFormats || []).join("\n"));
+  setFormValue("profileAvoidTopics", (profile.avoidTopics || []).join("\n"));
+  setFormValue("profileMonetization", (profile.monetizationTypes || []).join("\n"));
+  $("profileActive").checked = Boolean(profile.active);
+}
+
+function renderWorkflow() {
+  const stage = state.workflow?.stage || "COPY_DRAFT";
+  const index = WORKFLOW_STAGES.indexOf(stage);
+  $("workflowStageBadge").textContent = WORKFLOW_LABELS[Math.max(0, index)] || stage;
+  $("workflowStages").innerHTML = WORKFLOW_LABELS.map((label, step) => `<li class="${step < index ? "done" : step === index ? "current" : ""}"><span>${String(step + 1).padStart(2, "0")}</span> ${escapeHtml(label)}</li>`).join("");
+  const disabled = !state.content || !state.sourceId || state.source === "approved-opportunities" || index < 0 || index >= WORKFLOW_STAGES.length - 1;
+  $("advanceWorkflow").disabled = disabled;
+  const next = WORKFLOW_LABELS[index + 1];
+  $("advanceWorkflow").textContent = next ? `Advance to ${next}` : "Workflow complete";
+  $("workflowHint").textContent = state.workflow?.note
+    ? `Last transition by ${state.workflow.actor || "operator"} · ${state.workflow.updatedAt || "time unavailable"} · ${state.workflow.note}`
+    : "Advance one stage at a time. Asset, visual-QC and publication stages require operator confirmation and a note.";
+}
+
+function renderResults() {
+  const summary = state.resultsSummary;
+  const contentId = state.content?.contentId;
+  const rows = (summary?.rows || []).filter((row) => row.contentId === contentId);
+  const select = $("resultPublication");
+  const selected = state.currentPublicationId;
+  select.innerHTML = `<option value="">New publication</option>${rows.map((row) => `<option value="${escapeHtml(row.publicationId)}">${escapeHtml(row.publishedAt)} · ${escapeHtml(row.contentFormat)}${row.postUrl ? " · URL saved" : ""}</option>`).join("")}`;
+  select.value = rows.some((row) => row.publicationId === selected) ? selected : "";
+  const groupText = (label, entries) => `<section><h3>${escapeHtml(label)}</h3>${entries.length ? entries.map((item) => `<p>${escapeHtml(item.label)} · ${item.publications} posts · qualified views ${item.qualifiedViews ?? "unknown"} · Meta RM ${item.metaEarnings ?? "unknown"} · affiliate RM ${item.affiliateCommission ?? "unknown"}</p>`).join("") : "<p>No recorded results.</p>"}</section>`;
+  $("resultsSummary").innerHTML = summary
+    ? groupText("By Page", summary.byPage) + groupText("By Content Type", summary.byContentType) + groupText("By Format", summary.byFormat) + `<section><h3>Selected content</h3>${rows.length ? rows.map((row) => `<p>${escapeHtml(row.publishedAt)} · ${escapeHtml(row.pageDisplayName || "Page unknown")} · ${escapeHtml(row.contentFormat)} · views ${row.metrics?.qualifiedViews ?? "unknown"}${row.postUrl ? ` · <a href="${escapeHtml(row.postUrl)}" target="_blank" rel="noopener">Post</a>` : ""}</p>`).join("") : "<p>No publication/results recorded for this content.</p>"}</section>`
+    : "<p>No manual results loaded.</p>";
+  $("saveManualResults").disabled = !state.content || !state.sourceId || !state.pageProfileComplete || state.source === "approved-opportunities";
+}
+
+async function loadContentOperations(token = state.contentLoadToken) {
+  if (!state.content || !state.sourceId || state.source === "approved-opportunities") return;
+  const query = new URLSearchParams({ sheetId: String(state.sourceId), contentId: state.content.contentId });
+  const [reviewData, workflowData, resultsData] = await Promise.all([
+    apiJson(`/api/production/editorial-review?${query}`),
+    apiJson(`/api/production/workflow?${query}`),
+    apiJson(`/api/production/results?${new URLSearchParams({ sheetId: String(state.sourceId), pageProfileId: state.pageProfile?.profileId || "" })}`)
+  ]);
+  if (token !== state.contentLoadToken) return;
+  state.editorialReviewRecord = reviewData.review;
+  state.workflow = workflowData.workflow;
+  state.resultsSummary = resultsData.summary;
+  if (reviewData.review?.review) {
+    state.content = { ...state.content, editorialReview: reviewData.review.review };
+    renderEditorialForm(reviewData.review.review);
+  } else renderEditorialForm(state.content.editorialReview || {});
+  renderWorkflow();
+  renderResults();
+  renderQc();
+  renderSlots();
+}
+
+function editorialReviewPayload() {
+  return {
+    sheetId: state.sourceId, contentId: state.content.contentId,
+    reviewer: $("editorReviewer").value, reviewStatus: $("editorDecision").value,
+    audienceNeed: $("editorAudienceNeed").value, readerValue: $("editorReaderValue").value,
+    sourceNotes: $("editorSourceNotes").value, claimEvidence: $("editorClaimEvidence").value,
+    limitations: $("editorLimitations").value, reviewNote: $("editorReviewNote").value,
+    internalClaimNotes: $("editorInternalNotes").value, editorialNotes: "",
+    evidenceVerified: $("editorEvidenceVerified").checked, captionApproved: $("editorCaptionApproved").checked,
+    pageFitApproved: $("editorPageFitApproved").checked, approximateRecipe: $("editorRecipeApproximate").checked,
+    recipePrecision: $("editorRecipeApproximate").checked ? "APPROXIMATE" : "EXACT",
+    timingGuidance: $("editorTiming").value, temperatureRequired: $("editorTemperatureRequired").checked,
+    temperatureGuidance: $("editorTemperature").value, servingExpectation: $("editorServing").value,
+    mistakeProblem: $("editorMistakeProblem").value, causeExplanation: $("editorCause").value,
+    consequence: $("editorConsequence").value, expectedResult: $("editorExpectedResult").value,
+    optionSuitability: $("editorSuitability").value, tradeoffs: $("editorTradeoffs").value,
+    decisionLogic: $("editorDecisionLogic").value
+  };
+}
+
+async function saveEditorialReview() {
+  if (!state.content || !state.sourceId) return;
+  try {
+    const result = await apiJson("/api/production/editorial-review", { method: "POST", headers: writeHeaders(), body: JSON.stringify(editorialReviewPayload()) });
+    state.editorialReviewRecord = result.review;
+    state.content = { ...state.content, editorialReview: result.review.review };
+    renderEditorialForm(result.review.review);
+    renderQc();
+    renderSlots();
+    toast(`Editorial review saved: ${result.evaluated.status}.`);
+  } catch (error) {
+    if (error.message) toast(error.message, true);
+    if (error.issues) toast(`${error.reviewStatus || "Review"}: ${error.issues.map((item) => item.code).join(", ")}`, true);
+  }
+}
+
+async function advanceWorkflow() {
+  if (!state.content || !state.sourceId) return;
+  const index = WORKFLOW_STAGES.indexOf(state.workflow?.stage || "COPY_DRAFT");
+  const nextStage = WORKFLOW_STAGES[index + 1];
+  if (!nextStage) return;
+  const requiredImagesPresent = state.manifest.entries.filter((entry) => entry.required).every((entry) => Boolean(state.images[entry.slotId]));
+  const finalAssetsPresent = state.plan.length > 0 && state.plan.every((item) => state.assets[item.asset_id] && !state.assets[item.asset_id].stale);
+  try {
+    const result = await apiJson("/api/production/workflow", { method: "POST", headers: writeHeaders(), body: JSON.stringify({
+      sheetId: state.sourceId, contentId: state.content.contentId, nextStage,
+      actor: $("workflowActor").value, note: $("workflowNote").value,
+      requiredImagesPresent, finalAssetsPresent,
+      visualQcPass: state.visualQcConfirmedFor === state.content.contentId
+    }) });
+    state.workflow = result.workflow;
+    $("workflowNote").value = "";
+    renderWorkflow();
+    toast(`Workflow advanced to ${WORKFLOW_LABELS[WORKFLOW_STAGES.indexOf(result.workflow.stage)]}.`);
+  } catch (error) { toast(error.message, true); }
+}
+
+function selectedPublication() {
+  const id = $("resultPublication").value;
+  return (state.resultsSummary?.rows || []).find((row) => row.publicationId === id) || null;
+}
+
+function fillResultForm(publication) {
+  state.currentPublicationId = publication?.publicationId || "";
+  setFormValue("resultPublishedAt", publication?.publishedAt ? String(publication.publishedAt).slice(0, 10) : localDateValue());
+  setFormValue("resultPostUrl", publication?.postUrl || "");
+  setFormValue("resultFormat", publication?.contentFormat || "Carousel");
+  setFormValue("resultProductionMinutes", publication?.productionMinutes);
+  setFormValue("resultDirectCost", publication?.directCost);
+  setFormValue("resultCurrency", publication?.currency || "MYR");
+  const snapshot = publication?.metrics || {};
+  for (const [id, key] of [["resultReach", "reach"], ["resultQualifiedViews", "qualifiedViews"], ["resultEngagement", "engagement"], ["resultShares", "shares"], ["resultSaves", "saves"], ["resultRetention", "retentionRate"], ["resultMetaEarnings", "metaEarnings"], ["resultAffiliateClicks", "affiliateClicks"], ["resultAffiliateOrders", "affiliateOrders"], ["resultAffiliateCommission", "affiliateCommission"]]) setFormValue(id, snapshot[key]);
+}
+
+async function saveManualResults() {
+  if (!state.content || !state.sourceId || !state.pageProfile?.profileId) return;
+  const fields = {
+    resultReach: "reach", resultQualifiedViews: "qualifiedViews", resultEngagement: "engagement", resultShares: "shares", resultSaves: "saves", resultRetention: "retentionRate", resultMetaEarnings: "metaEarnings", resultAffiliateClicks: "affiliateClicks", resultAffiliateOrders: "affiliateOrders", resultAffiliateCommission: "affiliateCommission", resultProductionMinutes: "productionMinutes", resultDirectCost: "directCost"
+  };
+  const metrics = Object.fromEntries(Object.entries(fields).map(([id, key]) => [key, $(id).value]));
+  const hasMetric = Object.entries(fields).some(([id, key]) => key !== "productionMinutes" && key !== "directCost" && $(id).value !== "");
+  const publication = selectedPublication();
+  const body = {
+    ...metrics, sheetId: state.sourceId, contentId: state.content.contentId,
+    pageProfileId: state.pageProfile.profileId, contentType: state.content.contentType,
+    contentFormat: $("resultFormat").value, publishedAt: $("resultPublishedAt").value,
+    postUrl: $("resultPostUrl").value, currency: $("resultCurrency").value,
+    enteredBy: $("resultEnteredBy").value,
+    ...(publication ? { publicationId: publication.publicationId } : {}),
+    ...(!hasMetric ? { publicationOnly: true } : {})
+  };
+  try {
+    const result = await apiJson("/api/production/results", { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) });
+    state.currentPublicationId = result.publication.publicationId;
+    await loadContentOperations();
+    $("resultPublication").value = state.currentPublicationId;
+    toast(result.snapshot ? "Publication and observed metrics saved." : "Publication details saved. No metrics were recorded as zero.");
+  } catch (error) { toast(error.message, true); }
+}
+
+function clearContentView(message) {
+  state.content = null;
+  state.records = [];
+  state.plan = [];
+  state.manifest = { entries: [], expectedAssets: 0 };
+  state.images = {};
+  state.assets = {};
+  state.editorialReviewRecord = null;
+  state.workflow = null;
+  state.resultsSummary = null;
+  $("recipeSelect").innerHTML = "";
+  $("title").textContent = message;
+  $("contentId").textContent = "—";
+  $("sideRecipe").textContent = message;
+  $("sideId").textContent = "";
+  $("slots").innerHTML = "";
+  $("assetGrid").innerHTML = "";
+  $("manifestList").innerHTML = "";
+  $("manifestCount").textContent = "Generation Images: 0 · Final Assets: 0";
+  $("slotHeading").textContent = "No generation inputs";
+  $("assetHeading").textContent = "No final assets";
+  $("copyPrompt").disabled = true;
+  $("importAll").disabled = true;
+  $("buildAssets").disabled = true;
+  $("copyCaption").disabled = true;
+  $("copyCaptionBottom").disabled = true;
+  $("markPosted").disabled = true;
+  $("saveEditorialReview").disabled = true;
+  $("advanceWorkflow").disabled = true;
+  $("saveManualResults").disabled = true;
+  $("qcDetails").textContent = message;
+  renderEditorialForm({});
+  renderWorkflow();
+  renderResults();
 }
 
 function renderOptions(records) {
@@ -450,6 +834,7 @@ function canvasBlob(canvas) {
 }
 
 async function buildAssets() {
+  if (!state.generationReadiness?.ready) return toast("Build is blocked until editorial and generation readiness pass.", true);
   const missing = state.manifest.entries.filter((entry) => entry.required && !state.images[entry.slotId]).map((entry) => entry.label);
   if (missing.length) return toast(`Missing required images: ${missing.join(", ")}.`, true);
   const button = $("buildAssets");
@@ -467,6 +852,8 @@ async function buildAssets() {
           height: 1800,
           qc_status: "PASS",
           semanticKey: assetSemanticKey(assetItem),
+          sourceRevision: assetSourceRevision(assetItem),
+          stale: false,
           updatedAt: Date.now()
         };
         await putStored("assets", keyFor("asset", assetItem.asset_id), value);
@@ -499,25 +886,26 @@ function downloadBlob(blob, filename) {
 
 async function markPosted() {
   if (!state.writable) return toast("This source is read-only. Status was not changed.", true);
+  if (!state.publishingReadiness?.ready) return toast("Publishing is blocked until editorial, generation, source-image and visual QC gates pass.", true);
+  if (!["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(state.workflow?.stage)) return toast("Record the post URL/date and advance the production workflow to Scheduled / Published first.", true);
   const button = $("markPosted");
   button.disabled = true;
   button.textContent = "Updating Sheet…";
   try {
-    const response = await fetch(`/api/recipes/${encodeURIComponent(state.content.contentId)}/status`, {
+    const result = await apiJson(`/api/recipes/${encodeURIComponent(state.content.contentId)}/status`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: "Posted", sheetName: state.sourceName })
+      headers: writeHeaders(),
+      body: JSON.stringify({ status: "Posted", sheetId: state.sourceId, requiredImagesPresent: true, finalAssetsPresent: true, visualQcPass: state.visualQcConfirmedFor === state.content.contentId })
     });
-    const result = await response.json();
-    if (!response.ok || !result.ok || result.status !== "Posted") throw new Error(result.error || "Status update failed.");
     state.content.lifecycleStatus = "Posted";
     $("status").textContent = "Posted";
     $("status").classList.add("posted");
+    renderQc();
     toast(`Status verified in row ${result.rowNumber}.`);
   } catch (error) {
     toast(error.message, true);
   } finally {
-    button.disabled = !state.writable;
+    button.disabled = !state.writable || !state.publishingReadiness?.ready;
     button.textContent = "Mark Posted";
   }
 }
@@ -535,83 +923,228 @@ function bindEvents() {
   });
   $("prev").addEventListener("click", () => moveContent(-1));
   $("next").addEventListener("click", () => moveContent(1));
-  $("copyPrompt").addEventListener("click", () => copyText(buildSessionPrompt(state.content), "One deterministic ChatGPT image session prompt copied."));
-  $("importAll").addEventListener("click", () => $("allFiles").click());
+  $("copyPrompt").addEventListener("click", () => {
+    if (!state.generationReadiness?.ready) return toast("Generation is blocked. Resolve the editorial and specification blockers first.", true);
+    return copyText(buildSessionPrompt(state.content), "One deterministic ChatGPT image session prompt copied.");
+  });
+  $("importAll").addEventListener("click", () => {
+    if (!state.generationReadiness?.ready) return toast("Image import is blocked until the generation specification passes.", true);
+    return $("allFiles").click();
+  });
   $("allFiles").addEventListener("change", (event) => importMany(event.target.files));
   $("buildAssets").addEventListener("click", buildAssets);
-  $("copyCaption").addEventListener("click", () => copyText(state.content.caption, "Facebook caption copied."));
-  $("copyCaptionBottom").addEventListener("click", () => copyText(state.content.caption, "Facebook caption copied."));
+  $("copyCaption").addEventListener("click", () => {
+    if (state.editorialReview?.status !== "PASS") return toast("Caption is not cleared for reader use. Complete editorial review first.", true);
+    return copyText(state.content.caption, "Facebook caption copied.");
+  });
+  $("copyCaptionBottom").addEventListener("click", () => {
+    if (state.editorialReview?.status !== "PASS") return toast("Caption is not cleared for reader use. Complete editorial review first.", true);
+    return copyText(state.content.caption, "Facebook caption copied.");
+  });
   $("markPosted").addEventListener("click", markPosted);
+  $("saveEditorialReview").addEventListener("click", saveEditorialReview);
+  $("advanceWorkflow").addEventListener("click", advanceWorkflow);
+  $("saveManualResults").addEventListener("click", saveManualResults);
+  $("refreshResults").addEventListener("click", () => loadContentOperations().catch((error) => toast(error.message, true)));
+  $("resultPublication").addEventListener("change", (event) => {
+    const publication = (state.resultsSummary?.rows || []).find((row) => row.publicationId === event.target.value);
+    fillResultForm(publication);
+  });
+  $("refreshSheets").addEventListener("click", () => refreshSheets(true));
+  $("assignPageProfile").addEventListener("click", assignPageProfile);
+  $("savePageProfile").addEventListener("click", savePageProfile);
+  $("targetPageProfile").addEventListener("change", (event) => fillProfileForm(state.profiles.find((profile) => profile.profileId === event.target.value) || {}));
+  $("openAddSheet").addEventListener("click", openAddSheet);
+  $("closeAddSheet").addEventListener("click", () => { $("addSheetPanel").hidden = true; });
+  $("newSheetTemplate").addEventListener("change", renderSheetTemplatePreview);
+  $("createSheet").addEventListener("click", createSheet);
+  $("visualQcCheck").addEventListener("change", (event) => {
+    state.visualQcConfirmedFor = event.target.checked ? state.content.contentId : "";
+    renderQc();
+  });
   $("downloadAll").addEventListener("click", () => state.plan.forEach((item, index) => {
     const stored = state.assets[item.asset_id];
-    if (stored) setTimeout(() => downloadBlob(stored.blob, stored.filename), index * 250);
+    if (stored && !stored.stale) setTimeout(() => downloadBlob(stored.blob, stored.filename), index * 250);
   }));
 }
 
 function renderSourceOptions() {
-  $("sheetSelect").innerHTML = state.sources.map((source) => `<option value="${escapeHtml(source.name)}">${escapeHtml(source.label)}</option>`).join("");
-  $("sheetSelect").value = state.sourceName;
+  const currentValue = state.source === "approved-opportunities" ? APPROVED_OPPORTUNITIES_SOURCE : String(state.sourceId || "");
+  const options = state.sources.map((source) => `<option value="${escapeHtml(source.sheetId)}">${escapeHtml(source.label || source.title || source.name)}</option>`);
+  options.push(`<option value="${escapeHtml(APPROVED_OPPORTUNITIES_SOURCE)}">V4.2 development ideas · local handoff</option>`);
+  $("sheetSelect").innerHTML = options.join("");
+  if ([...$("sheetSelect").options].some((option) => option.value === currentValue)) $("sheetSelect").value = currentValue;
 }
 
-async function loadSource(sourceName) {
+async function refreshSheets(keepCurrent = false) {
   try {
-    if (sourceName === APPROVED_OPPORTUNITIES_SOURCE) {
-      const approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]");
-      const rawRecords = approved.map((item) => item.production_draft).filter(Boolean);
-      if (!rawRecords.length) throw new Error("No V4.2 opportunities have been approved for production yet.");
-      const normalized = normalizeContentRecordsSafely(rawRecords);
-      state.records = normalized.records;
-      if (!state.records.length) throw new Error(`No valid approved V4.2 drafts loaded. First rejected: ${normalized.rejected[0]?.contentId || "unknown"} — ${normalized.rejected[0]?.message || "validation error"}`);
-      state.writable = false;
-      state.source = "approved-opportunities";
-      state.sourceName = APPROVED_OPPORTUNITIES_SOURCE;
-      state.sources = [...(state.sources || []), { name: APPROVED_OPPORTUNITIES_SOURCE, label: "V4.2 approved opportunities · local handoff" }].filter((item, index, values) => values.findIndex((candidate) => candidate.name === item.name) === index);
-      localStorage.setItem("capc:selectedSource", state.sourceName);
-      renderSourceOptions();
-      $("connection").className = "connection offline";
-      $("connection").lastElementChild.textContent = `Approved V4.2 drafts · ${state.records.length} record${state.records.length === 1 ? "" : "s"} · read-only`;
-      $("markPosted").disabled = true;
-      $("writeHint").textContent = "Approved opportunity handoff. Review and produce through the existing V4.1 workflow; nothing is published automatically.";
-      renderOptions(state.records);
-      applyContent(state.records[0]);
+    const data = await apiJson("/api/sheets");
+    state.sources = Array.isArray(data.sheets) ? data.sheets : [];
+    state.profiles = Array.isArray(data.profiles) ? data.profiles : [];
+    renderSourceOptions();
+    const stored = localStorage.getItem("capc:selectedSourceId") || localStorage.getItem("capc:selectedSource") || "";
+    const legacyMatch = state.sources.find((source) => source.title === stored || source.name === stored);
+    const preferred = keepCurrent && state.sourceId ? String(state.sourceId) : legacyMatch ? String(legacyMatch.sheetId) : stored;
+    const chosen = state.sources.find((source) => String(source.sheetId) === preferred) || state.sources.find((source) => source.active && source.schemaStatus === "READY") || state.sources[0];
+    if (chosen) await loadSource(String(chosen.sheetId));
+    else { clearContentView("No supported content worksheets were discovered."); $("connection").lastElementChild.textContent = "No content worksheets"; }
+  } catch (error) {
+    $("connection").className = "connection offline";
+    $("connection").lastElementChild.textContent = "Sheet discovery unavailable";
+    toast(error.message, true);
+  }
+}
+
+async function loadSource(sourceValue) {
+  if (sourceValue === APPROVED_OPPORTUNITIES_SOURCE) {
+    const approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]");
+    const rawRecords = approved.map((item) => item.production_draft).filter(Boolean);
+    const normalized = normalizeContentRecordsSafely(rawRecords);
+    state.records = normalized.records;
+    state.writable = false;
+    state.source = "approved-opportunities";
+    state.sourceId = null;
+    state.currentSheet = null;
+    state.pageProfile = null;
+    state.sourceName = APPROVED_OPPORTUNITIES_SOURCE;
+    localStorage.setItem("capc:selectedSource", state.sourceName);
+    renderSourceOptions();
+    $("connection").className = "connection offline";
+    $("connection").lastElementChild.textContent = `Development handoffs · ${state.records.length} · read-only`;
+    $("writeHint").textContent = "Idea approved for development only. Complete the content specification and editorial review before generation; nothing is published automatically.";
+    renderPageProfiles();
+    if (!state.records.length) return clearContentView("No V4.2 ideas have been approved for development yet.");
+    renderOptions(state.records);
+    applyContent(state.records[0]);
+    reportRejectedRecords(normalized.rejected);
+    return;
+  }
+  const source = state.sources.find((item) => String(item.sheetId) === String(sourceValue));
+  if (!source) return toast("Select a discovered worksheet by its stable sheetId.", true);
+  state.contentLoadToken += 1;
+  state.sourceId = Number(source.sheetId);
+  state.sourceName = source.title || source.name;
+  state.source = "sheet";
+  state.currentSheet = source;
+  state.pageProfile = state.profiles.find((item) => item.profileId === source.targetPageProfileId) || null;
+  state.writable = false;
+  localStorage.setItem("capc:selectedSourceId", String(source.sheetId));
+  localStorage.setItem("capc:selectedSource", state.sourceName);
+  renderSourceOptions();
+  renderPageProfiles();
+  clearContentView("Loading selected worksheet…");
+  const connection = $("connection");
+  connection.className = source.setupStatus === "READY" ? "connection live" : "connection offline";
+  connection.lastElementChild.textContent = `${source.title} · ${source.contentType} · ${source.targetPageName} · ${source.setupStatus}`;
+  try {
+    const data = await apiJson(`/api/recipes?${new URLSearchParams({ sheetId: String(source.sheetId) })}`);
+    state.currentSheet = { ...source, ...(data.sourceState || {}), setupStatus: data.setupStatus || source.setupStatus, setupReasons: data.setupReasons || source.setupReasons };
+    state.profiles = data.profiles || state.profiles;
+    state.pageProfile = data.pageProfile || state.profiles.find((item) => item.profileId === state.currentSheet.targetPageProfileId) || null;
+    renderPageProfiles();
+    const rawRecords = data.records || data.recipes || [];
+    if (!Array.isArray(rawRecords)) throw new Error("Worksheet source did not return a records array.");
+    const normalized = normalizeContentRecordsSafely(rawRecords);
+    state.records = normalized.records;
+    state.writable = Boolean(data.writable && data.source === "sheet");
+    connection.className = state.writable ? "connection live" : "connection offline";
+    connection.lastElementChild.textContent = state.writable
+      ? `${state.sourceName} · ${state.records.length} records · ${state.currentSheet.setupStatus}`
+      : `${state.sourceName} · ${data.setupStatus || state.currentSheet.setupStatus}${(data.setupReasons || []).length ? ` · ${data.setupReasons[0]}` : ""}`;
+    if (!state.records.length) {
+      const message = (data.setupReasons || state.currentSheet.setupReasons || []).join(" ") || "This supported worksheet is ready but has no content rows yet.";
+      clearContentView(message);
       reportRejectedRecords(normalized.rejected);
       return;
     }
-    const query = sourceName ? `?${new URLSearchParams({ sheetName: sourceName })}` : "";
-    const response = await fetch(`/api/recipes${query}`);
-    const data = await response.json();
-    const rawRecords = data.records || data.recipes;
-    if (!response.ok || !data.ok || !Array.isArray(rawRecords)) throw new Error(data.error || "Content data failed to load.");
-    const normalized = normalizeContentRecordsSafely(rawRecords);
-    state.records = normalized.records;
-    if (!state.records.length) throw new Error(`No valid content records loaded. First rejected: ${normalized.rejected[0]?.contentId || "unknown"} — ${normalized.rejected[0]?.message || "validation error"}`);
-    state.writable = Boolean(data.writable);
-    state.source = data.source;
-    state.sourceName = data.sheetName || data.sourceName;
-    state.sources = [...(data.sheets || data.sources || [{ name: state.sourceName, label: state.sourceName }]), { name: APPROVED_OPPORTUNITIES_SOURCE, label: "V4.2 approved opportunities · local handoff" }];
-    localStorage.setItem("capc:selectedSource", state.sourceName);
-    renderSourceOptions();
-    const connection = $("connection");
-    connection.className = `connection ${state.writable ? "live" : "offline"}`;
-    connection.lastElementChild.textContent = state.writable ? `Google Sheet connected · ${state.records.length} records` : `${data.source === "canary" ? "V4 canary" : "Local snapshot"} · read-only`;
-    $("markPosted").disabled = !state.writable;
-    $("writeHint").textContent = state.writable ? "Only the Status field will be updated." : "This source is read-only; production data will not be changed.";
     renderOptions(state.records);
-    const saved = localStorage.getItem(`capc:selectedContent:${state.sourceName}`);
-    applyContent(state.records.find((content) => content.contentId === saved) || state.records[0]);
-    if (data.warning) toast(data.warning, true);
+    const saved = localStorage.getItem(`capc:selectedContent:${state.sourceId}`) || localStorage.getItem(`capc:selectedContent:${state.sourceName}`);
+    applyContent(state.records.find((item) => item.contentId === saved) || state.records[0]);
     reportRejectedRecords(normalized.rejected);
   } catch (error) {
-    $("connection").className = "connection offline";
-    $("connection").lastElementChild.textContent = "Content data unavailable";
+    state.writable = false;
+    connection.className = "connection offline";
+    connection.lastElementChild.textContent = `${state.sourceName} · load failed`;
+    clearContentView(`${state.sourceName} is unavailable or needs setup. Other discovered worksheets remain selectable.`);
     toast(error.message, true);
   }
+}
+
+async function savePageProfile() {
+  const profile = {
+    profileId: state.editingProfileId || undefined,
+    facebookPageId: $("profileFacebookPageId").value,
+    displayName: $("profileDisplayName").value,
+    audience: $("profileAudience").value,
+    primaryLanguage: $("profileLanguage").value,
+    toneGuidance: $("profileTone").value,
+    contentPillars: splitLines($("profilePillars").value),
+    suitableFormats: splitLines($("profileFormats").value),
+    avoidTopics: splitLines($("profileAvoidTopics").value),
+    monetizationTypes: splitLines($("profileMonetization").value),
+    active: $("profileActive").checked
+  };
+  try {
+    const result = await apiJson("/api/production/page-profiles", { method: "POST", headers: writeHeaders(), body: JSON.stringify(profile) });
+    fillProfileForm(result.profile);
+    await refreshSheets(true);
+    toast(`Page profile saved${result.profile.active ? " and activated" : " as a draft"}.`);
+  } catch (error) { toast(error.message, true); }
+}
+
+async function assignPageProfile() {
+  if (!state.sourceId) return toast("Select a connected worksheet first.", true);
+  try {
+    await apiJson("/api/production/sheets/settings", { method: "POST", headers: writeHeaders(), body: JSON.stringify({ sheetId: state.sourceId, targetPageProfileId: $("targetPageProfile").value, active: $("sourceActive").checked }) });
+    await refreshSheets(true);
+    toast("Target Page profile assignment saved.");
+  } catch (error) { toast(error.message, true); }
+}
+
+async function openAddSheet() {
+  $("addSheetPanel").hidden = false;
+  try {
+    const [templateData, sheetData] = await Promise.all([apiJson("/api/sheet-templates"), apiJson("/api/sheets")]);
+    state.templates = templateData.templates || [];
+    state.profiles = sheetData.profiles || state.profiles;
+    $("newSheetTemplate").innerHTML = state.templates.map((item) => `<option value="${escapeHtml(item.templateId)}">${escapeHtml(item.label)}</option>`).join("");
+    renderSheetTemplatePreview();
+    renderPageProfiles();
+  } catch (error) { $("addSheetResult").textContent = error.message; $("addSheetResult").className = "helper add-sheet-result error"; }
+}
+
+function renderSheetTemplatePreview() {
+  const selected = state.templates.find((item) => item.templateId === $("newSheetTemplate").value) || state.templates[0];
+  if (!selected) return;
+  $("newSheetTemplateDescription").textContent = `${selected.description} Content type: ${selected.contentType}; schema v${selected.schemaVersion}.`;
+  $("newSheetHeaders").textContent = selected.headers.join(" · ");
+}
+
+async function createSheet() {
+  const button = $("createSheet");
+  button.disabled = true;
+  $("addSheetResult").textContent = "Creating a new worksheet…";
+  $("addSheetResult").className = "helper add-sheet-result";
+  try {
+    const result = await apiJson("/api/sheets", { method: "POST", headers: writeHeaders(), body: JSON.stringify({ templateId: $("newSheetTemplate").value, title: $("newSheetTitle").value, targetPageProfileId: $("newSheetPageProfile").value }) });
+    await refreshSheets(false);
+    const createdId = String(result.sheet.sheetId);
+    $("sheetSelect").value = createdId;
+    await loadSource(createdId);
+    $("addSheetResult").textContent = `Created ${result.sheet.title} (sheetId ${result.sheet.sheetId}). The tab is empty and ready for content using the selected template.`;
+    $("addSheetResult").className = "helper add-sheet-result success";
+    $("newSheetTitle").value = "";
+  } catch (error) {
+    $("addSheetResult").textContent = error.message;
+    $("addSheetResult").className = "helper add-sheet-result error";
+  } finally { button.disabled = false; }
 }
 
 async function start() {
   bindEvents();
   window.addEventListener("capc-approved-opportunity", () => loadSource(APPROVED_OPPORTUNITIES_SOURCE));
-  await loadSource(localStorage.getItem("capc:selectedSource") || "");
+  fillProfileForm();
+  await refreshSheets(false);
 }
 
 start();

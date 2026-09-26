@@ -68,7 +68,9 @@ test("canary contains diverse mechanisms, local relevance, selection and affilia
 test("approval is explicit and produces a V4-compatible draft only", () => {
   const opportunity = buildOpportunity(OPPORTUNITY_CANARY_SEEDS[0], history);
   const approved = approveOpportunity(opportunity);
-  assert.equal(approved.approval_status, "APPROVED"); assert.equal(approved.production_draft.Schema_Version, 4);
+  assert.equal(approved.approval_status, "APPROVED_FOR_DEVELOPMENT"); assert.equal(approved.production_draft.Schema_Version, 4);
+  assert.equal(approved.production_draft.Status, "APPROVED_FOR_DEVELOPMENT");
+  assert.equal(JSON.parse(approved.production_draft.Editorial_Review_JSON).review_status, "NOT_REVIEWED");
   assert.match(approved.production_draft.Hook_Text, /在一些佩戴文化中/);
   assert.equal(normalizeContentRecord(approved.production_draft).templateType, "SAVEABLE_GUIDE");
   assert.throws(() => approveOpportunity(approved), /pending/);
@@ -83,7 +85,9 @@ test("new guide templates normalize while legacy V4 production records remain va
 
 test("approval routes into the existing read-only V4.1 production workflow without publishing", () => {
   assert.match(appSource, /V4\.2 Approved Opportunities/);
-  assert.match(appSource, /Approved opportunity handoff/);
+  assert.match(appSource, /Idea approved for development only/);
   assert.match(opportunityUi, /capc-approved-opportunity/);
+  assert.match(opportunityUi, /APPROVED FOR DEVELOPMENT · SPECIFICATION NOT READY/i);
   assert.match(opportunityUi, /has not created images, final assets, a Sheet record, a batch, or a Facebook post/i);
+  assert.match(opportunityUi, /Approve for Development/);
 });

@@ -166,6 +166,16 @@ export function extractIngredients(fullRecipe = "") {
   return fullRecipe.match(/(?:^|\n)食材\s*\n([\s\S]*?)(?:\n\n做法|\n做法)/)?.[1]?.trim() || "";
 }
 
+function parseLegacyIngredientItems(ingredients = "") {
+  return String(ingredients).split(/[;；、,，|｜\n]/).map((value) => value.trim().replace(/[。.]$/, "")).filter(Boolean).map((value) => {
+    const match = value.match(/^(.+?)\s*(\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升|斤|两|勺|茶匙|汤匙|瓣|根|片|碗|杯|颗|个|只|条))$/i);
+    const leadingQuantity = value.match(/^(\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升|斤|两|勺|茶匙|汤匙|瓣|根|片|碗|杯|颗|个|只|条))\s*(.+)$/i);
+    return match ? { name: match[1].trim(), quantity: match[2].trim() }
+      : leadingQuantity ? { name: leadingQuantity[2].trim(), quantity: leadingQuantity[1].trim() }
+        : { name: value, quantity: "" };
+  });
+}
+
 export function legacyMethodVisual(methodPrompt = "", index) {
   const pattern = new RegExp(`Panel ${index}[^:]*:\\s*([\\s\\S]*?)(?=\\nPanel ${index + 1}[^:]*:|\\nMaintain exact|$)`, "i");
   return methodPrompt.match(pattern)?.[1]?.trim() || `Create only the photograph for cooking step ${index}; follow the exact supplied step caption.`;
@@ -243,11 +253,12 @@ export function adaptLegacyRecipe(record) {
   const overlay = parseLegacyOverlay(record);
   const methodInputs = Array.from({ length: 6 }, (_, offset) => {
     const index = offset + 1;
+    const caption = record[`Image_3_Step_${index}_Caption`] || "";
     return {
       slot_id: `m${index}`,
       label: `M${index}`,
       image_prompt: legacyMethodVisual(record.Image_3_Method_Prompt, index),
-      overlay_text: record[`Image_3_Step_${index}_Caption`] || ""
+      overlay_text: caption
     };
   });
   const normalized = {
@@ -298,9 +309,60 @@ function parseAssetConfiguration(record) {
   }
 }
 
+const EDITORIAL_REVIEW_STATUSES = new Set(["NOT_REVIEWED", "REVIEW", "PASS", "BLOCKED"]);
+
+function parseEditorialReview(record = {}) {
+  const serialized = record.Editorial_Review_JSON || record.editorial_review_json;
+  let metadata = {};
+  let error = "";
+  if (serialized && typeof serialized === "object" && !Array.isArray(serialized)) metadata = clone(serialized);
+  else if (serialized) {
+    try {
+      metadata = JSON.parse(serialized);
+      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("must be a JSON object");
+    } catch (parseError) { error = `Invalid Editorial_Review_JSON: ${parseError.message}`; }
+  }
+  const aliases = {
+    review_status: ["Editorial_Status", "editorial_status"],
+    reviewer: ["Editorial_Reviewer", "editorial_reviewer"],
+    reviewed_at: ["Editorial_Reviewed_At", "editorial_reviewed_at"],
+    audience_need: ["USER_NEED", "User_Need", "Audience_Need", "audience_need", "user_need"],
+    reader_value: ["Reader_Value", "reader_value"],
+    source_evidence_status: ["Source_Evidence_Status", "source_evidence_status"],
+    caption_review_status: ["Caption_Review_Status", "caption_review_status"],
+    claim_evidence: ["Claim_Evidence", "claim_evidence"],
+    internal_claim_notes: ["Internal_Claim_Notes", "internal_claim_notes"],
+    editorial_notes: ["Editorial_Notes", "editorial_notes"],
+    source_notes: ["Source_Notes", "source_notes"],
+    limitations: ["Limitations", "limitations"],
+    recipe_precision: ["Recipe_Precision", "recipe_precision", "Approximate_Recipe", "approximate_recipe"],
+    timing_guidance: ["Timing_Guidance", "timing_guidance"],
+    temperature_guidance: ["Temperature_Guidance", "temperature_guidance"],
+    temperature_required: ["Temperature_Required", "temperature_required"],
+    serving_expectation: ["Serving_Expectation", "serving_expectation"],
+    mistake_problem: ["Mistake_Problem", "mistake_problem"],
+    cause_explanation: ["Cause_Explanation", "cause_explanation", "Why_It_Happens", "why_it_happens"],
+    consequence: ["Mistake_Consequence", "mistake_consequence", "consequence"],
+    correction: ["Correction", "correction"],
+    expected_result: ["Expected_Corrected_Result", "expected_corrected_result"],
+    selection_question: ["Selection_Question", "selection_question"],
+    comparison_criteria: ["Comparison_Criteria", "comparison_criteria"],
+    option_suitability: ["Option_Suitability", "option_suitability"],
+    tradeoffs: ["Tradeoffs", "tradeoffs"],
+    decision_logic: ["Decision_Logic", "decision_logic"]
+  };
+  for (const [key, names] of Object.entries(aliases)) {
+    if (metadata[key] !== undefined) continue;
+    const name = names.find((candidate) => record[candidate] !== undefined && record[candidate] !== "");
+    if (name) metadata[key] = record[name];
+  }
+  return { metadata, error };
+}
+
 export function adaptV4Record(record) {
   const { hookText, priceVerified } = applyClaimSafety(record);
   const assetConfiguration = parseAssetConfiguration(record);
+  const editorial = parseEditorialReview(record);
   const normalized = {
     schemaVersion: Number(record.Schema_Version || record.schema_version || 4),
     contentId: record.Content_ID || record.content_id,
@@ -314,6 +376,7 @@ export function adaptV4Record(record) {
     caption: record.Caption || record.Ready_To_Post_Caption || record.caption || "",
     contentBody: record.Content_Body || record.content_body || "",
     source: record.Source || record.Source_References || record.source || "",
+    sourceReferences: record.Source_References || record.source_references || record.Source || record.source || "",
     affiliateFit: record.Affiliate_Fit || record.affiliate_fit || "NONE",
     monetizationAngle: record.Monetization_Angle || record.monetization_angle || "",
     productCategory: record.Product_Category || record.product_category || "",
@@ -333,6 +396,8 @@ export function adaptV4Record(record) {
     sourceIngredients: Array.isArray(assetConfiguration.sourceIngredients) ? assetConfiguration.sourceIngredients : [],
     consistencyRules: Array.isArray(record.visual_consistency_rules) ? record.visual_consistency_rules : [],
     qualityRules: Array.isArray(record.qc_rules) ? record.qc_rules : [],
+    editorialReview: editorial.metadata,
+    editorialReviewParseError: editorial.error,
     raw: record
   };
   if (!normalized.contentId || !normalized.title || !normalized.contentType || !normalized.templateType) throw new Error("V4 content requires Content_ID, Title, Content_Type and Template_Type.");
@@ -417,6 +482,235 @@ export function runContentQc(content) {
   return { status: failures.length ? "FAIL" : warnings.length ? "WARNING" : "PASS", failures, warnings, manualChecks: ["Visual realism", "Subject continuity", "Image and text visual alignment", "Wrong-example plausibility", "Composition quality"] };
 }
 
+const textValue = (value) => typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
+const hasText = (...values) => values.some((value) => Boolean(textValue(value)));
+const INTERNAL_NOTE_PATTERN = /(?:不发布|不要发布|请勿发布|内部(?:备注|指示|审核|使用)|编辑验证|仅供内部|do not publish|internal only|not for readers)/i;
+const UNSUPPORTED_BENEFIT_PATTERN = /(?:解暑|排毒|开胃|提神|治愈|治疗|预防疾病|降血糖|降血脂|增强免疫|减肥|助眠)/;
+const QUANTITY_PATTERN = /(?:\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升|斤|两|勺|茶匙|汤匙|瓣|根|片|碗|杯|颗|个|只|条)|适量|少许|半个|半只)/i;
+
+function planText(content) {
+  return (content.resolvedAssetPlan || []).flatMap((item) => [
+    item.overlay_text, item.purpose, item.local_heading,
+    ...(item.generation_inputs || []).flatMap((input) => [input.step_heading, input.step_supporting_text, input.overlay_text])
+  ]).filter(Boolean).join("\n");
+}
+
+function recipeApproximation(metadata) {
+  const value = String(metadata.recipe_precision || "").trim().toUpperCase();
+  return metadata.approximate_recipe === true || value === "TRUE" || value === "APPROXIMATE" || value === "ESTIMATE";
+}
+
+/**
+ * Editorial completeness is deliberately separate from deterministic asset/contract QC.
+ * PASS requires both content completeness and an explicit reviewer + timestamp in the optional
+ * Editorial_Review_JSON (or equivalent mapped fields); it is not inferred from structural PASS.
+ */
+export function runEditorialReview(content) {
+  const metadata = content.editorialReview || {};
+  const issues = [];
+  const add = (code, detail, severity = "REVIEW") => issues.push({ code, detail, severity });
+  const plan = content.resolvedAssetPlan || [];
+  const body = textValue(content.contentBody);
+  const caption = textValue(content.caption);
+  const publishableCopy = [content.title, content.hookText, caption, content.raw?.CTA_Text, content.raw?.cta_text].map(textValue).filter(Boolean).join("\n");
+  const editorialMaterialExists = Boolean(body || caption || (content.coveragePoints || []).length || metadata.reader_value);
+
+  if (content.editorialReviewParseError) add("EDITORIAL_REVIEW_JSON_INVALID", content.editorialReviewParseError);
+  if (!editorialMaterialExists) {
+    add("EDITORIAL_CONTENT_NOT_STARTED", "The opportunity handoff has no developed source content or reader-facing caption.", "PENDING");
+    const emptyContentStatus = String(metadata.review_status || "NOT_REVIEWED").toUpperCase();
+    if (emptyContentStatus === "BLOCKED") {
+      add("EDITOR_MARKED_BLOCKED", "The editor has explicitly blocked this content.", "BLOCKED");
+      return { status: "BLOCKED", issues, reviewer: textValue(metadata.reviewer), reviewedAt: textValue(metadata.reviewed_at), mode: "RULES_PLUS_REVIEWER_ATTESTATION" };
+    }
+    if (content.editorialReviewParseError || emptyContentStatus === "REVIEW" || !EDITORIAL_REVIEW_STATUSES.has(emptyContentStatus)) {
+      return { status: "REVIEW", issues, reviewer: textValue(metadata.reviewer), reviewedAt: textValue(metadata.reviewed_at), mode: "RULES_PLUS_REVIEWER_ATTESTATION" };
+    }
+    return { status: "NOT_REVIEWED", issues, reviewer: textValue(metadata.reviewer), reviewedAt: textValue(metadata.reviewed_at), mode: "RULES_PLUS_REVIEWER_ATTESTATION" };
+  }
+
+  if (INTERNAL_NOTE_PATTERN.test(publishableCopy)) {
+    add("INTERNAL_NOTE_IN_READER_COPY", "Internal production/review instructions appear in title, hook, caption or CTA; move them to dedicated internal fields before use.", "BLOCKED");
+  }
+  if (UNSUPPORTED_BENEFIT_PATTERN.test(publishableCopy) && !hasText(metadata.claim_evidence)) {
+    add("UNSUPPORTED_BENEFIT_CLAIM", "Reader-facing copy contains a health/wellness benefit claim without claim evidence.", "BLOCKED");
+  }
+
+  const audienceText = `${content.title || ""} ${content.hookText || ""} ${caption}`;
+  const audienceSignal = hasText(metadata.audience_need)
+    || /[?？]|为什么|怎么(?:做|挑|选)|如何|别只看|不知道煮什么|买菜|选购/.test(audienceText)
+    || (["RECIPE", "DRINK"].includes(content.contentType) && /(?:晚餐|白饭|米饭|家常菜|不知道煮)/.test(audienceText));
+  if (!audienceSignal) add("AUDIENCE_NEED_UNCLEAR", "State who the content helps and what decision/problem it addresses.");
+  if (!hasText(metadata.reader_value)) add("READER_VALUE_NOT_EXPLICIT", "Record the concrete reader benefit in the editorial specification; asset presence alone does not prove usefulness.");
+  if (!content.pageProfile) add("TARGET_PAGE_PROFILE_MISSING", "Assign a verified audience/page profile before final editorial approval.");
+  if (String(metadata.page_fit_status || "").toUpperCase() !== "PASS") add("PAGE_AUDIENCE_FIT_NOT_REVIEWED", "Review audience, language, tone and format against the selected Page profile.");
+  if (content.pageProfile && (
+    textValue(metadata.page_profile_id) !== textValue(content.pageProfile.profileId)
+    || (content.pageProfile.updatedAt && textValue(metadata.page_profile_updated_at) !== textValue(content.pageProfile.updatedAt))
+  )) add("PAGE_PROFILE_REVIEW_STALE", "The Page profile changed or differs from the profile used for the last editorial review; re-review audience fit.");
+  if (!body || !caption) add("READER_VALUE_OR_CAPTION_MISSING", "A developed source body and reader-facing caption are both required.");
+  if (caption && caption.length < 12) add("CAPTION_VALUE_TOO_THIN", "Caption is too short to demonstrate useful reader-facing value.");
+  if (body && INTERNAL_NOTE_PATTERN.test(body)) add("INTERNAL_NOTE_IN_SOURCE_BODY", "Move the internal instruction out of Content_Body into Editorial_Notes; keep the reader-facing copy separate.");
+
+  const source = textValue(metadata.source_notes || content.sourceReferences || content.source);
+  const genericSource = /controlled\s+v4\s+google\s+sheet\s+canary|top\s+facebook\s+performance\s+list|source\s*(?:pending|tbd|unknown)|待补|待核实/i.test(source);
+  if (!source) add("SOURCE_EVIDENCE_MISSING", "Add an identifiable source or evidence note for factual statements.");
+  else if (genericSource) add("SOURCE_EVIDENCE_IS_PLACEHOLDER", "The current source label identifies the canary, not evidence supporting this content.");
+  if (source && !genericSource && String(metadata.source_evidence_status || "").toUpperCase() !== "VERIFIED") {
+    add("SOURCE_EVIDENCE_NOT_VERIFIED", "Record that the cited source was checked for the claims used.");
+  }
+  if (String(metadata.review_status || "").toUpperCase() === "BLOCKED") {
+    add("EDITOR_MARKED_BLOCKED", "The editor has explicitly blocked this content.", "BLOCKED");
+  }
+  if (String(metadata.review_status || "").toUpperCase() === "REVIEW") {
+    add("EDITOR_REQUESTED_REVIEW", textValue(metadata.review_note) || "The editor requested another review.");
+  }
+
+  const editorialCopyReviewed = String(metadata.caption_review_status || "").toUpperCase() === "PASS";
+  if (!editorialCopyReviewed) add("CAPTION_EDITORIAL_REVIEW_MISSING", "Naturalness and reader-facing tone have not been explicitly reviewed.");
+
+  const fullText = `${body}\n${caption}\n${planText(content)}`;
+  if (["RECIPE", "DRINK"].includes(content.contentType) || content.templateType === "RECIPE_STANDARD") {
+    const ingredientsAsset = plan.find((item) => item.asset_type === "INGREDIENTS");
+    const legacyIngredientItems = content.schemaVersion < 4 && content.raw
+      ? parseLegacyIngredientItems(parseLegacyOverlay(content.raw).ingredients || extractIngredients(content.raw.Full_Recipe))
+      : [];
+    const sourceIngredients = content.sourceIngredients?.length ? content.sourceIngredients : legacyIngredientItems.map((item) => item.name);
+    const ingredientItems = ingredientsAsset?.ingredient_items?.length ? ingredientsAsset.ingredient_items : legacyIngredientItems;
+    if (!sourceIngredients.length || !ingredientsAsset) add("RECIPE_INGREDIENTS_MISSING", "A source-backed ingredient list is required.");
+    const hasQuantities = sourceIngredients.length > 0 && sourceIngredients.every((name) => ingredientItems.some((item) => {
+      const itemText = typeof item === "string" ? item : `${item?.name || ""} ${item?.quantity || ""}`;
+      return textValue(itemText).includes(name) && QUANTITY_PATTERN.test(itemText);
+    }));
+    const approximate = recipeApproximation(metadata);
+    if (!hasQuantities && !(approximate && hasText(metadata.limitations))) {
+      add("RECIPE_QUANTITIES_OR_APPROXIMATION_MISSING", "Add reproducible quantities, or explicitly mark the recipe approximate and explain the limitation.");
+    }
+    const method = plan.find((item) => item.asset_type === "METHOD");
+    const steps = method?.generation_inputs || [];
+    const editorialSteps = steps.map((step, index) => {
+      const caption = textValue(step.overlay_text);
+      return {
+        method_step_id: step.method_step_id || (/^m\d+$/i.test(step.slot_id || "") ? step.slot_id.toUpperCase() : `M${index + 1}`),
+        step_heading: step.step_heading || caption.split(/[，,；;。\n]/)[0]?.trim(),
+        step_supporting_text: step.step_supporting_text || caption.split(/\n/).slice(1).join(" ").trim()
+      };
+    });
+    if (!body || editorialSteps.length < 2 || editorialSteps.some((step) => !hasText(step.method_step_id, step.step_heading, step.step_supporting_text))) {
+      add("RECIPE_METHOD_INCOMPLETE", "Provide preparation instructions and ordered method steps with IDs, headings and supporting text.");
+    }
+    const hasTiming = hasText(metadata.timing_guidance) || /\d+\s*(?:分钟|min(?:ute)?s?|秒)|(?:至|直到|直至).{0,12}(?:熟透|上色|金黄|冒汽|变软|收汁)|刚熟/i.test(fullText);
+    if (!hasTiming) add("RECIPE_TIMING_GUIDANCE_MISSING", "Add useful timing or observable doneness guidance.");
+    if (metadata.temperature_required === true && !hasText(metadata.temperature_guidance)) {
+      add("RECIPE_TEMPERATURE_GUIDANCE_MISSING", "This recipe is marked temperature-sensitive; provide the applicable temperature guidance or remove the requirement with a reason.");
+    }
+    const needsCookSafetyCue = /鸡|禽|猪|排骨|肉类/.test(`${content.title || ""} ${body}`);
+    if (needsCookSafetyCue && !/(?:完全熟透|中心熟透|熟透|熟至|fully cooked|cook through)/i.test(fullText)) {
+      add("RECIPE_COOKING_SAFETY_CUE_MISSING", "Add an appropriate doneness/safety cue for the meat in this recipe.");
+    }
+    const closeup = plan.find((item) => item.asset_type === "CLOSEUP" || item.asset_type === "FINAL");
+    if (!hasText(metadata.serving_expectation, closeup?.overlay_text, closeup?.purpose)) {
+      add("RECIPE_RESULT_EXPECTATION_MISSING", "Describe the serving/result expectation for the reader.");
+    }
+  }
+
+  if (content.contentType === "MISTAKE_FIX" || content.templateType === "MISTAKE_BEFORE_AFTER") {
+    const wrong = plan.find((item) => item.asset_type === "WRONG_METHOD");
+    const correct = plan.find((item) => item.asset_type === "CORRECT_METHOD");
+    const final = plan.find((item) => item.asset_type === "FINAL_RESULT");
+    const problemText = `${content.title || ""} ${content.hookText || ""} ${metadata.mistake_problem || ""}`;
+    if (!hasText(metadata.mistake_problem) && !/[?？]|出水|缩水|做错|失败|问题/.test(problemText)) add("MISTAKE_NOT_DEFINED", "Define the specific mistake or reader problem.");
+    if (!hasText(metadata.cause_explanation) && !/(?:因为|原因是|由于|导致|所以|会让|容易让)/.test(body)) add("MISTAKE_CAUSE_MISSING", "Explain why the mistake happens; a visual label alone is not an explanation.");
+    if (!hasText(metadata.consequence) && !/(?:出水|缩水|变老|变柴|变软|变色|失败|影响|导致)/.test(`${content.title || ""} ${content.hookText || ""} ${body} ${caption}`)) add("MISTAKE_CONSEQUENCE_MISSING", "State the practical consequence of the mistake.");
+    if (!wrong || !correct || !hasText(correct.overlay_text)) add("MISTAKE_CORRECTION_MISSING", "Provide a clear, actionable correction alongside the wrong-method example.");
+    if (!hasText(metadata.expected_result, final?.overlay_text, final?.purpose)) add("MISTAKE_EXPECTED_RESULT_MISSING", "State the result readers should expect after applying the correction.");
+  }
+
+  if (content.contentType === "SELECTION_GUIDE" || content.templateType === "COMPARE_CHECKLIST" || content.templateType === "SAVEABLE_GUIDE") {
+    const requiredPoints = (content.coveragePoints || []).filter((point) => point.required !== false);
+    const covered = new Set(plan.flatMap((item) => item.coverage_point_ids || []));
+    const missingPoints = requiredPoints.filter((point) => !covered.has(point.id));
+    if (!requiredPoints.length || missingPoints.length) add("SELECTION_CRITERIA_INCOMPLETE", missingPoints.length ? `Map every required criterion to a final asset: ${missingPoints.map((point) => point.text || point.id).join(", ")}.` : "Define explicit decision criteria.");
+    if (!hasText(metadata.option_suitability) && !/(?:适合|适用|更适合|不适合|如果.{0,12}(?:选|挑|买))/.test(fullText)) {
+      add("SELECTION_SUITABILITY_MISSING", "Explain who/when each option or criterion suits.");
+    }
+    if (!hasText(metadata.tradeoffs, metadata.limitations) && !/(?:不过|但|限制|不适合|取舍|缺点|通常|可能)/.test(fullText)) {
+      add("SELECTION_TRADEOFFS_MISSING", "Represent relevant trade-offs, exceptions or limitations.");
+    }
+    if (!hasText(metadata.decision_logic) && !/(?:检查|看|挑|选|判断|优先|同样大小)/.test(fullText)) {
+      add("SELECTION_DECISION_LOGIC_MISSING", "State how the reader should apply the criteria to make a decision.");
+    }
+  }
+
+  if (content.editorialReviewParseError) {
+    // Keep malformed review metadata out of structural normalization, but never treat it as approval.
+  }
+  const explicitStatus = String(metadata.review_status || "NOT_REVIEWED").toUpperCase();
+  if (!EDITORIAL_REVIEW_STATUSES.has(explicitStatus)) add("EDITORIAL_STATUS_INVALID", `Unsupported editorial state: ${explicitStatus}.`);
+  const hasBlockingIssue = issues.some((issue) => issue.severity === "BLOCKED");
+  const hasReviewIssue = issues.some((issue) => issue.severity === "REVIEW");
+  const reviewedAt = textValue(metadata.reviewed_at);
+  const reviewerAttestationPresent = hasText(metadata.reviewer) && Boolean(reviewedAt) && Number.isFinite(Date.parse(reviewedAt));
+  let status = "PASS";
+  if (hasBlockingIssue || explicitStatus === "BLOCKED") status = "BLOCKED";
+  else if (hasReviewIssue || explicitStatus === "REVIEW") status = "REVIEW";
+  else if (explicitStatus !== "PASS" || !reviewerAttestationPresent) {
+    status = "NOT_REVIEWED";
+    add("EDITORIAL_APPROVAL_NOT_RECORDED", "Rule checks are complete, but an explicit editor PASS with reviewer and timestamp is required.", "PENDING");
+  }
+  return { status, issues, reviewer: textValue(metadata.reviewer), reviewedAt: textValue(metadata.reviewed_at), mode: "RULES_PLUS_REVIEWER_ATTESTATION" };
+}
+
+export function deriveGenerationReadiness(content, { structuralQc = runContentQc(content), editorialReview = runEditorialReview(content) } = {}) {
+  const blockers = [];
+  if (structuralQc.status !== "PASS") blockers.push(`Contract QC is ${structuralQc.status}.`);
+  if (editorialReview.status !== "PASS") blockers.push(`Editorial status is ${editorialReview.status}.`);
+  try {
+    const manifest = buildGenerationManifest(content);
+    if (!validateResolvedContent(content).valid) blockers.push("Resolved production specification is incomplete.");
+    if (!manifest.entries.length) blockers.push("Generation Plan has no inputs.");
+    for (const entry of manifest.entries) if (entry.required && !textValue(entry.imagePrompt)) blockers.push(`Required generation input ${entry.slotId} has no image prompt.`);
+  } catch (error) { blockers.push(`Generation Plan is invalid: ${error.message}`); }
+  return { status: blockers.length ? "GENERATION_BLOCKED" : "GENERATION_READY", ready: blockers.length === 0, blockers };
+}
+
+export function derivePublishingReadiness(content, { generationReadiness = deriveGenerationReadiness(content), requiredImagesPresent = false, finalAssetsPresent = false, visualQcStatus = "NOT_RUN" } = {}) {
+  if (["PUBLISHED", "POSTED"].includes(String(content.lifecycleStatus || "").toUpperCase())) return { status: "PUBLISHED", ready: false, blockers: [] };
+  const blockers = [];
+  if (!generationReadiness.ready) blockers.push(...generationReadiness.blockers);
+  if (!requiredImagesPresent) blockers.push("Required source images are incomplete.");
+  if (!finalAssetsPresent) blockers.push("Final assets have not all been built.");
+  if (visualQcStatus !== "PASS") blockers.push(`Final visual QC is ${visualQcStatus}.`);
+  return { status: blockers.length ? "NOT_READY" : "READY", ready: blockers.length === 0, blockers };
+}
+
+/** Stable revision fingerprint for the source images consumed by one final asset. */
+export function buildAssetSourceRevision(assetItem, imageSlots = {}) {
+  const slotIds = [...new Set([
+    ...(assetItem?.generation_inputs || []).map((input) => input.slot_id),
+    ...(assetItem?.source_input_ids || [])
+  ].filter(Boolean))].sort();
+  return JSON.stringify(slotIds.map((slotId) => [slotId, imageSlots[slotId]?.updatedAt || null]));
+}
+
+/** Fail closed for stale sources, while safely recognizing pre-fingerprint assets by timestamps. */
+export function isStoredAssetStale(assetItem, storedAsset, imageSlots = {}) {
+  if (!storedAsset) return true;
+  const slotIds = [...new Set([
+    ...(assetItem?.generation_inputs || []).map((input) => input.slot_id),
+    ...(assetItem?.source_input_ids || [])
+  ].filter(Boolean))];
+  const currentRevision = buildAssetSourceRevision(assetItem, imageSlots);
+  if (typeof storedAsset.sourceRevision === "string" && storedAsset.sourceRevision) return storedAsset.sourceRevision !== currentRevision;
+  if (!slotIds.length) return false;
+  const builtAt = Number(storedAsset.updatedAt);
+  return !Number.isFinite(builtAt) || slotIds.some((slotId) => {
+    const image = imageSlots[slotId];
+    const importedAt = Number(image?.updatedAt);
+    return !image || !Number.isFinite(importedAt) || importedAt > builtAt;
+  });
+}
+
 export function normalizeContentRecord(record) {
   const schema = Number(record.Schema_Version || record.schema_version || 0);
   return schema >= 4 || record.Content_Type || record.content_type ? adaptV4Record(record) : adaptLegacyRecipe(record);
@@ -470,12 +764,23 @@ export function buildSessionPrompt(content) {
   const manifest = buildGenerationManifest(content);
   const stages = manifest.entries.map((entry) => `${String(entry.sequence).padStart(2, "0")} ${entry.label}`).join(" → ");
   const sourceLabel = content.contentType === "RECIPE" ? "SOURCE-OF-TRUTH RECIPE" : "SOURCE-OF-TRUTH CONTENT";
+  const pageProfile = content.pageProfile;
+  const pageGuidance = pageProfile ? [
+    `TARGET FACEBOOK PAGE: ${pageProfile.displayName}`,
+    `Audience/niche: ${pageProfile.audience}`,
+    `Primary language: ${pageProfile.primaryLanguage}`,
+    `Tone/style: ${pageProfile.toneGuidance}`,
+    pageProfile.contentPillars?.length ? `Suitable content pillars: ${pageProfile.contentPillars.join(" · ")}` : "",
+    pageProfile.suitableFormats?.length ? `Suitable formats: ${pageProfile.suitableFormats.join(" · ")}` : "",
+    pageProfile.avoidTopics?.length ? `Avoid topics/claims: ${pageProfile.avoidTopics.join(" · ")}` : ""
+  ].filter(Boolean).join("\n") : "";
   return [
     `CHATGPT IMAGE SESSION — ${content.contentId} — ${content.title}`,
     `Content Type: ${content.contentType}\nTemplate: ${content.templateType}\nVisual Profile: ${content.visualProfile}\nHook Type: ${content.hookType}`,
     `Commands: N = generate the next image; R = regenerate the current image only; FIX: ... = correct the current image only. Start at ${manifest.entries[0]?.label || "the first image"}. Never advance after R or FIX. Advance exactly one generation input only when I send N. After the final generation input, N must not create another stage.`,
     "Generate exactly ONE image per response. Do not skip generation inputs. Do not render text, letters, numbers, logos or watermarks inside photographs; controlled typography is added later by the Production Console.",
     `${sourceLabel}:\n${content.contentBody}`,
+    pageGuidance ? `PAGE-SPECIFIC CONTENT DIRECTION:\n${pageGuidance}` : "",
     content.consistencyRules.length ? `VISUAL CONSISTENCY:\n${content.consistencyRules.join("\n")}` : "",
     content.qualityRules.length ? `QUALITY CHECK:\n${content.qualityRules.join("\n")}` : "",
     `GENERATION MANIFEST — ${manifest.expectedAssets} IMAGES\n${stages}`,

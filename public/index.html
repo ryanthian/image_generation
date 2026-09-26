@@ -57,6 +57,10 @@
               <span>Content source</span>
               <select id="sheetSelect" aria-label="Select content source"></select>
             </label>
+            <div class="sheet-actions">
+              <button id="refreshSheets" class="btn btn-neutral" type="button">Refresh Sheets</button>
+              <button id="openAddSheet" class="btn btn-info" type="button">Add Sheet</button>
+            </div>
             <label class="search-field">
               <span>Search content</span>
               <input id="search" type="search" placeholder="ID, title, topic, content type or template">
@@ -84,10 +88,84 @@
             <div><span>Hook Type</span><strong id="hookType">—</strong></div>
             <div class="hook-meta"><span>Resolved Hook</span><strong id="hookText">—</strong></div>
           </div>
-          <div class="qc-summary qc-pass" id="qcSummary" aria-live="polite">
-            <div><span class="eyebrow">CONTENT ASSET QC</span><strong id="qcStatus">PASS</strong></div>
+          <section class="card source-setup-card" aria-labelledby="sourceSetupTitle">
+            <div class="card-header"><div><p class="eyebrow">PAGE TARGET</p><h2 id="sourceSetupTitle">Audience profile</h2></div><span class="badge" id="sourceSetupStatus">Needs Setup</span></div>
+            <div class="setup-card-body">
+              <div class="profile-assignment">
+                <label><span>Target Facebook Page</span><select id="targetPageProfile"><option value="">No page profile assigned</option></select></label>
+                <button class="btn btn-primary" id="assignPageProfile" type="button">Save source settings</button>
+              </div>
+              <label class="check-field source-active-field"><input id="sourceActive" type="checkbox"><span>Active production source (turn off to keep this tab out of the workflow without deleting it)</span></label>
+              <p class="helper" id="pageProfileHint">A real Page profile is required before generation. Console analytics are not connected; audience and results remain operator supplied.</p>
+              <details class="profile-editor">
+                <summary>Manage page profiles</summary>
+                <div class="profile-form">
+                  <label><span>Facebook Page ID</span><input id="profileFacebookPageId" type="text" autocomplete="off" placeholder="Opaque Page ID"></label>
+                  <label><span>Display name</span><input id="profileDisplayName" type="text" placeholder="Page name"></label>
+                  <label class="wide"><span>Audience / niche</span><textarea id="profileAudience" rows="2"></textarea></label>
+                  <label><span>Primary language</span><input id="profileLanguage" type="text" placeholder="e.g. Malaysian Chinese"></label>
+                  <label class="wide"><span>Tone and style guidance</span><textarea id="profileTone" rows="2"></textarea></label>
+                  <label><span>Content pillars (one per line)</span><textarea id="profilePillars" rows="3"></textarea></label>
+                  <label><span>Suitable formats (one per line)</span><textarea id="profileFormats" rows="3"></textarea></label>
+                  <label><span>Topics / claims to avoid (one per line; enter None if none)</span><textarea id="profileAvoidTopics" rows="3"></textarea></label>
+                  <label><span>Monetization types (one per line)</span><textarea id="profileMonetization" rows="3"></textarea></label>
+                  <label class="check-field"><input id="profileActive" type="checkbox"><span>Activate only when the profile is complete</span></label>
+                </div>
+                <button class="btn btn-neutral" id="savePageProfile" type="button">Save Page Profile</button>
+              </details>
+            </div>
+          </section>
+          <section class="qc-summary qc-pass" id="qcSummary" aria-label="Production readiness gates" aria-live="polite">
+            <div class="gate-grid">
+              <div class="quality-gate pass" id="contractGate"><span>Contract</span><strong id="qcStatus">CHECKING</strong><small>Structural / deterministic QC</small></div>
+              <div class="quality-gate review" id="editorialGate"><span>Editorial</span><strong id="editorialStatus">CHECKING</strong><small>Content completeness + review</small></div>
+              <div class="quality-gate blocked" id="generationGate"><span>Generation</span><strong id="generationStatus">CHECKING</strong><small>Prompt and input readiness</small></div>
+              <div class="quality-gate not-run" id="visualGate"><span>Visual QC</span><strong id="visualStatus">NOT RUN</strong><small>Rendered asset inspection</small></div>
+              <div class="quality-gate blocked" id="publishingGate"><span>Publishing</span><strong id="publishingStatus">NOT READY</strong><small>All prior gates required</small></div>
+            </div>
+            <p class="editorial-note" id="editorialNote">Separate readiness checks are being calculated…</p>
             <pre id="qcDetails">Checking current plan…</pre>
-          </div>
+            <label class="visual-qc-confirm"><input id="visualQcCheck" type="checkbox" disabled> I reviewed every final asset for source fidelity, readability and image/text match.</label>
+            <small class="helper" id="visualQcHint">Build all final assets before recording a visual review.</small>
+          </section>
+          <section class="card editorial-review-card" aria-labelledby="editorialReviewTitle">
+            <div class="card-header"><div><p class="eyebrow">HUMAN EDITORIAL REVIEW</p><h2 id="editorialReviewTitle">Content quality decision</h2></div><span class="badge" id="reviewSavedState">Not saved</span></div>
+            <div class="setup-card-body">
+              <p class="helper">A structural pass is not editorial approval. Review audience fit, source support, claims and reader-facing copy before selecting PASS.</p>
+              <div class="editorial-form">
+                <label><span>Reviewer</span><input id="editorReviewer" type="text" autocomplete="name" placeholder="Name"></label>
+                <label><span>Decision</span><select id="editorDecision"><option value="REVIEW">Needs review</option><option value="PASS">Pass</option><option value="BLOCKED">Blocked</option></select></label>
+                <label><span>Audience need</span><textarea id="editorAudienceNeed" rows="2"></textarea></label>
+                <label><span>Specific reader value</span><textarea id="editorReaderValue" rows="2"></textarea></label>
+                <label class="wide"><span>Source / evidence notes</span><textarea id="editorSourceNotes" rows="2"></textarea></label>
+                <label><span>Claim evidence / verification</span><textarea id="editorClaimEvidence" rows="2"></textarea></label>
+                <label><span>Limitations / uncertainty</span><textarea id="editorLimitations" rows="2"></textarea></label>
+                <label class="wide"><span>Review note / revision needed</span><textarea id="editorReviewNote" rows="2"></textarea></label>
+                <label class="wide"><span>Internal claim / production notes (never publish)</span><textarea id="editorInternalNotes" rows="2"></textarea></label>
+                <label class="check-field"><input id="editorEvidenceVerified" type="checkbox"><span>I checked the source/evidence cited above</span></label>
+                <label class="check-field"><input id="editorCaptionApproved" type="checkbox"><span>Caption is natural, reader-facing and contains no internal notes</span></label>
+                <label class="check-field"><input id="editorPageFitApproved" type="checkbox"><span>Copy and format fit the selected Page audience</span></label>
+              </div>
+              <details class="editorial-type-review">
+                <summary>Content-type completeness checks</summary>
+                <div class="editorial-form">
+                  <label><span>Recipe timing / doneness cue</span><input id="editorTiming" type="text"></label>
+                  <label><span>Temperature guidance (if applicable)</span><input id="editorTemperature" type="text"></label>
+                  <label class="check-field"><input id="editorTemperatureRequired" type="checkbox"><span>Temperature guidance is required for this recipe</span></label>
+                  <label><span>Serving / result expectation</span><input id="editorServing" type="text"></label>
+                  <label class="check-field"><input id="editorRecipeApproximate" type="checkbox"><span>Recipe is explicitly approximate</span></label>
+                  <label><span>Mistake / problem</span><input id="editorMistakeProblem" type="text"></label>
+                  <label><span>Why the mistake occurs</span><input id="editorCause" type="text"></label>
+                  <label><span>Practical consequence</span><input id="editorConsequence" type="text"></label>
+                  <label><span>Expected corrected result</span><input id="editorExpectedResult" type="text"></label>
+                  <label><span>Option suitability</span><input id="editorSuitability" type="text"></label>
+                  <label><span>Trade-offs / limitations</span><input id="editorTradeoffs" type="text"></label>
+                  <label><span>Decision logic</span><input id="editorDecisionLogic" type="text"></label>
+                </div>
+              </details>
+              <button class="btn btn-primary" id="saveEditorialReview" type="button">Save Editorial Review</button>
+            </div>
+          </section>
           <div class="action-grid">
             <button id="copyPrompt" class="btn btn-primary" type="button"><span>01</span>Copy ChatGPT Image Prompt</button>
             <button id="importAll" class="btn btn-info" type="button"><span>02</span>Import Generated Images</button>
@@ -131,6 +209,64 @@
             <button id="copyCaptionBottom" class="btn btn-success" type="button">Copy exact caption</button>
             <button id="markPosted" class="btn btn-primary" type="button">Mark Posted</button>
             <p id="writeHint" class="helper"></p>
+          </div>
+        </section>
+        <section class="card production-ops-card" id="productionWorkflow">
+          <div class="card-header"><div><p class="eyebrow">PRODUCTION WORKFLOW</p><h2>Current stage</h2></div><span class="badge" id="workflowStageBadge">Loading…</span></div>
+          <div class="setup-card-body">
+            <ol id="workflowStages" class="workflow-stages"></ol>
+            <div class="workflow-form">
+              <label><span>Operator</span><input id="workflowActor" type="text" autocomplete="name" placeholder="Name"></label>
+              <label class="wide"><span>Human verification note</span><input id="workflowNote" type="text" placeholder="Required for asset, visual-QC and publish stages"></label>
+              <p class="helper wide" id="workflowPublicationHint">Source images and final assets are checked from this Console. Visual QC uses the attestation above; publication requires a saved URL and date below.</p>
+            </div>
+            <button class="btn btn-primary" id="advanceWorkflow" type="button">Advance one stage</button>
+            <p id="workflowHint" class="helper"></p>
+          </div>
+        </section>
+        <section class="card results-card" id="manualResults">
+          <div class="card-header"><div><p class="eyebrow">MANUAL RESULTS · NO AUTOMATIC ANALYTICS</p><h2>Publication and performance</h2></div><button class="btn btn-neutral" id="refreshResults" type="button">Refresh Results</button></div>
+          <div class="setup-card-body">
+            <p class="helper">Unknown metrics stay blank. Meta earnings and affiliate commission are recorded separately and never inferred from views.</p>
+            <div class="results-form">
+              <label class="wide"><span>Existing publication (optional update)</span><select id="resultPublication"><option value="">New publication</option></select></label>
+              <label><span>Published date</span><input id="resultPublishedAt" type="date"></label>
+              <label><span>Post URL (required to confirm published)</span><input id="resultPostUrl" type="url" placeholder="https://…"></label>
+              <label><span>Format</span><input id="resultFormat" type="text" placeholder="e.g. Carousel"></label>
+              <label><span>Operator</span><input id="resultEnteredBy" type="text" autocomplete="name" placeholder="Name"></label>
+              <label><span>Reach</span><input id="resultReach" type="number" min="0" step="1"></label>
+              <label><span>Qualified views</span><input id="resultQualifiedViews" type="number" min="0" step="1"></label>
+              <label><span>Engagement</span><input id="resultEngagement" type="number" min="0" step="1"></label>
+              <label><span>Shares</span><input id="resultShares" type="number" min="0" step="1"></label>
+              <label><span>Saves</span><input id="resultSaves" type="number" min="0" step="1"></label>
+              <label><span>Retention rate (0–1)</span><input id="resultRetention" type="number" min="0" max="1" step="0.001"></label>
+              <label><span>Meta earnings</span><input id="resultMetaEarnings" type="number" min="0" step="0.01"></label>
+              <label><span>Affiliate clicks</span><input id="resultAffiliateClicks" type="number" min="0" step="1"></label>
+              <label><span>Affiliate orders</span><input id="resultAffiliateOrders" type="number" min="0" step="1"></label>
+              <label><span>Affiliate commission</span><input id="resultAffiliateCommission" type="number" min="0" step="0.01"></label>
+              <label><span>Production minutes</span><input id="resultProductionMinutes" type="number" min="0" step="1"></label>
+              <label><span>Direct production cost</span><input id="resultDirectCost" type="number" min="0" step="0.01"></label>
+              <label><span>Currency</span><input id="resultCurrency" type="text" maxlength="3" value="MYR"></label>
+            </div>
+            <button class="btn btn-primary" id="saveManualResults" type="button">Save Manual Results</button>
+            <div class="results-summary" id="resultsSummary" aria-live="polite"></div>
+          </div>
+        </section>
+        <section class="card add-sheet-panel" id="addSheetPanel" hidden aria-labelledby="addSheetTitle">
+          <div class="card-header">
+            <div><p class="eyebrow">SAME GOOGLE WORKBOOK</p><h2 id="addSheetTitle">Create a content worksheet</h2></div>
+            <button class="btn btn-neutral" id="closeAddSheet" type="button">Close</button>
+          </div>
+          <div class="setup-card-body">
+            <p class="helper">Choose only a registered V4 or legacy recipe template. The Console creates a new tab; it never replaces an existing one.</p>
+            <div class="add-sheet-form">
+              <label><span>Content template</span><select id="newSheetTemplate"></select></label>
+              <label><span>New tab name</span><input id="newSheetTitle" type="text" maxlength="90" placeholder="A unique tab name"></label>
+              <label><span>Target Page profile (optional until generation)</span><select id="newSheetPageProfile"><option value="">Assign later</option></select></label>
+            </div>
+            <div class="template-preview"><strong>Template preview</strong><p id="newSheetTemplateDescription" class="helper"></p><code id="newSheetHeaders"></code></div>
+            <button class="btn btn-primary" id="createSheet" type="button">Create new worksheet</button>
+            <p id="addSheetResult" class="helper" aria-live="polite"></p>
           </div>
         </section>
       </div>
@@ -203,7 +339,7 @@
         </section>
         <section id="intelligenceOpportunities" class="intelligence-page" hidden>
           <div class="page-heading"><div><p class="eyebrow">V4.2 · PERFORMANCE-AWARE PLANNING</p><h2>Content Opportunities</h2><p class="helper">Explainable canary suggestions based on supplied historical performance. They are not forecasts and never enter production without your approval.</p></div><span class="badge" id="opportunityCount">Loading…</span></div>
-          <div class="card opportunity-guardrail"><strong>Human approval is mandatory.</strong><span>Approve creates an approved V4-compatible draft only. It does not publish, create a batch, generate images, or add affiliate links.</span></div>
+          <div class="card opportunity-guardrail"><strong>Development approval is not production readiness.</strong><span>Approve for Development creates an incomplete browser-local idea handoff only. It does not create a complete specification, pass editorial review, add a Sheet row, generate images, create a batch, or publish.</span></div>
           <div id="opportunityDetail" class="card opportunity-detail" hidden></div>
           <div id="opportunityGrid" class="opportunity-grid" aria-live="polite"></div>
         </section>

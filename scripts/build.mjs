@@ -30,13 +30,16 @@ await copyFile("src/intelligence-core.mjs", "dist/server/intelligence-core.mjs")
 await copyFile("src/intelligence-server.mjs", "dist/server/intelligence-server.mjs");
 await copyFile("src/opportunity-engine.mjs", "dist/server/opportunity-engine.mjs");
 await copyFile("src/content-model.mjs", "dist/server/content-model.mjs");
+await copyFile("src/production-operations.mjs", "dist/server/production-operations.mjs");
+await copyFile("src/sheet-contracts.mjs", "dist/server/sheet-contracts.mjs");
 await copyFile("src/v4-preappend.mjs", "dist/server/v4-preappend.mjs");
 await copyFile("src/facebook-collection-core.mjs", "dist/server/facebook-collection-core.mjs");
 await copyFile(".openai/hosting.json", "dist/.openai/hosting.json");
 await Promise.all([
   copyFile("db/migrations/0001_content_intelligence.sql", "dist/.openai/drizzle/0001_content_intelligence.sql"),
   copyFile("db/migrations/0002_facebook_observed_collection.sql", "dist/.openai/drizzle/0002_facebook_observed_collection.sql"),
-  copyFile("db/migrations/0003_gate_a3_dataset_provenance.sql", "dist/.openai/drizzle/0003_gate_a3_dataset_provenance.sql")
+  copyFile("db/migrations/0003_gate_a3_dataset_provenance.sql", "dist/.openai/drizzle/0003_gate_a3_dataset_provenance.sql"),
+  copyFile("db/migrations/0004_production_operations.sql", "dist/.openai/drizzle/0004_production_operations.sql")
 ]);
 await writeFile("dist/.openai/drizzle/meta/_journal.json", `${JSON.stringify({ version: "7", dialect: "sqlite", entries: [] }, null, 2)}\n`);
 console.log("Built dist/server/index.js");
