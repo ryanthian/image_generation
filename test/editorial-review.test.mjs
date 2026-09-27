@@ -67,6 +67,46 @@ test("temperature guidance is required only when the recipe specification marks 
   assert.ok(editorial.issues.some((issue) => issue.code === "RECIPE_TEMPERATURE_GUIDANCE_MISSING"));
 });
 
+test("meat safety recognizes explicit 74 C guidance and does not classify egg-only recipes as meat", () => {
+  const temperatureRecipe = recipeRecord();
+  temperatureRecipe.Content_Body = "鸡腿加热后检查最厚处达到74°C，再收汁上桌。";
+  temperatureRecipe.Ready_To_Post_Caption = "鸡腿最厚处达到74°C后再上桌。";
+  const plan = JSON.parse(temperatureRecipe.Asset_Plan_JSON);
+  for (const item of plan.assets) {
+    item.overlay_text = String(item.overlay_text || "").replace(/(?:完全熟透|中心熟透|熟透|熟至)/g, "上色");
+    for (const input of item.generation_inputs || []) {
+      for (const key of ["overlay_text", "step_heading", "step_supporting_text"]) {
+        input[key] = String(input[key] || "").replace(/(?:完全熟透|中心熟透|熟透|熟至)/g, "上色");
+      }
+    }
+  }
+  temperatureRecipe.Asset_Plan_JSON = JSON.stringify(plan);
+  const temperatureEditorial = runEditorialReview(normalizeContentRecord(temperatureRecipe));
+  assert.ok(!temperatureEditorial.issues.some((issue) => issue.code === "RECIPE_COOKING_SAFETY_CUE_MISSING"));
+
+  const eggRecipe = recipeRecord();
+  eggRecipe.Title = "青瓜玉米鸡蛋杯";
+  eggRecipe.Content_Body = "鸡蛋煮至蛋白蛋黄完全凝固，冷却后切丁。";
+  const eggEditorial = runEditorialReview(normalizeContentRecord(eggRecipe));
+  assert.ok(!eggEditorial.issues.some((issue) => issue.code === "RECIPE_COOKING_SAFETY_CUE_MISSING"));
+
+  const mincedMeatEggRecipe = recipeRecord();
+  mincedMeatEggRecipe.Title = "香菇肉末蒸蛋";
+  mincedMeatEggRecipe.Content_Body = "肉末炒熟后与蛋液一起蒸制。";
+  const mincedPlan = JSON.parse(mincedMeatEggRecipe.Asset_Plan_JSON);
+  for (const item of mincedPlan.assets) {
+    item.overlay_text = String(item.overlay_text || "").replace(/(?:完全熟透|中心熟透|熟透|熟至)/g, "上色");
+    for (const input of item.generation_inputs || []) {
+      for (const key of ["overlay_text", "step_heading", "step_supporting_text"]) {
+        input[key] = String(input[key] || "").replace(/(?:完全熟透|中心熟透|熟透|熟至)/g, "上色");
+      }
+    }
+  }
+  mincedMeatEggRecipe.Asset_Plan_JSON = JSON.stringify(mincedPlan);
+  const mincedMeatEditorial = runEditorialReview(normalizeContentRecord(mincedMeatEggRecipe));
+  assert.ok(mincedMeatEditorial.issues.some((issue) => issue.code === "RECIPE_COOKING_SAFETY_CUE_MISSING"));
+});
+
 test("internal claim-safety instruction in caption is editorial BLOCKED", () => {
   const content = normalizeContentRecord(recipeRecord({ caption: "不发布‘解暑、提神、开胃’等健康功效。" }));
   const editorial = runEditorialReview(content);
@@ -177,6 +217,24 @@ test("legacy row without Editorial_Review_JSON remains structurally valid and is
   assert.equal(runContentQc(content).status, "PASS");
   assert.equal(runEditorialReview(content).status, "NOT_REVIEWED");
   assert.equal(deriveGenerationReadiness(content).status, "GENERATION_BLOCKED");
+});
+
+test("legacy adapter reads durable Editorial_Review_JSON without changing structural QC", () => {
+  const raw = { ...legacyRecipes.recipes.find((item) => item.Content_ID === "EN-NEW-001") };
+  raw.Editorial_Review_JSON = JSON.stringify({
+    schema_version: 1,
+    review_status: "REVIEW",
+    reviewer: "Codex AI-assisted editorial screening",
+    reviewed_at: "2026-09-28T00:00:00.000Z",
+    evidence_type: "UNVERIFIED",
+    source_evidence_status: "UNVERIFIED",
+    review_note: "AI-assisted triage only; source verification and human review remain pending."
+  });
+  const content = normalizeContentRecord(raw);
+  assert.equal(runContentQc(content).status, "PASS");
+  assert.equal(runEditorialReview(content).status, "REVIEW");
+  assert.ok(runEditorialReview(content).issues.some((issue) => issue.code === "EDITOR_REQUESTED_REVIEW"));
+  assert.ok(runEditorialReview(content).issues.some((issue) => issue.code === "SOURCE_EVIDENCE_UNVERIFIED"));
 });
 
 test("UNVERIFIED evidence cannot grant Editorial PASS", () => {

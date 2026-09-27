@@ -251,6 +251,7 @@ export function resolveAssetPlan(record, registry = TEMPLATE_REGISTRY) {
 
 export function adaptLegacyRecipe(record) {
   const overlay = parseLegacyOverlay(record);
+  const editorial = parseEditorialReview(record);
   const methodInputs = Array.from({ length: 6 }, (_, offset) => {
     const index = offset + 1;
     const caption = record[`Image_3_Step_${index}_Caption`] || "";
@@ -278,6 +279,9 @@ export function adaptLegacyRecipe(record) {
     monetizationAngle: "",
     lifecycleStatus: record.Status || "DRAFT",
     beliefContent: false,
+    editorialReview: editorial.metadata,
+    editorialReviewParseError: editorial.error,
+    editorialReviewPresent: editorial.present,
     raw: record,
     assetOverrides: [
       { ...asset("COVER", "Cover", "Introduce the finished dish", "cover_overlay", overlay.cover), asset_id: "cover", image_prompt: record.Image_1_Cover_Prompt || "", generation_inputs: [{ slot_id: "cover", label: "Cover", image_prompt: record.Image_1_Cover_Prompt || "" }] },
@@ -634,8 +638,13 @@ export function runEditorialReview(content) {
     if (metadata.temperature_required === true && !hasText(metadata.temperature_guidance)) {
       add("RECIPE_TEMPERATURE_GUIDANCE_MISSING", "This recipe is marked temperature-sensitive; provide the applicable temperature guidance or remove the requirement with a reason.");
     }
-    const needsCookSafetyCue = /鸡|禽|猪|排骨|肉类/.test(`${content.title || ""} ${body}`);
-    if (needsCookSafetyCue && !/(?:完全熟透|中心熟透|熟透|熟至|fully cooked|cook through)/i.test(fullText)) {
+    const recipeIdentityAndMethod = `${content.title || ""} ${body}`;
+    // Do not treat 鸡蛋 (egg) as poultry; require an explicit meat term.
+    // Recognize an already-specified safe internal-temperature cue as well as
+    // clear textual doneness cues so valid recipes are not falsely blocked.
+    const needsCookSafetyCue = /(?:鸡(?!蛋)|肉|禽肉|排骨|chicken|pork|beef|lamb|poultry)/i.test(recipeIdentityAndMethod);
+    const hasMeatDonenessCue = /(?:完全熟透|中心熟透|熟透|熟至|fully cooked|cook through|(?:74|75)\s*°?\s*C|165\s*°?\s*F)/i.test(fullText);
+    if (needsCookSafetyCue && !hasMeatDonenessCue) {
       add("RECIPE_COOKING_SAFETY_CUE_MISSING", "Add an appropriate doneness/safety cue for the meat in this recipe.");
     }
     const closeup = plan.find((item) => item.asset_type === "CLOSEUP" || item.asset_type === "FINAL");
