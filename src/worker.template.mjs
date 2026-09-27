@@ -285,10 +285,8 @@ async function handleApi(request, env, url) {
       const recordIndex = loaded.records.findIndex((record) => String(record.Content_ID || record.content_id || "") === contentId);
       if (recordIndex < 0) return json({ ok: false, error: "Content_ID was not found in the selected worksheet." }, 404);
       const pageProfile = sheet.targetPageProfileId ? await productionStore.getProfile(sheet.targetPageProfileId) : null;
-      const review = await productionStore.getReview(sheetId, contentId);
       let content = loaded.normalized[recordIndex];
       if (pageProfile) content = { ...content, pageProfile };
-      if (review) content = { ...content, editorialReview: review.review, raw: { ...content.raw, Editorial_Review_JSON: review.review } };
       const contract = runContentQc(content);
       const editorial = runEditorialReview(content);
       const generation = deriveGenerationReadiness(content, { structuralQc: contract, editorialReview: editorial });
@@ -318,9 +316,16 @@ async function handleApi(request, env, url) {
         if (index < 0) return { ok: false, status: 404, error: "Content_ID was not found in the selected worksheet." };
         let content = loaded.normalized[index];
         if (source.targetPageProfileId) content = { ...content, pageProfile: await store.getProfile(source.targetPageProfileId) };
-        const review = await store.getReview(sheetId, contentId);
-        if (review) content = { ...content, editorialReview: review.review, raw: { ...content.raw, Editorial_Review_JSON: review.review } };
         return { ok: true, content };
+      },
+      persistEditorialReview: async (sheetId, contentId, reviewJson) => {
+        if (!env.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN) throw Object.assign(new Error("Secure Google Sheets editorial-review write authorization is not configured."), { status: 503 });
+        const result = await bridgeRequest(env, "updateEditorialReview", sheetId, {
+          contentId,
+          reviewJson,
+          editorialReviewToken: env.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN
+        });
+        return { ...result, source: "sheet" };
       },
       getWorkflowGates: async (sheetId, contentId, content, review) => {
         const source = await store.getSheet(sheetId);

@@ -27,6 +27,7 @@ function doPost(e) {
       });
       return json_({ ok: true, sheetId: sheet.getSheetId(), sheetName: sheet.getName(), headers: headers, records: records });
     }
+    if (body.action === 'updateEditorialReview') return updateEditorialReview_(body);
     if (body.action === 'createSheet') return createSheet_(body);
     if (body.action === 'appendV4Candidate') return appendV4Candidate_(body);
     if (body.action !== 'markPosted' || body.status !== 'Posted' || typeof body.contentId !== 'string' || !body.contentId) {
@@ -126,8 +127,12 @@ function createSheet_(body) {
 function validateTemplateHeaders_(templateId, headers) {
   const legacy = ['Content_ID','Draft_Title','Category','Ready_To_Post_Caption','Full_Recipe','Time_And_Servings','Source_References','Pattern_Notes','Image_1_Cover_Prompt','Image_2_Ingredients_Prompt','Image_3_Method_Prompt','Image_3_Step_1_Caption','Image_3_Step_2_Caption','Image_3_Step_3_Caption','Image_3_Step_4_Caption','Image_3_Step_5_Caption','Image_3_Step_6_Caption','Image_3_Final_Layout_Prompt','Image_4_Closeup_Prompt','Exact_Chinese_Overlay','Image_Consistency_And_Negatives','Quality_Check','Affiliate_Fit','Originality','Status'];
   const v4 = ['Schema_Version','Content_ID','Title','Topic','Content_Type','Template_Type','Visual_Profile','Hook_Type','Hook_Text','Ready_To_Post_Caption','Content_Body','Source_References','Affiliate_Fit','Monetization_Angle','Asset_Plan_JSON','Status'];
-  const expected = templateId === 'LEGACY_RECIPE' ? legacy : /^V4_[A-Z0-9_]+$/.test(String(templateId || '')) ? v4 : null;
-  if (!expected || expected.join('\u001f') !== headers.join('\u001f')) throw new Error('Template ID or headers do not match an approved Console worksheet contract.');
+  const reviewHeader = 'Editorial_Review_JSON';
+  const exact = headers.join('\u001f');
+  const approved = templateId === 'LEGACY_RECIPE'
+    ? [legacy, legacy.concat([reviewHeader])]
+    : /^V4_[A-Z0-9_]+$/.test(String(templateId || '')) ? [v4, v4.concat([reviewHeader])] : [];
+  if (!approved.some(function(contract) { return contract.join('\u001f') === exact; })) throw new Error('Template ID or headers do not match an approved Console worksheet contract.');
 }
 
 function assertBridgeToken_(provided) {
@@ -152,7 +157,7 @@ function appendV4Candidate_(body) {
   if (body.sheetName !== 'V4_CANARY') throw new Error('V4 append target is not allowed.');
   const expectedToken = PropertiesService.getScriptProperties().getProperty('V4_APPEND_GATE_TOKEN');
   if (!expectedToken || body.gateToken !== expectedToken) throw new Error('V4 append gate token is invalid.');
-  const expectedHeaders = ['Schema_Version','Content_ID','Title','Topic','Content_Type','Template_Type','Visual_Profile','Hook_Type','Hook_Text','Ready_To_Post_Caption','Content_Body','Source_References','Affiliate_Fit','Monetization_Angle','Asset_Plan_JSON','Status'];
+  const expectedHeaders = ['Schema_Version','Content_ID','Title','Topic','Content_Type','Template_Type','Visual_Profile','Hook_Type','Hook_Text','Ready_To_Post_Caption','Content_Body','Source_References','Affiliate_Fit','Monetization_Angle','Asset_Plan_JSON','Status','Editorial_Review_JSON'];
   if (!Array.isArray(body.headers) || body.headers.join('|') !== expectedHeaders.join('|')) throw new Error('V4 append headers are invalid.');
   if (!Array.isArray(body.row) || body.row.length !== expectedHeaders.length) throw new Error('V4 append row is invalid.');
   if (typeof body.row[1] !== 'string' || !body.row[1].trim()) throw new Error('Content_ID must be an opaque non-empty string.');
@@ -169,6 +174,53 @@ function appendV4Candidate_(body) {
   const verified = sheet.getRange(rowNumber, 1, 1, expectedHeaders.length).getDisplayValues()[0];
   if (verified[1] !== body.row[1]) throw new Error('V4 append readback failed.');
   return json_({ ok: true, contentId: verified[1], rowNumber: rowNumber });
+}
+
+function updateEditorialReview_(body) {
+  const expectedToken = PropertiesService.getScriptProperties().getProperty('CONSOLE_EDITORIAL_REVIEW_TOKEN');
+  if (!expectedToken || typeof body.editorialReviewToken !== 'string' || body.editorialReviewToken !== expectedToken) {
+    throw new Error('Editorial review write authorization failed.');
+  }
+  if (typeof body.contentId !== 'string' || !body.contentId.trim()) throw new Error('Content_ID must be an opaque non-empty string.');
+  if (typeof body.reviewJson !== 'string' || !body.reviewJson.trim() || body.reviewJson.length > 45000) throw new Error('Editorial review JSON is missing or exceeds the safe cell limit.');
+  let review;
+  try { review = JSON.parse(body.reviewJson); } catch (error) { throw new Error('Editorial review JSON is invalid: ' + error.message); }
+  if (!review || Array.isArray(review) || typeof review !== 'object' || Number(review.schema_version) !== 1) throw new Error('Editorial review JSON must be a schema_version 1 object.');
+
+  const allowedSources = {
+    2026091901: 'Eunice Recipe Draft 20 - 2026-09-19',
+    812541719: 'Eunice Recipe Draft 100 - 2026-09-20',
+    433728120: 'V4_CANARY'
+  };
+  const sheet = resolveSheet_(body.sheetId, body.sheetName);
+  if (!sheet || allowedSources[sheet.getSheetId()] !== sheet.getName()) throw new Error('Editorial review writes are restricted to the three connected production worksheets.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Another production worksheet write is in progress; retry after it completes.');
+  try {
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+    const idColumns = headers.map(function(header, index) { return header === 'Content_ID' ? index + 1 : 0; }).filter(Boolean);
+    const reviewColumns = headers.map(function(header, index) { return header === 'Editorial_Review_JSON' ? index + 1 : 0; }).filter(Boolean);
+    if (idColumns.length !== 1 || reviewColumns.length !== 1) throw new Error('Content_ID and Editorial_Review_JSON must each exist exactly once.');
+    const lastRow = sheet.getLastRow();
+    const idValues = lastRow > 1 ? sheet.getRange(2, idColumns[0], lastRow - 1, 1).getDisplayValues() : [];
+    const matchingRows = [];
+    idValues.forEach(function(row, index) { if (row[0] === body.contentId) matchingRows.push(index + 2); });
+    if (matchingRows.length !== 1) throw new Error(matchingRows.length ? 'Content_ID is duplicated; no review was written.' : 'Content_ID was not found; no review was written.');
+
+    const rowNumber = matchingRows[0];
+    const reviewCell = sheet.getRange(rowNumber, reviewColumns[0]);
+    if (reviewCell.getFormula()) throw new Error('Editorial_Review_JSON target contains a formula; no review was written.');
+    reviewCell.setValue(body.reviewJson);
+    SpreadsheetApp.flush();
+    const readBack = reviewCell.getValue();
+    if (readBack !== body.reviewJson) throw new Error('Editorial_Review_JSON readback did not exactly match the submitted value.');
+    const values = sheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
+    const record = headers.reduce(function(item, header, index) { if (header) item[header] = values[index]; return item; }, {});
+    if (record.Content_ID !== body.contentId || record.Editorial_Review_JSON !== body.reviewJson) throw new Error('Editorial review row readback failed identity or value verification.');
+    return json_({ ok: true, source: 'sheet', sheetId: sheet.getSheetId(), sheetName: sheet.getName(), contentId: body.contentId, rowNumber: rowNumber, record: record, reviewJson: readBack });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function resolveSheet_(sheetId, sheetName) {

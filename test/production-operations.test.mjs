@@ -15,8 +15,8 @@ import {
   validateManualResult,
   validateWorkflowTransition
 } from "../src/production-operations.mjs";
-import { LEGACY_RECIPE_HEADERS, SHEET_TEMPLATES } from "../src/sheet-contracts.mjs";
-import { V4_CANARY_HEADERS } from "../src/v4-preappend.mjs";
+import { LEGACY_RECIPE_BASE_HEADERS, LEGACY_RECIPE_HEADERS, SHEET_TEMPLATES } from "../src/sheet-contracts.mjs";
+import { V4_CANARY_BASE_HEADERS, V4_CANARY_HEADERS } from "../src/v4-preappend.mjs";
 import { applyMigrations, LocalD1Database } from "../src/local-d1-sqlite.mjs";
 
 const profile = {
@@ -28,8 +28,23 @@ const profile = {
 };
 const sheet = { sheetId: 321, title: "Recipes", schemaFamily: "V4_UNIVERSAL", schemaVersion: 4, contentType: "RECIPE", templateId: "RECIPE_STANDARD", schemaStatus: "READY", setupReasons: [], targetPageProfileId: profile.profileId, active: true, baselineState: "APP_CREATED" };
 const content = { contentId: "RCP-TEST-01", contentType: "RECIPE", templateType: "RECIPE_STANDARD", title: "家常鸡腿饭", contentBody: "鸡腿先煎香，再焖至完全熟透。", caption: "鸡腿先煎香再焖熟，配热饭就是一顿简单晚餐。" };
+const sheetReviews = new Map();
+const contentKey = (sheetId, contentId) => `${sheetId}:${contentId}`;
+function rawContentRecord(contentId, reviewJson = "") {
+  return { Schema_Version: 4, Content_ID: contentId, Title: content.title, Topic: "RECIPE", Content_Type: "RECIPE", Template_Type: "RECIPE_STANDARD", Visual_Profile: "REALISTIC_MALAYSIAN_KITCHEN", Hook_Type: "HOW_TO", Hook_Text: "家常鸡腿饭怎么做？", Ready_To_Post_Caption: content.caption, Content_Body: content.contentBody, Source_References: "Recipe source, section 2.", Asset_Plan_JSON: "", Editorial_Review_JSON: reviewJson };
+}
 const context = {
-  validateContentRef: async (sheetId, contentId) => Number(sheetId) === sheet.sheetId && contentId === content.contentId ? { ok: true, content: { ...content, pageProfile: profile } } : { ok: false, status: 404, error: "not found" },
+  validateContentRef: async (sheetId, contentId) => {
+    if (Number(sheetId) !== sheet.sheetId || contentId !== content.contentId) return { ok: false, status: 404, error: "not found" };
+    const reviewJson = sheetReviews.get(contentKey(sheetId, contentId)) || "";
+    const review = reviewJson ? JSON.parse(reviewJson) : {};
+    return { ok: true, content: { ...content, pageProfile: profile, editorialReview: review, editorialReviewPresent: Boolean(reviewJson), raw: rawContentRecord(contentId, reviewJson) } };
+  },
+  persistEditorialReview: async (sheetId, contentId, reviewJson) => {
+    sheetReviews.set(contentKey(sheetId, contentId), reviewJson);
+    const record = rawContentRecord(contentId, reviewJson);
+    return { ok: true, source: "sheet", record, reviewJson, rowNumber: 2 };
+  },
   getWorkflowGates: async () => ({ generationReady: true })
 };
 
@@ -55,7 +70,9 @@ function seededStore() {
 }
 
 test("sheet contracts distinguish supported legacy/V4 schemas and keep system tabs reserved", () => {
+  assert.equal(inspectSheetHeaders(LEGACY_RECIPE_BASE_HEADERS).setupStatus, "READY", "frozen 25-column legacy rows remain readable");
   assert.equal(inspectSheetHeaders(LEGACY_RECIPE_HEADERS).setupStatus, "READY");
+  assert.equal(inspectSheetHeaders(V4_CANARY_BASE_HEADERS).schemaFamily, "V4_UNIVERSAL", "frozen 16-column V4 rows remain readable");
   assert.equal(inspectSheetHeaders(V4_CANARY_HEADERS).schemaFamily, "V4_UNIVERSAL");
   assert.equal(inspectSheetHeaders(["Content_ID", "Title"]).setupStatus, "NEEDS_SETUP");
   assert.equal(isReservedSheetName("Dashboard"), true);
@@ -63,6 +80,31 @@ test("sheet contracts distinguish supported legacy/V4 schemas and keep system ta
   assert.equal(isReservedSheetName("Copy of V4_CANARY"), true);
   assert.equal(isReservedSheetName("Fresh Recipe Ideas"), false);
   assert.ok(SHEET_TEMPLATES.some((item) => item.templateId === "V4_RECIPE_STANDARD"));
+});
+
+test("Apps Script editorial review write is source-allowlisted, locked, single-cell and readback-verified", async () => {
+  const source = await readFile(fileURLToPath(new URL("../apps-script/Code.gs", import.meta.url)), "utf8");
+  const endpoint = source.slice(source.indexOf("function updateEditorialReview_"), source.indexOf("function resolveSheet_"));
+  assert.match(source, /body\.action === 'updateEditorialReview'/);
+  assert.match(endpoint, /CONSOLE_EDITORIAL_REVIEW_TOKEN/);
+  assert.match(endpoint, /2026091901:[\s\S]*812541719:[\s\S]*433728120:/);
+  assert.match(endpoint, /LockService\.getScriptLock\(\)/);
+  assert.match(endpoint, /reviewCell\.getFormula\(\)/);
+  assert.match(endpoint, /reviewCell\.setValue\(body\.reviewJson\)/);
+  assert.match(endpoint, /readBack !== body\.reviewJson/);
+  assert.match(endpoint, /record\.Content_ID !== body\.contentId/);
+  assert.doesNotMatch(endpoint, /Logger\.(?:log|info|warning|severe)\([^\n]*(?:Token|token|body\.editorialReviewToken)/);
+});
+
+test("Site bridge sends review writes only to the Apps Script action and never to a query string", async () => {
+  const source = await readFile(fileURLToPath(new URL("../src/worker.template.mjs", import.meta.url)), "utf8");
+  const start = source.indexOf("persistEditorialReview:");
+  const end = source.indexOf("getWorkflowGates:", start);
+  const endpoint = source.slice(start, end);
+  assert.match(endpoint, /bridgeRequest\(env, "updateEditorialReview", sheetId/);
+  assert.match(endpoint, /GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN/);
+  assert.match(endpoint, /editorialReviewToken:/);
+  assert.doesNotMatch(endpoint, /searchParams\.set\([^\n]*Token/i);
 });
 
 test("unavailable worksheet registrations are retained and surfaced even when inactive", async () => {
@@ -82,28 +124,50 @@ test("memory worksheet registry returns the persisted item for local Add Sheet v
   assert.equal((await store.getSheet(901)).title, "Local Preview");
 });
 
-test("editorial review writes require a same-origin marker and save the current Page profile revision", async () => {
+test("editorial review writes require same-origin and verified Sheet readback without D1 as source of truth", async () => {
   const store = seededStore();
-  const body = { sheetId: sheet.sheetId, contentId: content.contentId, reviewer: "Editor", reviewStatus: "REVIEW", audienceNeed: "A practical dinner idea", readerValue: "Ordered cooking guidance", evidenceVerified: true, captionApproved: true, pageFitApproved: true };
+  sheetReviews.delete(contentKey(sheet.sheetId, content.contentId));
+  const body = { sheetId: sheet.sheetId, contentId: content.contentId, reviewer: "Editor", reviewStatus: "REVIEW", audienceNeed: "A practical dinner idea", readerValue: "Ordered cooking guidance", evidenceType: "SOURCE_DIRECT", evidenceReferences: ["Recipe source, section 2."], evidenceVerified: true, captionApproved: true, pageFitApproved: true };
   const rejected = await call(store, "/api/production/editorial-review", "POST", body);
   assert.equal(rejected.status, 403);
   const saved = await call(store, "/api/production/editorial-review", "POST", body, sameOrigin);
   assert.equal(saved.status, 201);
+  assert.equal(saved.body.recomputedFrom, "sheet-readback");
+  assert.equal(saved.body.review.source, "sheet");
   assert.equal(saved.body.review.review.page_profile_id, profile.profileId);
   assert.equal(saved.body.review.review.page_profile_updated_at, "2026-09-26T09:00:00.000Z");
+  assert.equal(JSON.parse(sheetReviews.get(contentKey(sheet.sheetId, content.contentId))).schema_version, 1);
+  assert.equal(await store.getReview(sheet.sheetId, content.contentId), null);
   const fetched = await call(store, `/api/production/editorial-review?sheetId=${sheet.sheetId}&contentId=${content.contentId}`);
-  assert.equal(fetched.body.review.status, "REVIEW");
+  assert.equal(fetched.body.review.source, "sheet");
+  assert.equal(fetched.body.review.review.review_status, "REVIEW");
+});
+
+test("editorial PASS is rejected before persistence when completeness rules still block it", async () => {
+  const store = seededStore();
+  sheetReviews.delete(contentKey(sheet.sheetId, content.contentId));
+  const result = await call(store, "/api/production/editorial-review", "POST", {
+    sheetId: sheet.sheetId, contentId: content.contentId, reviewer: "Editor", reviewStatus: "PASS",
+    evidenceType: "SOURCE_DIRECT", evidenceReferences: ["Recipe source, section 2."], evidenceVerified: true,
+    audienceNeed: "需要一份可在下班后完成的家常晚餐做法。", readerValue: "说明准备与烹调顺序。",
+    captionApproved: true, readerFacingCopyReviewed: true, internalNoteLeakage: false,
+    claimSafetyOk: true, pageFitApproved: true
+  }, sameOrigin);
+  assert.equal(result.status, 422);
+  assert.equal(result.body.reviewStatus, "REVIEW");
+  assert.equal(sheetReviews.has(contentKey(sheet.sheetId, content.contentId)), false);
+  assert.equal(await store.getReview(sheet.sheetId, content.contentId), null);
 });
 
 test("workflow advances one stage at a time and refuses client-asserted publication without a stored post record", async () => {
   const store = seededStore();
   const key = store.reviewKey(sheet.sheetId, content.contentId);
+  sheetReviews.set(contentKey(sheet.sheetId, content.contentId), JSON.stringify({ schema_version: 1, review_status: "REVIEW" }));
   await store.saveWorkflow({ sheetId: sheet.sheetId, contentId: content.contentId, stage: "COPY_DRAFT", actor: "", note: "", updatedAt: "2026-09-26T09:00:00.000Z" });
-  await store.saveReview({ sheetId: sheet.sheetId, contentId: content.contentId, review: { review_status: "REVIEW" }, reviewer: "Editor", status: "REVIEW", reviewedAt: "2026-09-26T09:00:00.000Z" });
   const post = (nextStage, extra = {}) => call(store, "/api/production/workflow", "POST", { sheetId: sheet.sheetId, contentId: content.contentId, actor: "Operator", note: "Checked", nextStage, ...extra }, sameOrigin);
   assert.equal((await post("EDITORIAL_REVIEW")).status, 200);
   assert.equal((await post("COPY_APPROVED")).status, 422);
-  await store.saveReview({ sheetId: sheet.sheetId, contentId: content.contentId, review: { review_status: "PASS" }, reviewer: "Editor", status: "PASS", reviewedAt: "2026-09-26T09:00:00.000Z" });
+  sheetReviews.set(contentKey(sheet.sheetId, content.contentId), JSON.stringify({ schema_version: 1, review_status: "PASS" }));
   assert.equal((await post("COPY_APPROVED")).status, 200);
   assert.equal((await post("ASSET_CREATED", { requiredImagesPresent: true, finalAssetsPresent: true })).status, 422);
   assert.equal((await post("VISUAL_VIDEO_PROMPT")).status, 200);

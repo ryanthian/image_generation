@@ -313,6 +313,7 @@ const EDITORIAL_REVIEW_STATUSES = new Set(["NOT_REVIEWED", "REVIEW", "PASS", "BL
 
 function parseEditorialReview(record = {}) {
   const serialized = record.Editorial_Review_JSON || record.editorial_review_json;
+  const present = serialized !== undefined && serialized !== null && serialized !== "";
   let metadata = {};
   let error = "";
   if (serialized && typeof serialized === "object" && !Array.isArray(serialized)) metadata = clone(serialized);
@@ -328,6 +329,10 @@ function parseEditorialReview(record = {}) {
     reviewed_at: ["Editorial_Reviewed_At", "editorial_reviewed_at"],
     audience_need: ["USER_NEED", "User_Need", "Audience_Need", "audience_need", "user_need"],
     reader_value: ["Reader_Value", "reader_value"],
+    reader_facing_copy_reviewed: ["Reader_Facing_Copy_Reviewed", "reader_facing_copy_reviewed"],
+    internal_note_leakage: ["Internal_Note_Leakage", "internal_note_leakage"],
+    claim_safety_ok: ["Claim_Safety_OK", "claim_safety_ok"],
+    evidence_type: ["Evidence_Type", "evidence_type"],
     source_evidence_status: ["Source_Evidence_Status", "source_evidence_status"],
     caption_review_status: ["Caption_Review_Status", "caption_review_status"],
     claim_evidence: ["Claim_Evidence", "claim_evidence"],
@@ -356,7 +361,8 @@ function parseEditorialReview(record = {}) {
     const name = names.find((candidate) => record[candidate] !== undefined && record[candidate] !== "");
     if (name) metadata[key] = record[name];
   }
-  return { metadata, error };
+  if (metadata.review_status === undefined && typeof metadata.status === "string") metadata.review_status = metadata.status;
+  return { metadata, error, present };
 }
 
 export function adaptV4Record(record) {
@@ -398,6 +404,7 @@ export function adaptV4Record(record) {
     qualityRules: Array.isArray(record.qc_rules) ? record.qc_rules : [],
     editorialReview: editorial.metadata,
     editorialReviewParseError: editorial.error,
+    editorialReviewPresent: editorial.present,
     raw: record
   };
   if (!normalized.contentId || !normalized.title || !normalized.contentType || !normalized.templateType) throw new Error("V4 content requires Content_ID, Title, Content_Type and Template_Type.");
@@ -507,13 +514,19 @@ function recipeApproximation(metadata) {
  */
 export function runEditorialReview(content) {
   const metadata = content.editorialReview || {};
+  const reviewPresent = content.editorialReviewPresent ?? Object.keys(metadata).length > 0;
   const issues = [];
   const add = (code, detail, severity = "REVIEW") => issues.push({ code, detail, severity });
   const plan = content.resolvedAssetPlan || [];
   const body = textValue(content.contentBody);
   const caption = textValue(content.caption);
-  const publishableCopy = [content.title, content.hookText, caption, content.raw?.CTA_Text, content.raw?.cta_text].map(textValue).filter(Boolean).join("\n");
+  const assetCopy = plan.flatMap((item) => [item.section_label, item.local_heading, item.overlay_text, ...(item.generation_inputs || []).map((input) => input.overlay_text)]);
+  const publishableCopy = [content.title, content.hookText, caption, content.raw?.CTA_Text, content.raw?.cta_text, ...assetCopy].map(textValue).filter(Boolean).join("\n");
   const editorialMaterialExists = Boolean(body || caption || (content.coveragePoints || []).length || metadata.reader_value);
+  const evidence = metadata.evidence && typeof metadata.evidence === "object" ? metadata.evidence : {};
+  const evidenceType = String(evidence.type || metadata.evidence_type || (String(metadata.source_evidence_status || "").toUpperCase() === "VERIFIED" ? "SOURCE_DIRECT" : "UNVERIFIED")).toUpperCase();
+  const evidenceReferences = Array.isArray(evidence.references) ? evidence.references.map(textValue).filter(Boolean) : [];
+  const evidenceNotes = textValue(evidence.notes || metadata.source_notes || metadata.claim_evidence);
 
   if (content.editorialReviewParseError) add("EDITORIAL_REVIEW_JSON_INVALID", content.editorialReviewParseError);
   if (!editorialMaterialExists) {
@@ -530,17 +543,17 @@ export function runEditorialReview(content) {
   }
 
   if (INTERNAL_NOTE_PATTERN.test(publishableCopy)) {
-    add("INTERNAL_NOTE_IN_READER_COPY", "Internal production/review instructions appear in title, hook, caption or CTA; move them to dedicated internal fields before use.", "BLOCKED");
+    add("INTERNAL_NOTE_IN_READER_COPY", "Internal production/review instructions appear in reader-facing text; move them to dedicated internal fields before use.", "BLOCKED");
   }
   if (UNSUPPORTED_BENEFIT_PATTERN.test(publishableCopy) && !hasText(metadata.claim_evidence)) {
     add("UNSUPPORTED_BENEFIT_CLAIM", "Reader-facing copy contains a health/wellness benefit claim without claim evidence.", "BLOCKED");
   }
 
   const audienceText = `${content.title || ""} ${content.hookText || ""} ${caption}`;
-  const audienceSignal = hasText(metadata.audience_need)
-    || /[?？]|为什么|怎么(?:做|挑|选)|如何|别只看|不知道煮什么|买菜|选购/.test(audienceText)
+  const audienceSignal = /[?？]|为什么|怎么(?:做|挑|选)|如何|别只看|不知道煮什么|买菜|选购|谁适合|如何判断/.test(audienceText)
     || (["RECIPE", "DRINK"].includes(content.contentType) && /(?:晚餐|白饭|米饭|家常菜|不知道煮)/.test(audienceText));
-  if (!audienceSignal) add("AUDIENCE_NEED_UNCLEAR", "State who the content helps and what decision/problem it addresses.");
+  if (!hasText(metadata.audience_need)) add("AUDIENCE_NEED_NOT_EXPLICIT", "Record the specific reader need or decision this content serves.");
+  else if (!audienceSignal && textValue(metadata.audience_need).length < 8) add("AUDIENCE_NEED_UNCLEAR", "Describe the reader and practical need clearly enough to guide an editorial decision.");
   if (!hasText(metadata.reader_value)) add("READER_VALUE_NOT_EXPLICIT", "Record the concrete reader benefit in the editorial specification; asset presence alone does not prove usefulness.");
   if (!content.pageProfile) add("TARGET_PAGE_PROFILE_MISSING", "Assign a verified audience/page profile before final editorial approval.");
   if (String(metadata.page_fit_status || "").toUpperCase() !== "PASS") add("PAGE_AUDIENCE_FIT_NOT_REVIEWED", "Review audience, language, tone and format against the selected Page profile.");
@@ -552,13 +565,30 @@ export function runEditorialReview(content) {
   if (caption && caption.length < 12) add("CAPTION_VALUE_TOO_THIN", "Caption is too short to demonstrate useful reader-facing value.");
   if (body && INTERNAL_NOTE_PATTERN.test(body)) add("INTERNAL_NOTE_IN_SOURCE_BODY", "Move the internal instruction out of Content_Body into Editorial_Notes; keep the reader-facing copy separate.");
 
-  const source = textValue(metadata.source_notes || content.sourceReferences || content.source);
-  const genericSource = /controlled\s+v4\s+google\s+sheet\s+canary|top\s+facebook\s+performance\s+list|source\s*(?:pending|tbd|unknown)|待补|待核实/i.test(source);
-  if (!source) add("SOURCE_EVIDENCE_MISSING", "Add an identifiable source or evidence note for factual statements.");
-  else if (genericSource) add("SOURCE_EVIDENCE_IS_PLACEHOLDER", "The current source label identifies the canary, not evidence supporting this content.");
-  if (source && !genericSource && String(metadata.source_evidence_status || "").toUpperCase() !== "VERIFIED") {
-    add("SOURCE_EVIDENCE_NOT_VERIFIED", "Record that the cited source was checked for the claims used.");
+  const source = textValue(content.sourceReferences || content.source);
+  const genericSourcePattern = /controlled\s+v4\s+google\s+sheet\s+canary|top\s+facebook\s+performance\s+list|source\s*(?:pending|tbd|unknown)|待补|待核实/i;
+  const genericSource = genericSourcePattern.test(source);
+  const specificEvidenceNotes = [metadata.source_notes, evidence.notes, metadata.claim_evidence].map(textValue).filter((value) => value && !genericSourcePattern.test(value));
+  const validEvidenceReferences = evidenceReferences.filter((reference) => !genericSourcePattern.test(reference));
+  if (!source && !specificEvidenceNotes.length && !validEvidenceReferences.length) add("SOURCE_EVIDENCE_MISSING", "Add an identifiable source or evidence note for factual statements.");
+  else if (genericSource && !specificEvidenceNotes.length && !validEvidenceReferences.length) add("SOURCE_EVIDENCE_IS_PLACEHOLDER", "The current source label identifies the canary, not evidence supporting this content.");
+  if (!["SOURCE_DIRECT", "SOURCE_GENERAL", "HEURISTIC", "UNVERIFIED"].includes(evidenceType)) add("EVIDENCE_TYPE_INVALID", `Unsupported evidence type: ${evidenceType}.`);
+  if (evidenceType === "UNVERIFIED") add("SOURCE_EVIDENCE_UNVERIFIED", "Evidence is explicitly unverified; Editorial PASS is not available.");
+  else if (String(metadata.source_evidence_status || "").toUpperCase() !== "VERIFIED") add("SOURCE_EVIDENCE_NOT_VERIFIED", "The reviewer has not confirmed that the cited source or evidence was checked.");
+  if (evidenceType === "SOURCE_DIRECT" && !validEvidenceReferences.length && !specificEvidenceNotes.length && (genericSource || !source)) add("SOURCE_DIRECT_REFERENCE_MISSING", "Direct-source evidence requires an identifiable reference that supports the stated claim.");
+  if (evidenceType === "SOURCE_GENERAL" && !evidenceNotes) add("SOURCE_GENERAL_NOTE_MISSING", "Explain the established general knowledge supporting the factual statements.");
+  if (evidenceType === "HEURISTIC") {
+    if (!evidenceNotes && !hasText(metadata.limitations)) add("HEURISTIC_BASIS_MISSING", "Record the practical basis or limitation of this rule of thumb.");
+    if (!/(?:通常|一般|可能|可以|可作(?:為|为)參考|可作(?:为)?参考|比較|比较|不一定|不是唯一|若.{0,20}(?:可|可以|建議|建议)|when appropriate)/i.test(publishableCopy)) {
+      add("HEURISTIC_UNQUALIFIED", "Qualify this rule of thumb in reader-facing copy; do not state it as a guarantee.");
+    }
+    if (/(?:一定|必然|保證|保证|百分之百|永遠|永远|絕不|绝不)/.test(publishableCopy)) add("HEURISTIC_ABSOLUTE_CLAIM", "A practical heuristic is paired with absolute wording; revise it conservatively.");
   }
+  if (metadata.internal_note_leakage === true) add("INTERNAL_NOTE_LEAKAGE_CONFIRMED", "Reviewer marked internal notes as present in reader-facing copy.", "BLOCKED");
+  else if (metadata.internal_note_leakage !== false) add("INTERNAL_NOTE_LEAKAGE_NOT_CONFIRMED", "Explicitly confirm that reader-facing copy contains no internal production or review notes.");
+  if (metadata.claim_safety_ok === false) add("CLAIM_SAFETY_FAILED", "Reviewer marked at least one reader-facing claim as unsafe or unsupported.", "BLOCKED");
+  else if (metadata.claim_safety_ok !== true) add("CLAIM_SAFETY_NOT_CONFIRMED", "Explicitly confirm that factual and benefit claims are appropriately supported and qualified.");
+  if (metadata.reader_facing_copy_reviewed !== true) add("READER_FACING_COPY_NOT_REVIEWED", "Confirm that title, caption, overlays and CTA are natural, publishable reader-facing copy.");
   if (String(metadata.review_status || "").toUpperCase() === "BLOCKED") {
     add("EDITOR_MARKED_BLOCKED", "The editor has explicitly blocked this content.", "BLOCKED");
   }
@@ -642,20 +672,22 @@ export function runEditorialReview(content) {
     }
   }
 
-  if (content.editorialReviewParseError) {
-    // Keep malformed review metadata out of structural normalization, but never treat it as approval.
-  }
+  if (metadata.schema_version !== undefined && Number(metadata.schema_version) !== 1) add("EDITORIAL_REVIEW_VERSION_UNSUPPORTED", "Editorial review JSON schema_version must be 1.");
   const explicitStatus = String(metadata.review_status || "NOT_REVIEWED").toUpperCase();
   if (!EDITORIAL_REVIEW_STATUSES.has(explicitStatus)) add("EDITORIAL_STATUS_INVALID", `Unsupported editorial state: ${explicitStatus}.`);
   const hasBlockingIssue = issues.some((issue) => issue.severity === "BLOCKED");
   const hasReviewIssue = issues.some((issue) => issue.severity === "REVIEW");
   const reviewedAt = textValue(metadata.reviewed_at);
   const reviewerAttestationPresent = hasText(metadata.reviewer) && Boolean(reviewedAt) && Number.isFinite(Date.parse(reviewedAt));
+  if (reviewedAt && !Number.isFinite(Date.parse(reviewedAt))) add("EDITORIAL_REVIEW_TIMESTAMP_INVALID", "reviewed_at must be a valid ISO-8601 timestamp.");
   let status = "PASS";
   if (hasBlockingIssue || explicitStatus === "BLOCKED") status = "BLOCKED";
-  else if (hasReviewIssue || explicitStatus === "REVIEW") status = "REVIEW";
-  else if (explicitStatus !== "PASS" || !reviewerAttestationPresent) {
+  else if (!reviewPresent && !content.editorialReviewParseError) {
     status = "NOT_REVIEWED";
+    add("EDITORIAL_REVIEW_NOT_STARTED", "No durable Editorial_Review_JSON review input exists for this record.", "PENDING");
+  } else if (hasReviewIssue || explicitStatus === "REVIEW") status = "REVIEW";
+  else if (explicitStatus !== "PASS" || !reviewerAttestationPresent) {
+    status = explicitStatus === "NOT_REVIEWED" ? "NOT_REVIEWED" : "REVIEW";
     add("EDITORIAL_APPROVAL_NOT_RECORDED", "Rule checks are complete, but an explicit editor PASS with reviewer and timestamp is required.", "PENDING");
   }
   return { status, issues, reviewer: textValue(metadata.reviewer), reviewedAt: textValue(metadata.reviewed_at), mode: "RULES_PLUS_REVIEWER_ATTESTATION" };
@@ -779,6 +811,7 @@ export function buildSessionPrompt(content) {
     `Content Type: ${content.contentType}\nTemplate: ${content.templateType}\nVisual Profile: ${content.visualProfile}\nHook Type: ${content.hookType}`,
     `Commands: N = generate the next image; R = regenerate the current image only; FIX: ... = correct the current image only. Start at ${manifest.entries[0]?.label || "the first image"}. Never advance after R or FIX. Advance exactly one generation input only when I send N. After the final generation input, N must not create another stage.`,
     "Generate exactly ONE image per response. Do not skip generation inputs. Do not render text, letters, numbers, logos or watermarks inside photographs; controlled typography is added later by the Production Console.",
+    "EDITORIAL VALUE RULE: Every educational asset should provide at least one actionable reader insight beyond the headline unless minimal text is intentionally required by that asset’s visual purpose. Where the source specification supports it, preserve a clear micro-label, heading, main judgment and concise practical explanation/action in the controlled overlay. Readability comes before filling space. Never invent ingredients, facts, causes, quantities or claims; if source support is insufficient, flag the specification for review instead of adding filler.",
     `${sourceLabel}:\n${content.contentBody}`,
     pageGuidance ? `PAGE-SPECIFIC CONTENT DIRECTION:\n${pageGuidance}` : "",
     content.consistencyRules.length ? `VISUAL CONSISTENCY:\n${content.consistencyRules.join("\n")}` : "",

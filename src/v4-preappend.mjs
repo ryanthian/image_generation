@@ -6,11 +6,12 @@ import {
   validateResolvedContent
 } from "./content-model.mjs";
 
-export const V4_CANARY_HEADERS = Object.freeze([
+export const V4_CANARY_BASE_HEADERS = Object.freeze([
   "Schema_Version", "Content_ID", "Title", "Topic", "Content_Type", "Template_Type",
   "Visual_Profile", "Hook_Type", "Hook_Text", "Ready_To_Post_Caption", "Content_Body",
   "Source_References", "Affiliate_Fit", "Monetization_Angle", "Asset_Plan_JSON", "Status"
 ]);
+export const V4_CANARY_HEADERS = Object.freeze([...V4_CANARY_BASE_HEADERS, "Editorial_Review_JSON"]);
 
 const requiredRowFields = ["Content_ID", "Title", "Content_Type", "Template_Type", "Visual_Profile", "Hook_Type", "Hook_Text", "Content_Body", "Asset_Plan_JSON"];
 function rejected(record, error) {

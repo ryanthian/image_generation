@@ -303,7 +303,9 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
     if (request.method === "GET" && url.pathname === "/api/production/editorial-review") {
       const sheetId = Number(url.searchParams.get("sheetId")); const contentId = asText(url.searchParams.get("contentId"));
       if (!sheetId || !contentId) return json({ ok: false, error: "sheetId and contentId are required." }, 400);
-      return json({ ok: true, review: await store.getReview(sheetId, contentId) });
+      const content = await validateRef(context, sheetId, contentId);
+      const rawJson = content.raw?.Editorial_Review_JSON || content.raw?.editorial_review_json || "";
+      return json({ ok: true, review: rawJson ? { sheetId, contentId, source: "sheet", review: content.editorialReview, rawJson: String(rawJson) } : null, parseError: content.editorialReviewParseError || "" });
     }
     if (request.method === "POST" && url.pathname === "/api/production/editorial-review") {
       const error = writeGuard(request); if (error) return json({ ok: false, error }, 403);
@@ -313,7 +315,10 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
       if (!["REVIEW", "PASS", "BLOCKED"].includes(reviewStatus)) return json({ ok: false, error: "Review status must be REVIEW, PASS or BLOCKED." }, 400);
       const reviewer = asText(body.reviewer);
       if (!reviewer) return json({ ok: false, error: "Reviewer name is required." }, 400);
+      const evidenceType = asText(body.evidenceType).toUpperCase();
+      if (!["SOURCE_DIRECT", "SOURCE_GENERAL", "HEURISTIC", "UNVERIFIED"].includes(evidenceType)) return json({ ok: false, error: "Choose a supported evidence classification." }, 400);
       const review = {
+        schema_version: 1,
         ...(content.editorialReview || {}),
         review_status: reviewStatus,
         reviewer,
@@ -322,8 +327,17 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
         audience_need: Object.hasOwn(body, "audienceNeed") ? asText(body.audienceNeed) : content.editorialReview?.audience_need || "",
         reader_value: Object.hasOwn(body, "readerValue") ? asText(body.readerValue) : content.editorialReview?.reader_value || "",
         source_notes: Object.hasOwn(body, "sourceNotes") ? asText(body.sourceNotes) : content.editorialReview?.source_notes || "",
+        evidence_type: evidenceType,
+        evidence: {
+          type: evidenceType,
+          references: Array.isArray(body.evidenceReferences) ? body.evidenceReferences.map(asText).filter(Boolean) : [],
+          notes: asText(body.evidenceNotes || body.sourceNotes)
+        },
         source_evidence_status: body.evidenceVerified === true ? "VERIFIED" : "UNVERIFIED",
         caption_review_status: body.captionApproved === true ? "PASS" : "REVIEW",
+        reader_facing_copy_reviewed: body.readerFacingCopyReviewed === true,
+        internal_note_leakage: body.internalNoteLeakage === true,
+        claim_safety_ok: body.claimSafetyOk === true,
         page_fit_status: body.pageFitApproved === true ? "PASS" : "REVIEW",
         page_profile_id: content.pageProfile?.profileId || "",
         page_profile_updated_at: content.pageProfile?.updatedAt || "",
@@ -345,12 +359,21 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
         tradeoffs: asText(body.tradeoffs),
         decision_logic: asText(body.decisionLogic)
       };
-      const reviewContent = { ...content, editorialReview: review, editorialReviewParseError: "" };
+      const reviewContent = { ...content, editorialReview: review, editorialReviewPresent: true, editorialReviewParseError: "" };
       const { runEditorialReview } = await import("./content-model.mjs");
       const evaluated = runEditorialReview(reviewContent);
       if (reviewStatus === "PASS" && evaluated.status !== "PASS") return json({ ok: false, error: "Editorial PASS was not recorded because required review checks remain.", reviewStatus: evaluated.status, issues: evaluated.issues }, 422);
-      const saved = await store.saveReview({ sheetId: Number(body.sheetId), contentId: asText(body.contentId), review, reviewer, status: reviewStatus, reviewedAt: review.reviewed_at });
-      return json({ ok: true, review: saved, evaluated }, 201);
+      if (!context.persistEditorialReview) return json({ ok: false, error: "Google Sheets editorial-review write/readback is not configured; no review was saved." }, 503);
+      const serialized = JSON.stringify(review);
+      const saved = await context.persistEditorialReview(Number(body.sheetId), asText(body.contentId), serialized);
+      if (saved?.source !== "sheet" || saved?.record?.Content_ID !== asText(body.contentId) || saved?.record?.Editorial_Review_JSON !== serialized || saved?.reviewJson !== serialized) {
+        return json({ ok: false, error: "Google Sheets review readback did not match the submitted row/cell; treat save as failed." }, 502);
+      }
+      const { normalizeContentRecord } = await import("./content-model.mjs");
+      const reread = normalizeContentRecord(saved.record);
+      const rereadEvaluation = runEditorialReview(reread);
+      if (reviewStatus === "PASS" && rereadEvaluation.status !== "PASS") return json({ ok: false, error: "Sheet readback no longer satisfies Editorial PASS; the saved review is not generation-approved.", reviewStatus: rereadEvaluation.status, issues: rereadEvaluation.issues }, 502);
+      return json({ ok: true, review: { sheetId: Number(body.sheetId), contentId: asText(body.contentId), source: "sheet", review: reread.editorialReview, rawJson: serialized, rowNumber: saved.rowNumber }, evaluated: rereadEvaluation, recomputedFrom: "sheet-readback" }, 201);
     }
     if (request.method === "GET" && url.pathname === "/api/production/workflow") {
       const sheetId = Number(url.searchParams.get("sheetId")); const contentId = asText(url.searchParams.get("contentId"));
@@ -366,7 +389,7 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
       if (!content) return json({ ok: false, error: "Content verification is unavailable." }, 503);
       const prior = await store.getWorkflow(sheetId, contentId);
       const currentStage = prior?.stage || inferWorkflowStage(content.lifecycleStatus, Boolean(content.contentBody || content.caption));
-      const review = await store.getReview(sheetId, contentId);
+      const review = content.editorialReviewPresent ? { source: "sheet", review: content.editorialReview } : null;
       const gates = await context.getWorkflowGates?.(sheetId, contentId, content, review, body) || {};
       if (!asText(body.actor)) return json({ ok: false, error: "Record the operator name for this workflow transition." }, 400);
       if (["ASSET_CREATED", "QC_PASSED", "SCHEDULED_PUBLISHED"].includes(asText(body.nextStage)) && !asText(body.note)) return json({ ok: false, error: "Add a short human verification note for this production transition." }, 400);

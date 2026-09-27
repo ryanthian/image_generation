@@ -1,7 +1,9 @@
 import { TEMPLATE_REGISTRY } from "./content-model.mjs";
-import { V4_CANARY_HEADERS } from "./v4-preappend.mjs";
+import { V4_CANARY_BASE_HEADERS, V4_CANARY_HEADERS } from "./v4-preappend.mjs";
 
-export const LEGACY_RECIPE_HEADERS = Object.freeze([
+export const EDITORIAL_REVIEW_HEADER = "Editorial_Review_JSON";
+
+export const LEGACY_RECIPE_BASE_HEADERS = Object.freeze([
   "Content_ID", "Draft_Title", "Category", "Ready_To_Post_Caption", "Full_Recipe",
   "Time_And_Servings", "Source_References", "Pattern_Notes", "Image_1_Cover_Prompt",
   "Image_2_Ingredients_Prompt", "Image_3_Method_Prompt", "Image_3_Step_1_Caption",
@@ -10,6 +12,7 @@ export const LEGACY_RECIPE_HEADERS = Object.freeze([
   "Image_4_Closeup_Prompt", "Exact_Chinese_Overlay", "Image_Consistency_And_Negatives",
   "Quality_Check", "Affiliate_Fit", "Originality", "Status"
 ]);
+export const LEGACY_RECIPE_HEADERS = Object.freeze([...LEGACY_RECIPE_BASE_HEADERS, EDITORIAL_REVIEW_HEADER]);
 
 export const INITIAL_SOURCE_SEEDS = Object.freeze([
   { sheetId: 2026091901, title: "Eunice Recipe Draft 20 - 2026-09-19", schemaFamily: "LEGACY_RECIPE" },
@@ -40,7 +43,7 @@ export function isReservedSheetName(title) {
 export const SHEET_TEMPLATES = Object.freeze([
   Object.freeze({
     templateId: "LEGACY_RECIPE", label: "Legacy Recipe", contentType: "RECIPE", schemaVersion: 2,
-    headers: LEGACY_RECIPE_HEADERS, description: "Existing 25-column recipe sheet; legacy image workflow."
+    headers: LEGACY_RECIPE_HEADERS, description: "Legacy 25-column recipe contract with an additive Editorial_Review_JSON field; existing 25-column rows remain readable."
   }),
   ...V4_TEMPLATE_TYPES.map((templateType) => Object.freeze({
     templateId: `V4_${templateType}`,
@@ -70,10 +73,12 @@ export function inspectSheetHeaders(rawHeaders) {
   const { headers, duplicates } = normalizedHeaders(rawHeaders);
   if (duplicates.length) return { schemaFamily: "UNKNOWN", schemaVersion: null, contentType: null, templateId: null, setupStatus: "NEEDS_SETUP", reasons: [`Duplicate header names: ${[...new Set(duplicates)].join(", ")}.`] };
 
-  const legacyMissing = LEGACY_RECIPE_HEADERS.filter((header) => !headers.includes(header));
+  // The review column is additive. Existing production rows remain valid until the
+  // idempotent live schema migration adds it to each connected source.
+  const legacyMissing = LEGACY_RECIPE_BASE_HEADERS.filter((header) => !headers.includes(header));
   if (!legacyMissing.length) return { schemaFamily: "LEGACY_RECIPE", schemaVersion: 2, contentType: "RECIPE", templateId: "LEGACY_RECIPE", setupStatus: "READY", reasons: [] };
 
-  const v4Missing = V4_CANARY_HEADERS.filter((header) => !headers.includes(header));
+  const v4Missing = V4_CANARY_BASE_HEADERS.filter((header) => !headers.includes(header));
   if (!v4Missing.length) return { schemaFamily: "V4_UNIVERSAL", schemaVersion: 4, contentType: "ROW_DEFINED", templateId: "V4_UNIVERSAL", setupStatus: "READY", reasons: [] };
 
   const v4Common = V4_CANARY_HEADERS.filter((header) => headers.includes(header));

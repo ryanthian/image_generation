@@ -137,6 +137,8 @@
                 <label><span>Decision</span><select id="editorDecision"><option value="REVIEW">Needs review</option><option value="PASS">Pass</option><option value="BLOCKED">Blocked</option></select></label>
                 <label><span>Audience need</span><textarea id="editorAudienceNeed" rows="2"></textarea></label>
                 <label><span>Specific reader value</span><textarea id="editorReaderValue" rows="2"></textarea></label>
+                <label><span>Evidence classification</span><select id="editorEvidenceType"><option value="UNVERIFIED">Unverified</option><option value="SOURCE_DIRECT">Direct source</option><option value="SOURCE_GENERAL">Established general knowledge</option><option value="HEURISTIC">Qualified rule of thumb</option></select></label>
+                <label class="wide"><span>Specific references checked</span><textarea id="editorEvidenceReferences" rows="2" placeholder="One source URL, title/section, or reference per line"></textarea></label>
                 <label class="wide"><span>Source / evidence notes</span><textarea id="editorSourceNotes" rows="2"></textarea></label>
                 <label><span>Claim evidence / verification</span><textarea id="editorClaimEvidence" rows="2"></textarea></label>
                 <label><span>Limitations / uncertainty</span><textarea id="editorLimitations" rows="2"></textarea></label>
@@ -144,6 +146,9 @@
                 <label class="wide"><span>Internal claim / production notes (never publish)</span><textarea id="editorInternalNotes" rows="2"></textarea></label>
                 <label class="check-field"><input id="editorEvidenceVerified" type="checkbox"><span>I checked the source/evidence cited above</span></label>
                 <label class="check-field"><input id="editorCaptionApproved" type="checkbox"><span>Caption is natural, reader-facing and contains no internal notes</span></label>
+                <label class="check-field"><input id="editorReaderCopyReviewed" type="checkbox"><span>Title, overlays and CTA are publishable reader-facing copy</span></label>
+                <label class="check-field"><input id="editorNoInternalLeakage" type="checkbox"><span>No internal production/review note appears in public copy</span></label>
+                <label class="check-field"><input id="editorClaimSafetyOk" type="checkbox"><span>Claims are supported, safe and appropriately qualified</span></label>
                 <label class="check-field"><input id="editorPageFitApproved" type="checkbox"><span>Copy and format fit the selected Page audience</span></label>
               </div>
               <details class="editorial-type-review">

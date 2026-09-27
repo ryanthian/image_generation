@@ -402,6 +402,7 @@ function setFormValue(id, value) {
 function renderEditorialForm(review = {}) {
   const fields = {
     editorReviewer: review.reviewer, editorDecision: review.review_status || "REVIEW",
+    editorEvidenceReferences: (review.evidence?.references || []).join("\n"),
     editorAudienceNeed: review.audience_need, editorReaderValue: review.reader_value,
     editorSourceNotes: review.source_notes, editorClaimEvidence: review.claim_evidence,
     editorLimitations: review.limitations, editorReviewNote: review.review_note,
@@ -413,15 +414,19 @@ function renderEditorialForm(review = {}) {
     editorTradeoffs: review.tradeoffs, editorDecisionLogic: review.decision_logic
   };
   for (const [id, value] of Object.entries(fields)) setFormValue(id, value);
+  $("editorEvidenceType").value = review.evidence?.type || review.evidence_type || "UNVERIFIED";
   $("editorEvidenceVerified").checked = review.source_evidence_status === "VERIFIED";
   $("editorCaptionApproved").checked = review.caption_review_status === "PASS";
+  $("editorReaderCopyReviewed").checked = review.reader_facing_copy_reviewed === true;
+  $("editorNoInternalLeakage").checked = review.internal_note_leakage === false;
+  $("editorClaimSafetyOk").checked = review.claim_safety_ok === true;
   $("editorPageFitApproved").checked = review.page_fit_status === "PASS";
   $("editorRecipeApproximate").checked = review.approximate_recipe === true || review.recipe_precision === "APPROXIMATE";
   $("editorTemperatureRequired").checked = review.temperature_required === true;
-  $("reviewSavedState").textContent = review.reviewed_at ? `Saved · ${review.review_status || "REVIEW"}` : "Not saved";
+  $("reviewSavedState").textContent = review.reviewed_at ? `Sheet verified · ${review.review_status || "REVIEW"}` : "Not saved";
   const disabled = !state.content || !state.sourceId || state.source === "approved-opportunities";
   $("saveEditorialReview").disabled = disabled;
-  for (const id of ["editorReviewer", "editorDecision", ...Object.keys(fields).filter((field) => field !== "editorReviewer" && field !== "editorDecision"), "editorEvidenceVerified", "editorCaptionApproved", "editorPageFitApproved", "editorRecipeApproximate", "editorTemperatureRequired"]) {
+  for (const id of ["editorReviewer", "editorDecision", "editorEvidenceType", ...Object.keys(fields).filter((field) => field !== "editorReviewer" && field !== "editorDecision"), "editorEvidenceVerified", "editorCaptionApproved", "editorReaderCopyReviewed", "editorNoInternalLeakage", "editorClaimSafetyOk", "editorPageFitApproved", "editorRecipeApproximate", "editorTemperatureRequired"]) {
     if ($(id)) $(id).disabled = disabled;
   }
 }
@@ -517,11 +522,16 @@ function editorialReviewPayload() {
   return {
     sheetId: state.sourceId, contentId: state.content.contentId,
     reviewer: $("editorReviewer").value, reviewStatus: $("editorDecision").value,
+    evidenceType: $("editorEvidenceType").value,
+    evidenceReferences: $("editorEvidenceReferences").value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
     audienceNeed: $("editorAudienceNeed").value, readerValue: $("editorReaderValue").value,
     sourceNotes: $("editorSourceNotes").value, claimEvidence: $("editorClaimEvidence").value,
     limitations: $("editorLimitations").value, reviewNote: $("editorReviewNote").value,
     internalClaimNotes: $("editorInternalNotes").value, editorialNotes: "",
     evidenceVerified: $("editorEvidenceVerified").checked, captionApproved: $("editorCaptionApproved").checked,
+    readerFacingCopyReviewed: $("editorReaderCopyReviewed").checked,
+    internalNoteLeakage: !$("editorNoInternalLeakage").checked,
+    claimSafetyOk: $("editorClaimSafetyOk").checked,
     pageFitApproved: $("editorPageFitApproved").checked, approximateRecipe: $("editorRecipeApproximate").checked,
     recipePrecision: $("editorRecipeApproximate").checked ? "APPROXIMATE" : "EXACT",
     timingGuidance: $("editorTiming").value, temperatureRequired: $("editorTemperatureRequired").checked,
@@ -537,12 +547,13 @@ async function saveEditorialReview() {
   if (!state.content || !state.sourceId) return;
   try {
     const result = await apiJson("/api/production/editorial-review", { method: "POST", headers: writeHeaders(), body: JSON.stringify(editorialReviewPayload()) });
+    if (result.recomputedFrom !== "sheet-readback" || result.review?.source !== "sheet") throw new Error("Review save was not verified from the Google Sheet readback.");
     state.editorialReviewRecord = result.review;
     state.content = { ...state.content, editorialReview: result.review.review };
     renderEditorialForm(result.review.review);
     renderQc();
     renderSlots();
-    toast(`Editorial review saved: ${result.evaluated.status}.`);
+    toast(`Google Sheet readback verified · Editorial ${result.evaluated.status}.`);
   } catch (error) {
     if (error.message) toast(error.message, true);
     if (error.issues) toast(`${error.reviewStatus || "Review"}: ${error.issues.map((item) => item.code).join(", ")}`, true);

@@ -32,9 +32,11 @@ function recipeRecord({ quantities = true, caption = "先煎香再焖熟，配�
     { sequence: 4, asset_id: "closeup", asset_type: "CLOSEUP", title: "Closeup", purpose: "Serving result", layout_type: "detail_overlay", overlay_text: "配热饭上桌", image_prompt: "Photorealistic cooked chicken served with rice, no text.", required: true }
   ];
   const editorial = {
-    review_status: "PASS", reviewer: "Editor A", reviewed_at: "2026-09-26T08:00:00Z", page_profile_id: "test-page-1", page_profile_updated_at: "2026-09-26T07:00:00Z",
+    schema_version: 1, review_status: "PASS", reviewer: "Editor A", reviewed_at: "2026-09-26T08:00:00Z", page_profile_id: "test-page-1", page_profile_updated_at: "2026-09-26T07:00:00Z",
     audience_need: "需要一份简单的下班晚餐做法。", reader_value: "提供可照做的鸡腿饭步骤。",
-    source_evidence_status: "VERIFIED", caption_review_status: "PASS", page_fit_status: "PASS", claim_evidence: "Reviewed recipe source, page 10.",
+    evidence_type: "SOURCE_DIRECT", evidence: { type: "SOURCE_DIRECT", references: source ? [source] : [], notes: "" },
+    source_evidence_status: source ? "VERIFIED" : "UNVERIFIED", caption_review_status: "PASS", reader_facing_copy_reviewed: true,
+    internal_note_leakage: false, claim_safety_ok: true, page_fit_status: "PASS", claim_evidence: source ? "Reviewed recipe source, page 10." : "",
     recipe_precision: "EXACT", timing_guidance: "约12分钟，按鸡块大小检查熟透状态。", serving_expectation: "热鸡腿配白饭。"
   };
   return {
@@ -79,6 +81,16 @@ test("complete recipe with reviewer attestation can PASS editorial and become ge
   assert.equal(structural.status, "PASS");
   assert.equal(editorial.status, "PASS");
   assert.equal(deriveGenerationReadiness(content, { structuralQc: structural, editorialReview: editorial }).status, "GENERATION_READY");
+});
+
+test("a direct reference cannot pass until the reviewer explicitly verifies it", () => {
+  const raw = recipeRecord();
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.source_evidence_status = "UNVERIFIED";
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.equal(editorial.status, "REVIEW");
+  assert.ok(editorial.issues.some((issue) => issue.code === "SOURCE_EVIDENCE_NOT_VERIFIED"));
 });
 
 test("missing source/evidence is editorial REVIEW even when the production contract passes", () => {
@@ -149,13 +161,81 @@ test("editorial checks do not enrich or alter the legacy structural plan", () =>
   assert.equal(legacy.sourceIngredients, undefined);
   assert.equal(ingredients.ingredient_items, undefined);
   assert.equal(method.generation_inputs[0].method_step_id, "");
-  assert.equal(runEditorialReview(legacy).status, "REVIEW");
+  assert.equal(runEditorialReview(legacy).status, "NOT_REVIEWED");
 });
 
 test("malformed optional editorial metadata does not reject structural V4 normalization", () => {
   const content = normalizeContentRecord({ ...recipeRecord(), Editorial_Review_JSON: "not-json" });
   assert.equal(runContentQc(content).status, "PASS");
   assert.equal(runEditorialReview(content).status, "REVIEW");
+});
+
+test("legacy row without Editorial_Review_JSON remains structurally valid and is explicitly NOT_REVIEWED", () => {
+  const raw = recipeRecord();
+  delete raw.Editorial_Review_JSON;
+  const content = normalizeContentRecord(raw);
+  assert.equal(runContentQc(content).status, "PASS");
+  assert.equal(runEditorialReview(content).status, "NOT_REVIEWED");
+  assert.equal(deriveGenerationReadiness(content).status, "GENERATION_BLOCKED");
+});
+
+test("UNVERIFIED evidence cannot grant Editorial PASS", () => {
+  const raw = recipeRecord();
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.evidence_type = "UNVERIFIED";
+  review.evidence = { type: "UNVERIFIED", references: [], notes: "" };
+  review.source_evidence_status = "UNVERIFIED";
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.equal(editorial.status, "REVIEW");
+  assert.ok(editorial.issues.some((issue) => issue.code === "SOURCE_EVIDENCE_UNVERIFIED"));
+});
+
+test("HEURISTIC evidence requires qualified public wording", () => {
+  const raw = recipeRecord({ caption: "鸡腿饭这样做一定最好吃。" });
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.evidence_type = "HEURISTIC";
+  review.evidence = { type: "HEURISTIC", references: [], notes: "家庭烹饪经验，非保证结果。" };
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  let editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.equal(editorial.status, "REVIEW");
+  assert.ok(editorial.issues.some((issue) => issue.code === "HEURISTIC_UNQUALIFIED"));
+  assert.ok(editorial.issues.some((issue) => issue.code === "HEURISTIC_ABSOLUTE_CLAIM"));
+  raw.Ready_To_Post_Caption = "鸡腿大小不同，时间通常可作参考；观察中心熟透后再上桌。";
+  editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.ok(!editorial.issues.some((issue) => issue.code === "HEURISTIC_UNQUALIFIED"));
+});
+
+test("source-general evidence requires an auditable support note", () => {
+  const raw = recipeRecord();
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.evidence_type = "SOURCE_GENERAL";
+  review.evidence = { type: "SOURCE_GENERAL", references: [], notes: "基于常见家庭烹饪方法，时间按食材大小和熟度判断。" };
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.ok(!editorial.issues.some((issue) => issue.code === "SOURCE_GENERAL_NOTE_MISSING"));
+});
+
+test("approximate recipe must acknowledge its limitation", () => {
+  const raw = recipeRecord({ quantities: false });
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.approximate_recipe = true;
+  review.recipe_precision = "APPROXIMATE";
+  review.limitations = "食材大小不同，份量和火力请按实际情况微调。";
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.ok(!editorial.issues.some((issue) => issue.code === "RECIPE_QUANTITIES_OR_APPROXIMATION_MISSING"));
+});
+
+test("invalid reviewer timestamp and absent reviewer cannot grant PASS", () => {
+  const raw = recipeRecord();
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.reviewer = "";
+  review.reviewed_at = "yesterday";
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.notEqual(editorial.status, "PASS");
+  assert.ok(editorial.issues.some((issue) => issue.code === "EDITORIAL_REVIEW_TIMESTAMP_INVALID"));
 });
 
 test("empty development handoffs remain NOT_REVIEWED, while an explicit editor block is retained", () => {
@@ -181,7 +261,7 @@ test("complete Mistake/Fix content checks cause, consequence, action and correct
     contentBody: "锅温不够时一次放入太多虾仁，因为锅温下降，虾仁会出水。先吸干水分，热锅后分批下锅，刚熟就离火。",
     caption: "虾仁出水不一定是虾的问题，先吸干水分、热锅分批下锅，刚熟就离火。",
     sourceReferences: "Reviewed culinary technique source, section 3.", sourceIngredients: [], coveragePoints: [], raw: {},
-    editorialReview: { review_status: "PASS", reviewer: "Editor A", reviewed_at: "2026-09-26T08:00:00Z", page_profile_id: "test-page-1", page_profile_updated_at: "2026-09-26T07:00:00Z", audience_need: "避免虾仁炒出水", reader_value: "给出更稳妥的下锅顺序", source_evidence_status: "VERIFIED", caption_review_status: "PASS", page_fit_status: "PASS", claim_evidence: "Technique source, section 3.", cause_explanation: "锅温下降会令虾仁出水。", consequence: "虾仁出水且不易上色。", correction: "吸干、热锅、分批、刚熟离火。", expected_result: "表面有自然上色，虾仁不过熟。" },
+    editorialReview: { schema_version: 1, review_status: "PASS", reviewer: "Editor A", reviewed_at: "2026-09-26T08:00:00Z", page_profile_id: "test-page-1", page_profile_updated_at: "2026-09-26T07:00:00Z", audience_need: "避免虾仁炒出水", reader_value: "给出更稳妥的下锅顺序", evidence_type: "SOURCE_DIRECT", evidence: { type: "SOURCE_DIRECT", references: ["Technique source, section 3."], notes: "" }, source_evidence_status: "VERIFIED", caption_review_status: "PASS", reader_facing_copy_reviewed: true, internal_note_leakage: false, claim_safety_ok: true, page_fit_status: "PASS", claim_evidence: "Technique source, section 3.", cause_explanation: "锅温下降会令虾仁出水。", consequence: "虾仁出水且不易上色。", correction: "吸干、热锅、分批、刚熟离火。", expected_result: "表面有自然上色，虾仁不过熟。" },
     resolvedAssetPlan: [
       { asset_type: "WRONG_METHOD", overlay_text: "锅不够热｜一次放太多" },
       { asset_type: "CORRECT_METHOD", overlay_text: "吸干水分｜热锅｜分批下锅" },
@@ -198,7 +278,7 @@ test("complete Selection Guide checks decision criteria, suitability, trade-offs
     caption: "挑西兰花先看花球、花蕾和切口；同样大小再比较手感，遇到状态不确定时可再看切口是否新鲜。",
     sourceReferences: "Reviewed fresh produce selection source, page 4.", sourceIngredients: [], raw: {},
     coveragePoints: [{ id: "HEAD", text: "花球紧实", required: true }, { id: "BUD", text: "花蕾细密", required: true }],
-    editorialReview: { review_status: "PASS", reviewer: "Editor A", reviewed_at: "2026-09-26T08:00:00Z", page_profile_id: "test-page-1", page_profile_updated_at: "2026-09-26T07:00:00Z", audience_need: "在市场挑选新鲜西兰花", reader_value: "提供可逐项检查的标准", source_evidence_status: "VERIFIED", caption_review_status: "PASS", page_fit_status: "PASS", claim_evidence: "Produce source, page 4.", option_suitability: "适合购买新鲜西兰花时逐项比较。", tradeoffs: "手感只是其中一个参考，不单独决定新鲜度。", decision_logic: "优先选择花球紧、花蕾细密且切口状态好的个体。" },
+    editorialReview: { schema_version: 1, review_status: "PASS", reviewer: "Editor A", reviewed_at: "2026-09-26T08:00:00Z", page_profile_id: "test-page-1", page_profile_updated_at: "2026-09-26T07:00:00Z", audience_need: "在市场挑选新鲜西兰花", reader_value: "提供可逐项检查的标准", evidence_type: "SOURCE_DIRECT", evidence: { type: "SOURCE_DIRECT", references: ["Produce source, page 4."], notes: "" }, source_evidence_status: "VERIFIED", caption_review_status: "PASS", reader_facing_copy_reviewed: true, internal_note_leakage: false, claim_safety_ok: true, page_fit_status: "PASS", claim_evidence: "Produce source, page 4.", option_suitability: "适合购买新鲜西兰花时逐项比较。", tradeoffs: "手感只是其中一个参考，不单独决定新鲜度。", decision_logic: "优先选择花球紧、花蕾细密且切口状态好的个体。" },
     resolvedAssetPlan: [
       { asset_type: "COVER", title: "Cover", purpose: "Introduce the question", overlay_text: "怎么挑西兰花？", coverage_point_ids: [] },
       { asset_type: "INSPECTION_DETAIL", title: "Head", purpose: "Show head criterion", overlay_text: "花球紧实", coverage_point_ids: ["HEAD"] },
@@ -218,4 +298,11 @@ test("internal claim notes stay separate from the reader-facing session prompt",
   assert.equal(content.editorialReview.internal_claim_notes, "Do not state unsupported health effects.");
   assert.doesNotMatch(prompt, /Do not state unsupported health effects/);
   assert.match(prompt, /SOURCE-OF-TRUTH RECIPE/);
+});
+
+test("future image prompts ask for actionable reader value without inventing unsupported information", () => {
+  const prompt = buildSessionPrompt(normalizeContentRecord(recipeRecord()));
+  assert.match(prompt, /EDITORIAL VALUE RULE/);
+  assert.match(prompt, /at least one actionable reader insight beyond the headline/);
+  assert.match(prompt, /Never invent ingredients, facts, causes, quantities or claims/);
 });
