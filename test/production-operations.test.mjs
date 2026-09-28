@@ -57,8 +57,8 @@ function request(path, method = "GET", body, extraHeaders = {}) {
 }
 
 const sameOrigin = { "x-content-intelligence-request": "1", "sec-fetch-site": "same-origin" };
-async function call(store, path, method = "GET", body, headers = {}) {
-  const response = await handleProductionOperationsApi(request(path, method, body, headers), {}, new URL(`https://console.example${path}`), store, context);
+async function call(store, path, method = "GET", body, headers = {}, operationContext = context) {
+  const response = await handleProductionOperationsApi(request(path, method, body, headers), {}, new URL(`https://console.example${path}`), store, operationContext);
   return { status: response.status, body: await response.json() };
 }
 
@@ -107,6 +107,26 @@ test("Site bridge sends review writes only to the Apps Script action and never t
   assert.doesNotMatch(endpoint, /searchParams\.set\([^\n]*Token/i);
 });
 
+test("editorial review records Page fit as deferred when no complete Page profile is assigned", async () => {
+  const store = seededStore();
+  sheetReviews.delete(contentKey(sheet.sheetId, content.contentId));
+  const noPageContext = {
+    ...context,
+    validateContentRef: async () => ({
+      ok: true,
+      content: { ...content, pageProfile: null, editorialReview: {}, editorialReviewPresent: false, raw: rawContentRecord(content.contentId) }
+    })
+  };
+  const saved = await call(store, "/api/production/editorial-review", "POST", {
+    sheetId: sheet.sheetId, contentId: content.contentId, reviewer: "Editor", reviewStatus: "REVIEW",
+    audienceNeed: "家中用冷饭炒饭、遇到结块，想知道下锅前怎么处理。", readerValue: "提供拨松和分次下锅的方法。",
+    evidenceType: "UNVERIFIED", pageFitApproved: false
+  }, sameOrigin, noPageContext);
+  assert.equal(saved.status, 201);
+  assert.equal(saved.body.review.review.page_fit_status, "DEFERRED");
+  assert.equal(saved.body.review.review.page_profile_id, "");
+});
+
 test("unavailable worksheet registrations are retained and surfaced even when inactive", async () => {
   const store = seededStore();
   await store.saveSheetSettings(sheet.sheetId, profile.profileId, false);
@@ -115,6 +135,28 @@ test("unavailable worksheet registrations are retained and surfaced even when in
   assert.equal(registered.schemaStatus, "UNAVAILABLE");
   assert.equal(registered.active, false);
   assert.equal(publicSourceState(registered, [profile]).setupStatus, "UNAVAILABLE");
+});
+
+test("a valid worksheet stays available for generation without a Page profile; profile is a publishing blocker", () => {
+  const unassigned = publicSourceState({ ...sheet, targetPageProfileId: "" }, []);
+  assert.equal(unassigned.setupStatus, "READY");
+  assert.deepEqual(unassigned.setupReasons, []);
+  assert.ok(unassigned.publishingSetupBlockers.some((reason) => reason.includes("before publishing")));
+
+  const incomplete = publicSourceState({ ...sheet, targetPageProfileId: "draft-page" }, [
+    { profileId: "draft-page", displayName: "Draft page", active: false }
+  ]);
+  assert.equal(incomplete.setupStatus, "READY");
+  assert.ok(incomplete.publishingSetupBlockers.length > 0);
+});
+
+test("worker keeps target Page assignment on the posting gate, not the generation gate", async () => {
+  const source = await readFile(fileURLToPath(new URL("../src/worker.template.mjs", import.meta.url)), "utf8");
+  const workflowGates = source.slice(source.indexOf("getWorkflowGates:"), source.indexOf("return handleProductionOperationsApi", source.indexOf("getWorkflowGates:")));
+  const postingGate = source.slice(source.indexOf("if (request.method === \"POST\" && statusMatch)"), source.indexOf("if (url.pathname.startsWith(\"/api/production/\"))"));
+  assert.match(workflowGates, /generationReady: generation\.ready\s*\}/);
+  assert.doesNotMatch(workflowGates, /generation\.ready\s*&&\s*profileReady/);
+  assert.match(postingGate, /if \(!profileReady \|\| !generation\.ready\)/);
 });
 
 test("memory worksheet registry returns the persisted item for local Add Sheet verification", async () => {

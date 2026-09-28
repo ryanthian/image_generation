@@ -96,7 +96,7 @@
                 <button class="btn btn-primary" id="assignPageProfile" type="button">Save source settings</button>
               </div>
               <label class="check-field source-active-field"><input id="sourceActive" type="checkbox"><span>Active production source (turn off to keep this tab out of the workflow without deleting it)</span></label>
-              <p class="helper" id="pageProfileHint">A real Page profile is required before generation. Console analytics are not connected; audience and results remain operator supplied.</p>
+              <p class="helper" id="pageProfileHint">Content review and image generation do not require a Page ID. A complete Page profile is required later for Page-specific fit review and publishing.</p>
               <details class="profile-editor">
                 <summary>Manage page profiles</summary>
                 <div class="profile-form">
@@ -129,7 +129,7 @@
             <small class="helper" id="visualQcHint">Build all final assets before recording a visual review.</small>
           </section>
           <section class="card editorial-review-card" aria-labelledby="editorialReviewTitle">
-            <div class="card-header"><div><p class="eyebrow">HUMAN EDITORIAL REVIEW</p><h2 id="editorialReviewTitle">Content quality decision</h2></div><span class="badge" id="reviewSavedState">Not saved</span></div>
+            <div class="card-header"><div><p class="eyebrow">EDITORIAL REVIEW</p><h2 id="editorialReviewTitle">Content quality decision</h2></div><span class="badge" id="reviewSavedState">Not saved</span></div>
             <div class="setup-card-body">
               <p class="helper">A structural pass is not editorial approval. Review audience fit, source support, claims and reader-facing copy before selecting PASS.</p>
               <div class="editorial-form">
@@ -149,7 +149,8 @@
                 <label class="check-field"><input id="editorReaderCopyReviewed" type="checkbox"><span>Title, overlays and CTA are publishable reader-facing copy</span></label>
                 <label class="check-field"><input id="editorNoInternalLeakage" type="checkbox"><span>No internal production/review note appears in public copy</span></label>
                 <label class="check-field"><input id="editorClaimSafetyOk" type="checkbox"><span>Claims are supported, safe and appropriately qualified</span></label>
-                <label class="check-field"><input id="editorPageFitApproved" type="checkbox"><span>Copy and format fit the selected Page audience</span></label>
+                <label class="check-field"><input id="editorPageFitApproved" type="checkbox"><span>Page-specific copy fit checked for publishing</span></label>
+                <small class="helper wide" id="pageFitReviewHint">Page-specific fit is deferred until a complete, real Page profile is assigned. Publishing remains blocked until then.</small>
               </div>
               <details class="editorial-type-review">
                 <summary>Content-type completeness checks</summary>
@@ -267,7 +268,7 @@
             <div class="add-sheet-form">
               <label><span>Content template</span><select id="newSheetTemplate"></select></label>
               <label><span>New tab name</span><input id="newSheetTitle" type="text" maxlength="90" placeholder="A unique tab name"></label>
-              <label><span>Target Page profile (optional until generation)</span><select id="newSheetPageProfile"><option value="">Assign later</option></select></label>
+              <label><span>Target Page profile (optional until publishing)</span><select id="newSheetPageProfile"><option value="">Assign later</option></select></label>
             </div>
             <div class="template-preview"><strong>Template preview</strong><p id="newSheetTemplateDescription" class="helper"></p><code id="newSheetHeaders"></code></div>
             <button class="btn btn-primary" id="createSheet" type="button">Create new worksheet</button>

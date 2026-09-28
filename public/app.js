@@ -347,7 +347,8 @@ function renderQc() {
     generationReadiness: generation,
     requiredImagesPresent,
     finalAssetsPresent: allFinalAssetsBuilt,
-    visualQcStatus: visualQcStatus === "REVIEW REQUIRED" ? "NOT CONFIRMED" : visualQcStatus
+    visualQcStatus: visualQcStatus === "REVIEW REQUIRED" ? "NOT CONFIRMED" : visualQcStatus,
+    pageProfileReady: state.pageProfileComplete
   });
   const combinedStatus = contractStatus === "FAIL" ? "fail" : editorial.status === "BLOCKED" ? "blocked" : editorial.status === "REVIEW" || generation.status === "GENERATION_BLOCKED" ? "review" : "pass";
   const details = [
@@ -429,6 +430,10 @@ function renderEditorialForm(review = {}) {
   for (const id of ["editorReviewer", "editorDecision", "editorEvidenceType", ...Object.keys(fields).filter((field) => field !== "editorReviewer" && field !== "editorDecision"), "editorEvidenceVerified", "editorCaptionApproved", "editorReaderCopyReviewed", "editorNoInternalLeakage", "editorClaimSafetyOk", "editorPageFitApproved", "editorRecipeApproximate", "editorTemperatureRequired"]) {
     if ($(id)) $(id).disabled = disabled;
   }
+  $("editorPageFitApproved").disabled = disabled || !state.pageProfileComplete;
+  $("pageFitReviewHint").textContent = state.pageProfileComplete
+    ? "Page-specific fit is a publishing check; generation can proceed independently."
+    : "Deferred: no complete Page profile is assigned. Content can still be reviewed and generated; publishing stays blocked.";
 }
 
 function renderPageProfiles() {
@@ -448,7 +453,7 @@ function renderPageProfiles() {
   $("sourceSetupStatus").className = `badge ${readiness === "READY" ? "badge-success" : "badge-warning"}`;
   $("pageProfileHint").textContent = state.currentSheet?.setupReasons?.join(" ") || (state.pageProfileComplete
     ? `Assigned to ${selected.displayName}. Page-specific audience, language, tone and exclusions are included in the generation prompt.`
-    : "A complete, active Facebook Page profile is required before editorial PASS and generation. The Console does not fetch Page analytics automatically.");
+    : "Content review and image generation can use the connected source without a Page ID. Assign a complete, active Page profile later to review Page fit and enable publishing.");
   const newProfileOptions = [`<option value="">Assign later</option>`, ...profiles.filter((profile) => profile.active).map((profile) => `<option value="${escapeHtml(profile.profileId)}">${escapeHtml(profile.displayName)}</option>`)].join("");
   $("newSheetPageProfile").innerHTML = newProfileOptions;
 }

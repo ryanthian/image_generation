@@ -162,9 +162,8 @@ async function discoverContentSheets(env, store) {
 function publicSourceStateWithProfile(sheet, profiles) {
   const profile = profiles.find((item) => item.profileId === sheet.targetPageProfileId);
   const profileReady = Boolean(profile?.active && profile.facebookPageId && profile.displayName && profile.audience && profile.primaryLanguage && profile.toneGuidance && profile.avoidTopics?.length);
-  const setupStatus = sheet.schemaStatus === "UNAVAILABLE" ? "UNAVAILABLE" : !sheet.active ? "INACTIVE" : sheet.schemaStatus !== "READY" || !profileReady ? "NEEDS_SETUP" : "READY";
+  const setupStatus = sheet.schemaStatus === "UNAVAILABLE" ? "UNAVAILABLE" : !sheet.active ? "INACTIVE" : sheet.schemaStatus !== "READY" ? "NEEDS_SETUP" : "READY";
   const setupReasons = [...(sheet.setupReasons || [])];
-  if (sheet.schemaStatus === "READY" && !profileReady) setupReasons.push(profile ? "Selected Facebook page profile is incomplete or inactive." : "Assign a complete Facebook page profile before generation.");
   return {
     sheetId: Number(sheet.sheetId), name: sheet.title, title: sheet.title,
     contentType: sheet.contentType || "Unknown", templateId: sheet.templateId || "",
@@ -172,6 +171,7 @@ function publicSourceStateWithProfile(sheet, profiles) {
     setupStatus, setupReasons, active: Boolean(sheet.active),
     targetPageProfileId: sheet.targetPageProfileId || "",
     targetPageName: profile?.displayName || "Not assigned",
+    publishingSetupBlockers: profileReady ? [] : ["Assign a complete target Facebook Page profile before publishing."],
     label: `${sheet.title} · ${sheet.contentType || "Needs Setup"} · ${profile?.displayName || "Page not assigned"}`
   };
 }
@@ -265,7 +265,7 @@ async function handleApi(request, env, url) {
       }
       const pageProfile = sheet.targetPageProfileId ? await productionStore.getProfile(sheet.targetPageProfileId) : null;
       const pageProfileComplete = Boolean(pageProfile?.active && pageProfile.facebookPageId && pageProfile.displayName && pageProfile.audience && pageProfile.primaryLanguage && pageProfile.toneGuidance && pageProfile.avoidTopics?.length);
-      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: sheet.title, sourceState, pageProfile, pageProfileComplete, generationSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before generation."], sheets: discovery.sheets, profiles: discovery.profiles, headers: loaded.result.headers || [], records: loaded.records });
+      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: discovery.sheets, profiles: discovery.profiles, headers: loaded.result.headers || [], records: loaded.records });
     } catch (error) { return json({ ok: false, source: "sheet", error: error.message, records: [] }, 503); }
   }
 
@@ -327,15 +327,12 @@ async function handleApi(request, env, url) {
         });
         return { ...result, source: "sheet" };
       },
-      getWorkflowGates: async (sheetId, contentId, content, review) => {
-        const source = await store.getSheet(sheetId);
-        const profile = source?.targetPageProfileId ? await store.getProfile(source.targetPageProfileId) : null;
+      getWorkflowGates: async (_sheetId, _contentId, content, review) => {
         if (review) content = { ...content, editorialReview: review.review };
         const contract = runContentQc(content);
         const editorial = runEditorialReview(content);
         const generation = deriveGenerationReadiness(content, { structuralQc: contract, editorialReview: editorial });
-        const profileReady = Boolean(profile?.active && profile.facebookPageId && profile.displayName && profile.audience && profile.primaryLanguage && profile.toneGuidance && profile.avoidTopics?.length);
-        return { generationReady: generation.ready && profileReady };
+        return { generationReady: generation.ready };
       }
     };
     return handleProductionOperationsApi(request, env, url, store, context);

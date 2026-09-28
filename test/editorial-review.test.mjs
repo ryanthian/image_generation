@@ -123,6 +123,39 @@ test("complete recipe with reviewer attestation can PASS editorial and become ge
   assert.equal(deriveGenerationReadiness(content, { structuralQc: structural, editorialReview: editorial }).status, "GENERATION_READY");
 });
 
+test("content review and generation can PASS without a Page profile while publishing stays blocked", () => {
+  const raw = recipeRecord();
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.page_fit_status = "DEFERRED";
+  review.page_profile_id = "";
+  review.page_profile_updated_at = "";
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const content = normalizeContentRecord(raw);
+  const structural = runContentQc(content);
+  const editorial = runEditorialReview(content);
+  const generation = deriveGenerationReadiness(content, { structuralQc: structural, editorialReview: editorial });
+  assert.equal(structural.status, "PASS");
+  assert.equal(editorial.status, "PASS");
+  assert.equal(generation.status, "GENERATION_READY");
+  const publishing = derivePublishingReadiness(content, {
+    generationReadiness: generation, requiredImagesPresent: true, finalAssetsPresent: true, visualQcStatus: "PASS"
+  });
+  assert.equal(publishing.status, "NOT_READY");
+  assert.ok(publishing.blockers.some((reason) => reason.includes("Facebook Page profile")));
+});
+
+test("a complete Page profile still requires Page-specific editorial fit before PASS", () => {
+  const raw = recipeRecord();
+  const review = JSON.parse(raw.Editorial_Review_JSON);
+  review.page_fit_status = "DEFERRED";
+  review.page_profile_id = "";
+  review.page_profile_updated_at = "";
+  raw.Editorial_Review_JSON = JSON.stringify(review);
+  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
+  assert.equal(editorial.status, "REVIEW");
+  assert.ok(editorial.issues.some((issue) => issue.code === "PAGE_AUDIENCE_FIT_NOT_REVIEWED"));
+});
+
 test("a direct reference cannot pass until the reviewer explicitly verifies it", () => {
   const raw = recipeRecord();
   const review = JSON.parse(raw.Editorial_Review_JSON);

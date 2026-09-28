@@ -559,9 +559,13 @@ export function runEditorialReview(content) {
   if (!hasText(metadata.audience_need)) add("AUDIENCE_NEED_NOT_EXPLICIT", "Record the specific reader need or decision this content serves.");
   else if (!audienceSignal && textValue(metadata.audience_need).length < 8) add("AUDIENCE_NEED_UNCLEAR", "Describe the reader and practical need clearly enough to guide an editorial decision.");
   if (!hasText(metadata.reader_value)) add("READER_VALUE_NOT_EXPLICIT", "Record the concrete reader benefit in the editorial specification; asset presence alone does not prove usefulness.");
-  if (!content.pageProfile) add("TARGET_PAGE_PROFILE_MISSING", "Assign a verified audience/page profile before final editorial approval.");
-  if (String(metadata.page_fit_status || "").toUpperCase() !== "PASS") add("PAGE_AUDIENCE_FIT_NOT_REVIEWED", "Review audience, language, tone and format against the selected Page profile.");
-  if (content.pageProfile && (
+  const pageProfileReady = Boolean(content.pageProfile?.active && content.pageProfile.facebookPageId
+    && content.pageProfile.displayName && content.pageProfile.audience && content.pageProfile.primaryLanguage
+    && content.pageProfile.toneGuidance && content.pageProfile.avoidTopics?.length);
+  if (pageProfileReady && String(metadata.page_fit_status || "").toUpperCase() !== "PASS") {
+    add("PAGE_AUDIENCE_FIT_NOT_REVIEWED", "Review audience, language, tone and format against the selected Page profile before publishing.");
+  }
+  if (pageProfileReady && (
     textValue(metadata.page_profile_id) !== textValue(content.pageProfile.profileId)
     || (content.pageProfile.updatedAt && textValue(metadata.page_profile_updated_at) !== textValue(content.pageProfile.updatedAt))
   )) add("PAGE_PROFILE_REVIEW_STALE", "The Page profile changed or differs from the profile used for the last editorial review; re-review audience fit.");
@@ -715,13 +719,17 @@ export function deriveGenerationReadiness(content, { structuralQc = runContentQc
   return { status: blockers.length ? "GENERATION_BLOCKED" : "GENERATION_READY", ready: blockers.length === 0, blockers };
 }
 
-export function derivePublishingReadiness(content, { generationReadiness = deriveGenerationReadiness(content), requiredImagesPresent = false, finalAssetsPresent = false, visualQcStatus = "NOT_RUN" } = {}) {
+export function derivePublishingReadiness(content, { generationReadiness = deriveGenerationReadiness(content), requiredImagesPresent = false, finalAssetsPresent = false, visualQcStatus = "NOT_RUN", pageProfileReady } = {}) {
   if (["PUBLISHED", "POSTED"].includes(String(content.lifecycleStatus || "").toUpperCase())) return { status: "PUBLISHED", ready: false, blockers: [] };
   const blockers = [];
   if (!generationReadiness.ready) blockers.push(...generationReadiness.blockers);
   if (!requiredImagesPresent) blockers.push("Required source images are incomplete.");
   if (!finalAssetsPresent) blockers.push("Final assets have not all been built.");
   if (visualQcStatus !== "PASS") blockers.push(`Final visual QC is ${visualQcStatus}.`);
+  const hasPageProfile = pageProfileReady ?? Boolean(content.pageProfile?.active && content.pageProfile.facebookPageId
+    && content.pageProfile.displayName && content.pageProfile.audience && content.pageProfile.primaryLanguage
+    && content.pageProfile.toneGuidance && content.pageProfile.avoidTopics?.length);
+  if (!hasPageProfile) blockers.push("Assign a complete target Facebook Page profile before publishing.");
   return { status: blockers.length ? "NOT_READY" : "READY", ready: blockers.length === 0, blockers };
 }
 

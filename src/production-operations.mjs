@@ -259,16 +259,15 @@ function profileIsComplete(profile) {
 
 export function publicSourceState(sheet, profiles = []) {
   const profile = profiles.find((item) => item.profileId === sheet.targetPageProfileId) || null;
-  const status = sheet.schemaStatus === "UNAVAILABLE" ? "UNAVAILABLE" : !sheet.active ? "INACTIVE" : sheet.schemaStatus !== "READY" ? "NEEDS_SETUP" : profileIsComplete(profile) ? "READY" : "NEEDS_SETUP";
+  const status = sheet.schemaStatus === "UNAVAILABLE" ? "UNAVAILABLE" : !sheet.active ? "INACTIVE" : sheet.schemaStatus !== "READY" ? "NEEDS_SETUP" : "READY";
   const reasons = [...(sheet.setupReasons || [])];
-  if (sheet.schemaStatus === "READY" && !profile) reasons.push("Assign a complete Facebook page profile before generation.");
-  else if (profile && !profileIsComplete(profile)) reasons.push("The selected Facebook page profile is incomplete or inactive.");
   return {
     sheetId: Number(sheet.sheetId), name: sheet.title, title: sheet.title,
     contentType: sheet.contentType || "Unknown", templateId: sheet.templateId || "",
     schemaVersion: sheet.schemaVersion ?? null, schemaStatus: sheet.schemaStatus,
     setupStatus: status, setupReasons: reasons, active: Boolean(sheet.active),
     targetPageProfileId: sheet.targetPageProfileId || "", targetPageName: profile?.displayName || "Not assigned",
+    publishingSetupBlockers: profileIsComplete(profile) ? [] : ["Assign a complete target Facebook Page profile before publishing."],
     label: `${sheet.title} · ${sheet.contentType || "Needs Setup"} · ${profile?.displayName || "Page not assigned"}`
   };
 }
@@ -317,6 +316,7 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
       if (!reviewer) return json({ ok: false, error: "Reviewer name is required." }, 400);
       const evidenceType = asText(body.evidenceType).toUpperCase();
       if (!["SOURCE_DIRECT", "SOURCE_GENERAL", "HEURISTIC", "UNVERIFIED"].includes(evidenceType)) return json({ ok: false, error: "Choose a supported evidence classification." }, 400);
+      const pageProfileReady = Boolean(content.pageProfile?.active && content.pageProfile.facebookPageId && content.pageProfile.displayName && content.pageProfile.audience && content.pageProfile.primaryLanguage && content.pageProfile.toneGuidance && content.pageProfile.avoidTopics?.length);
       const review = {
         schema_version: 1,
         ...(content.editorialReview || {}),
@@ -338,9 +338,9 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
         reader_facing_copy_reviewed: body.readerFacingCopyReviewed === true,
         internal_note_leakage: body.internalNoteLeakage === true,
         claim_safety_ok: body.claimSafetyOk === true,
-        page_fit_status: body.pageFitApproved === true ? "PASS" : "REVIEW",
-        page_profile_id: content.pageProfile?.profileId || "",
-        page_profile_updated_at: content.pageProfile?.updatedAt || "",
+        page_fit_status: pageProfileReady && body.pageFitApproved === true ? "PASS" : pageProfileReady ? "REVIEW" : "DEFERRED",
+        page_profile_id: pageProfileReady ? content.pageProfile.profileId : "",
+        page_profile_updated_at: pageProfileReady ? content.pageProfile.updatedAt || "" : "",
         limitations: Object.hasOwn(body, "limitations") ? asText(body.limitations) : content.editorialReview?.limitations || "",
         claim_evidence: Object.hasOwn(body, "claimEvidence") ? asText(body.claimEvidence) : content.editorialReview?.claim_evidence || "",
         internal_claim_notes: Object.hasOwn(body, "internalClaimNotes") ? asText(body.internalClaimNotes) : content.editorialReview?.internal_claim_notes || "",
