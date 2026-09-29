@@ -97,9 +97,12 @@ test("worksheet registry cache serves known tabs while stale refresh remains exp
   const { readFile } = await import("node:fs/promises");
   const worker = await readFile(new URL("../src/worker.template.mjs", import.meta.url), "utf8");
   const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+  const build = await readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
   const route = worker.slice(worker.indexOf('if (request.method === "GET" && url.pathname === "/api/sheets")'), worker.indexOf('if (request.method === "GET" && url.pathname === "/api/sheet-templates")'));
   assert.match(route, /url\.searchParams\.get\("refresh"\) === "1"/);
   assert.match(route, /source: "registry"/);
   assert.match(route, /executionContext\.waitUntil\(discoverContentSheets/);
   assert.match(app, /refreshSheets\(true, true\)/, "the explicit Refresh Sheets action forces live discovery");
+  assert.match(build, /copyFile\("src\/sheet-registry-cache\.mjs", "dist\/server\/sheet-registry-cache\.mjs"\)/,
+    "the production Worker archive includes the registry cache dependency");
 });
