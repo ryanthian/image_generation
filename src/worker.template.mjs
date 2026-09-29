@@ -1,4 +1,5 @@
 import { handleIntelligenceApi } from "./intelligence-server.mjs";
+import { logAppsScriptTrace, postAppsScriptRequest } from "./apps-script-bridge.mjs";
 import { buildOpportunityCanary, normalizePerformance } from "./opportunity-engine.mjs";
 import { compileV4CanaryCandidate, V4_CANARY_HEADERS } from "./v4-preappend.mjs";
 import { deriveGenerationReadiness, normalizeContentRecord, runContentQc, runEditorialReview } from "./content-model.mjs";
@@ -25,23 +26,16 @@ async function fetchBridgeRead(url, body) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        redirect: "manual",
-        headers: { "content-type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(body)
-      });
+      const { response, trace } = await postAppsScriptRequest(url, body);
+      logAppsScriptTrace({ ...trace, attempt: attempt + 1 });
       if (retryable.has(response.status) && attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
         continue;
       }
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get("location");
-        if (location) return fetch(location, { redirect: "follow" });
-      }
       return response;
     } catch (error) {
       lastError = error;
+      if (error.trace) logAppsScriptTrace({ ...error.trace, attempt: attempt + 1, error: error.message });
       if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
     }
   }
@@ -65,12 +59,11 @@ async function bridgeRequest(env, action, sheetRef = null, payload = {}) {
   };
   const response = getActions.has(action)
     ? await fetchBridgeRead(bridge, requestBody)
-    : await fetch(bridge, {
-        method: "POST",
-        redirect: "follow",
-        headers: { "content-type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(requestBody)
-      });
+    : await (async () => {
+        const { response: result, trace } = await postAppsScriptRequest(bridge, requestBody);
+        logAppsScriptTrace(trace);
+        return result;
+      })();
   if (!response.ok) throw new Error(`Sheet bridge returned HTTP ${response.status}.`);
   const result = await response.json();
   if (!result.ok) throw new Error(result.error || "Sheet bridge request failed.");
@@ -93,28 +86,12 @@ async function discoverContentSheets(env, store) {
     if (!registered && isReservedSheetName(sheet.title)) continue;
     if (!registered) {
       const schema = inspectSheetHeaders(sheet.headers);
-      let schemaStatus = schema.setupStatus;
-      let reasons = [...schema.reasons];
-      let contentType = schema.contentType;
-      let schemaFamily = schema.schemaFamily;
-      let schemaVersion = schema.schemaVersion;
-      let templateId = schema.templateId;
-      if (!sheet.inspectionError && schemaStatus === "READY") {
-        try {
-          const rows = await bridgeRequest(env, "list", sheet.sheetId);
-          const records = rows.records || rows.recipes || [];
-          const normalized = records.map((record) => normalizeContentRecord(record));
-          const types = [...new Set(normalized.map((record) => record.contentType))];
-          if (types.length === 1) contentType = types[0];
-          else if (types.length > 1) contentType = "MIXED";
-          templateId = types.length === 1 && new Set(normalized.map((record) => record.templateType)).size === 1 ? normalized[0].templateType : types.length > 1 ? "V4_UNIVERSAL" : templateId;
-          schemaFamily = normalized.some((record) => record.schemaVersion >= 4) ? "V4_UNIVERSAL" : schemaFamily;
-        } catch (error) {
-          schemaStatus = "NEEDS_SETUP";
-          reasons = [`Worksheet data failed strict normalization: ${error.message}`];
-        }
-      }
-      if (sheet.inspectionError) { schemaStatus = "NEEDS_SETUP"; reasons = [`Header inspection failed: ${sheet.inspectionError}`]; }
+      const schemaStatus = sheet.inspectionError ? "NEEDS_SETUP" : schema.setupStatus;
+      const reasons = sheet.inspectionError ? [`Header inspection failed: ${sheet.inspectionError}`] : [...schema.reasons];
+      const contentType = schema.schemaFamily === "V4_UNIVERSAL" ? "ROW_DEFINED" : schema.contentType;
+      const schemaFamily = schema.schemaFamily;
+      const schemaVersion = schema.schemaVersion;
+      const templateId = schema.templateId;
       registered = await store.upsertDiscoveredSheet({ sheetId: sheet.sheetId, title: sheet.title, schemaFamily, schemaVersion, contentType, templateId, schemaStatus, setupReasons: reasons, targetPageProfileId: "", active: true, baselineState: "AUTO_DISCOVERED" });
     } else if (registered.baselineState !== "EXISTING_UNCONNECTED") {
       const updated = { ...registered, title: sheet.title };
@@ -123,29 +100,12 @@ async function discoverContentSheets(env, store) {
         const schema = inspectSheetHeaders(sheet.headers);
         updated.schemaFamily = schema.schemaFamily;
         updated.schemaVersion = schema.schemaVersion;
-        updated.contentType = schema.contentType;
+        updated.contentType = schema.schemaFamily === "V4_UNIVERSAL"
+          ? registered.schemaFamily === "V4_UNIVERSAL" && registered.contentType ? registered.contentType : "ROW_DEFINED"
+          : schema.contentType;
         updated.templateId = schema.templateId;
         updated.schemaStatus = schema.setupStatus;
         updated.setupReasons = [...schema.reasons];
-        if (schema.setupStatus === "READY") {
-          try {
-            const rows = await bridgeRequest(env, "list", sheet.sheetId);
-            const records = rows.records || rows.recipes || [];
-            const normalized = records.map((record) => normalizeContentRecord(record));
-            const types = [...new Set(normalized.map((record) => record.contentType))];
-            if (types.length === 1) updated.contentType = types[0];
-            else if (types.length > 1) updated.contentType = "MIXED";
-            else if (registered.schemaVersion >= 4 && registered.templateId && registered.templateId !== "V4_UNIVERSAL") {
-              updated.contentType = registered.contentType;
-              updated.templateId = registered.templateId;
-            }
-            if (types.length === 1 && new Set(normalized.map((record) => record.templateType)).size === 1) updated.templateId = normalized[0].templateType;
-            else if (types.length > 1) updated.templateId = "V4_UNIVERSAL";
-          } catch (error) {
-            updated.schemaStatus = "NEEDS_SETUP";
-            updated.setupReasons = ["Worksheet data failed strict normalization: " + error.message];
-          }
-        }
       }
       registered = await store.upsertDiscoveredSheet(updated);
     }
@@ -182,6 +142,10 @@ async function resolveSourceRecords(env, source) {
   if (source.schemaStatus !== "READY") return { ok: false, status: 422, error: "Worksheet needs setup and is not processed as content.", setupStatus: "NEEDS_SETUP", setupReasons: source.setupReasons || [] };
   try {
     const result = await bridgeRequest(env, "list", source.sheetId);
+    const liveSchema = inspectSheetHeaders(result.headers || []);
+    if (liveSchema.setupStatus !== "READY") {
+      throw new Error(liveSchema.reasons.join(" ") || "Worksheet headers do not match a supported content contract.");
+    }
     const records = result.records || result.recipes || [];
     const normalized = [];
     for (const raw of records) normalized.push(normalizeContentRecord(raw));
@@ -198,6 +162,53 @@ function sameOriginWriteAllowed(request) {
 
 async function handleApi(request, env, url) {
   const productionStore = env.DB ? new D1ProductionStore(env.DB) : null;
+  if (request.method === "POST" && url.pathname === "/api/bridge/diagnostics") {
+    if (!sameOriginWriteAllowed(request)) return json({ ok: false, error: "Same-origin diagnostic request required." }, 403);
+    if (!env.GOOGLE_SHEETS_BRIDGE_URL || !env.GOOGLE_SHEETS_BRIDGE_TOKEN || !env.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN) {
+      return json({ ok: false, error: "A secured Apps Script bridge setting is not configured." }, 503);
+    }
+    const common = { spreadsheetId: SPREADSHEET_ID };
+    const probe = async (actionBody) => {
+      const { response, trace } = await postAppsScriptRequest(env.GOOGLE_SHEETS_BRIDGE_URL, actionBody);
+      logAppsScriptTrace(trace);
+      const result = await response.json().catch(() => null);
+      return { result, trace };
+    };
+    let validRead, invalidRead, missingRead, validEditorial, invalidEditorial, missingEditorial;
+    try {
+      [validRead, invalidRead, missingRead, validEditorial, invalidEditorial, missingEditorial] = await Promise.all([
+        probe({ ...common, action: "listSheets", bridgeToken: env.GOOGLE_SHEETS_BRIDGE_TOKEN }),
+        probe({ ...common, action: "listSheets", bridgeToken: "codex-invalid-bridge-probe" }),
+        probe({ ...common, action: "listSheets" }),
+        // The Apps Script handler checks editorial auth before Content_ID. The
+        // intentionally invalid ID therefore proves token pairing without
+        // reaching row lookup or changing any Sheet cell.
+        probe({ ...common, action: "updateEditorialReview", bridgeToken: env.GOOGLE_SHEETS_BRIDGE_TOKEN, editorialReviewToken: env.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN, contentId: "", reviewJson: "" }),
+        probe({ ...common, action: "updateEditorialReview", bridgeToken: env.GOOGLE_SHEETS_BRIDGE_TOKEN, editorialReviewToken: "codex-invalid-editorial-probe", contentId: "", reviewJson: "" }),
+        probe({ ...common, action: "updateEditorialReview", bridgeToken: env.GOOGLE_SHEETS_BRIDGE_TOKEN, contentId: "", reviewJson: "" })
+      ]);
+    } catch {
+      return json({ ok: false, error: "The secured Apps Script bridge diagnostic did not complete; no Sheet write was attempted." }, 502);
+    }
+    const tabNames = Array.isArray(validRead.result?.sheets) ? validRead.result.sheets.map((tab) => String(tab.title || "")) : [];
+    const expectedTabs = ["Eunice Recipe Draft 20 - 2026-09-19", "Eunice Recipe Draft 100 - 2026-09-20", "V4_CANARY"];
+    const validEditorialStopsBeforeMutation = validEditorial.result?.ok === false
+      && String(validEditorial.result.error || "").startsWith("Content_ID must be an opaque non-empty string.");
+    return json({
+      ok: true,
+      probes: {
+        validBridgeRead: validRead.result?.ok === true,
+        invalidBridgeRejected: invalidRead.result?.ok === false,
+        missingBridgeRejected: missingRead.result?.ok === false,
+        validEditorialTokenAcceptedWithoutWrite: validEditorialStopsBeforeMutation,
+        invalidEditorialRejected: invalidEditorial.result?.ok === false && String(invalidEditorial.result.error || "").includes("authorization failed"),
+        missingEditorialRejected: missingEditorial.result?.ok === false && String(missingEditorial.result.error || "").includes("authorization failed"),
+        editorialProbeWroteNothing: validEditorialStopsBeforeMutation
+      },
+      liveTabs: expectedTabs.filter((name) => tabNames.includes(name)),
+      bridgeTrace: validRead.trace
+    });
+  }
   if (request.method === "GET" && url.pathname === "/api/sheets") {
     if (!productionStore) return json({ ok: false, error: "Production source registry is not configured." }, 503);
     try {
@@ -249,23 +260,30 @@ async function handleApi(request, env, url) {
   if (request.method === "GET" && url.pathname === "/api/recipes") {
     if (!productionStore) return json({ ok: false, error: "Production source registry is not configured; no static content fallback was used." }, 503);
     try {
-      const discovery = await discoverContentSheets(env, productionStore);
       const requestedId = Number(url.searchParams.get("sheetId"));
       const requestedName = url.searchParams.get("sheetName");
-      const sheet = discovery.registry.find((item) => requestedId ? Number(item.sheetId) === requestedId : requestedName ? item.title === requestedName : item.active && item.schemaStatus === "READY");
+      let registry = await productionStore.listSheets();
+      let profiles = await productionStore.listProfiles();
+      if (!registry.length || (requestedId && !registry.some((item) => Number(item.sheetId) === requestedId)) || (requestedName && !registry.some((item) => item.title === requestedName))) {
+        const discovery = await discoverContentSheets(env, productionStore);
+        registry = discovery.registry;
+        profiles = discovery.profiles;
+      }
+      const availableSheets = registry.filter((item) => item.baselineState !== "EXISTING_UNCONNECTED").map((item) => publicSourceStateWithProfile(item, profiles));
+      const sheet = registry.find((item) => requestedId ? Number(item.sheetId) === requestedId : requestedName ? item.title === requestedName : item.active && item.schemaStatus === "READY");
       if (!sheet) return json({ ok: false, error: "No registered production worksheet matches this request." }, 404);
-      const sourceState = discovery.sheets.find((item) => item.sheetId === Number(sheet.sheetId));
-      if (sheet.schemaStatus === "UNAVAILABLE") return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: "UNAVAILABLE", setupReasons: sheet.setupReasons || ["This worksheet is unavailable."], records: [], sheets: discovery.sheets });
-      if (!sheet.active) return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: "INACTIVE", setupReasons: ["This worksheet is inactive in the Console registry."], records: [], sheets: discovery.sheets });
-      if (sheet.schemaStatus !== "READY") return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: sourceState.setupStatus, setupReasons: sourceState.setupReasons, records: [], sheets: discovery.sheets });
+      const sourceState = availableSheets.find((item) => item.sheetId === Number(sheet.sheetId));
+      if (sheet.schemaStatus === "UNAVAILABLE") return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: "UNAVAILABLE", setupReasons: sheet.setupReasons || ["This worksheet is unavailable."], records: [], sheets: availableSheets });
+      if (!sheet.active) return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: "INACTIVE", setupReasons: ["This worksheet is inactive in the Console registry."], records: [], sheets: availableSheets });
+      if (sheet.schemaStatus !== "READY") return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: sourceState?.setupStatus || "NEEDS_SETUP", setupReasons: sourceState?.setupReasons || sheet.setupReasons || [], records: [], sheets: availableSheets });
       const loaded = await resolveSourceRecords(env, sheet);
       if (!loaded.ok) {
         await productionStore.upsertDiscoveredSheet({ ...sheet, schemaStatus: "NEEDS_SETUP", setupReasons: loaded.setupReasons || [loaded.error] });
-        return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: "NEEDS_SETUP", setupReasons: loaded.setupReasons || [loaded.error], records: [], sheets: discovery.sheets });
+        return json({ ok: true, source: "sheet", writable: false, sheetId: Number(sheet.sheetId), sheetName: sheet.title, setupStatus: "NEEDS_SETUP", setupReasons: loaded.setupReasons || [loaded.error], records: [], sheets: availableSheets });
       }
       const pageProfile = sheet.targetPageProfileId ? await productionStore.getProfile(sheet.targetPageProfileId) : null;
       const pageProfileComplete = Boolean(pageProfile?.active && pageProfile.facebookPageId && pageProfile.displayName && pageProfile.audience && pageProfile.primaryLanguage && pageProfile.toneGuidance && pageProfile.avoidTopics?.length);
-      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: discovery.sheets, profiles: discovery.profiles, headers: loaded.result.headers || [], records: loaded.records });
+      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: loaded.result.sheetName || sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: availableSheets, profiles, headers: loaded.result.headers || [], records: loaded.records });
     } catch (error) { return json({ ok: false, source: "sheet", error: error.message, records: [] }, 503); }
   }
 

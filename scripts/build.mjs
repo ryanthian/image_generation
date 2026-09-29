@@ -30,6 +30,7 @@ await copyFile("src/intelligence-core.mjs", "dist/server/intelligence-core.mjs")
 await copyFile("src/intelligence-server.mjs", "dist/server/intelligence-server.mjs");
 await copyFile("src/opportunity-engine.mjs", "dist/server/opportunity-engine.mjs");
 await copyFile("src/content-model.mjs", "dist/server/content-model.mjs");
+await copyFile("src/apps-script-bridge.mjs", "dist/server/apps-script-bridge.mjs");
 await copyFile("src/production-operations.mjs", "dist/server/production-operations.mjs");
 await copyFile("src/sheet-contracts.mjs", "dist/server/sheet-contracts.mjs");
 await copyFile("src/v4-preappend.mjs", "dist/server/v4-preappend.mjs");

@@ -280,10 +280,13 @@ test("the browser controller selects worksheets by stable ID and persists source
 
 test("authenticated Apps Script bridge sends bearer credentials in POST bodies, never query URLs", async () => {
   const worker = await readFile(new URL("../src/worker.template.mjs", import.meta.url), "utf8");
+  const bridgeClient = await readFile(new URL("../src/apps-script-bridge.mjs", import.meta.url), "utf8");
   const bridge = await readFile(new URL("../apps-script/Code.gs", import.meta.url), "utf8");
   assert.match(worker, /fetchBridgeRead\(bridge, requestBody\)/);
-  assert.match(worker, /method: "POST"[\s\S]*body: JSON\.stringify\(requestBody\)/);
+  assert.match(worker, /postAppsScriptRequest\(bridge, requestBody\)/);
+  assert.match(bridgeClient, /method: "POST"[\s\S]*body: JSON\.stringify\(body\)/);
   assert.doesNotMatch(worker, /appendBridgeQuery|URLSearchParams\(.*bridgeToken/);
+  assert.doesNotMatch(bridgeClient, /URLSearchParams|searchParams\.set/);
   assert.match(bridge, /GET is disabled for the authenticated worksheet bridge/);
   assert.match(bridge, /assertBridgeToken_\(body\.bridgeToken\)/);
 });
