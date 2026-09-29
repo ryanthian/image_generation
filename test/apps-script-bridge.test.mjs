@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { logAppsScriptTrace, postAppsScriptRequest } from "../src/apps-script-bridge.mjs";
+import { isSheetRegistryStale, SHEET_REGISTRY_MAX_AGE_MS } from "../src/sheet-registry-cache.mjs";
 
 const endpoint = "https://script.google.com/macros/s/deployment-id/exec";
 
@@ -83,4 +84,22 @@ test("worker discovery is metadata-only and the diagnostic editorial probe canno
   assert.match(diagnostic, /editorialReviewToken: env\.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN/);
   assert.match(diagnostic, /contentId: "", reviewJson: ""/);
   assert.doesNotMatch(diagnostic, /setValue|updateEditorialReview_\(/);
+});
+
+test("worksheet registry cache serves known tabs while stale refresh remains explicit and background-safe", async () => {
+  const now = Date.parse("2026-09-29T10:00:00.000Z");
+  const fresh = [{ baselineState: "CURRENT_SOURCE", lastDiscoveredAt: new Date(now - 1000).toISOString() }];
+  const stale = [{ baselineState: "CURRENT_SOURCE", lastDiscoveredAt: new Date(now - SHEET_REGISTRY_MAX_AGE_MS - 1).toISOString() }];
+  assert.equal(isSheetRegistryStale([], now), true);
+  assert.equal(isSheetRegistryStale(fresh, now), false);
+  assert.equal(isSheetRegistryStale(stale, now), true);
+
+  const { readFile } = await import("node:fs/promises");
+  const worker = await readFile(new URL("../src/worker.template.mjs", import.meta.url), "utf8");
+  const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+  const route = worker.slice(worker.indexOf('if (request.method === "GET" && url.pathname === "/api/sheets")'), worker.indexOf('if (request.method === "GET" && url.pathname === "/api/sheet-templates")'));
+  assert.match(route, /url\.searchParams\.get\("refresh"\) === "1"/);
+  assert.match(route, /source: "registry"/);
+  assert.match(route, /executionContext\.waitUntil\(discoverContentSheets/);
+  assert.match(app, /refreshSheets\(true, true\)/, "the explicit Refresh Sheets action forces live discovery");
 });

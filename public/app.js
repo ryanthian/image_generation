@@ -966,7 +966,7 @@ function bindEvents() {
     const publication = (state.resultsSummary?.rows || []).find((row) => row.publicationId === event.target.value);
     fillResultForm(publication);
   });
-  $("refreshSheets").addEventListener("click", () => refreshSheets(true));
+  $("refreshSheets").addEventListener("click", () => refreshSheets(true, true));
   $("assignPageProfile").addEventListener("click", assignPageProfile);
   $("savePageProfile").addEventListener("click", savePageProfile);
   $("targetPageProfile").addEventListener("change", (event) => fillProfileForm(state.profiles.find((profile) => profile.profileId === event.target.value) || {}));
@@ -992,9 +992,9 @@ function renderSourceOptions() {
   if ([...$("sheetSelect").options].some((option) => option.value === currentValue)) $("sheetSelect").value = currentValue;
 }
 
-async function refreshSheets(keepCurrent = false) {
+async function refreshSheets(keepCurrent = false, forceLiveRefresh = false) {
   try {
-    const data = await apiJson("/api/sheets");
+    const data = await apiJson(forceLiveRefresh ? "/api/sheets?refresh=1" : "/api/sheets");
     state.sources = Array.isArray(data.sheets) ? data.sheets : [];
     state.profiles = Array.isArray(data.profiles) ? data.profiles : [];
     renderSourceOptions();
@@ -1143,7 +1143,7 @@ async function createSheet() {
   $("addSheetResult").className = "helper add-sheet-result";
   try {
     const result = await apiJson("/api/sheets", { method: "POST", headers: writeHeaders(), body: JSON.stringify({ templateId: $("newSheetTemplate").value, title: $("newSheetTitle").value, targetPageProfileId: $("newSheetPageProfile").value }) });
-    await refreshSheets(false);
+    await refreshSheets(false, true);
     const createdId = String(result.sheet.sheetId);
     $("sheetSelect").value = createdId;
     await loadSource(createdId);

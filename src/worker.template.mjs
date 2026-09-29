@@ -2,6 +2,7 @@ import { handleIntelligenceApi } from "./intelligence-server.mjs";
 import { logAppsScriptTrace, postAppsScriptRequest } from "./apps-script-bridge.mjs";
 import { buildOpportunityCanary, normalizePerformance } from "./opportunity-engine.mjs";
 import { compileV4CanaryCandidate, V4_CANARY_HEADERS } from "./v4-preappend.mjs";
+import { isSheetRegistryStale } from "./sheet-registry-cache.mjs";
 import { deriveGenerationReadiness, normalizeContentRecord, runContentQc, runEditorialReview } from "./content-model.mjs";
 import { D1ProductionStore, inspectSheetHeaders, isReservedSheetName, publicSheetTemplate, SHEET_TEMPLATES, handleProductionOperationsApi } from "./production-operations.mjs";
 import { INITIAL_SOURCE_SEEDS } from "./sheet-contracts.mjs";
@@ -160,7 +161,7 @@ function sameOriginWriteAllowed(request) {
   return (!fetchSite || ["same-origin", "none"].includes(fetchSite)) && request.headers.get("x-content-intelligence-request") === "1";
 }
 
-async function handleApi(request, env, url) {
+async function handleApi(request, env, url, executionContext) {
   const productionStore = env.DB ? new D1ProductionStore(env.DB) : null;
   if (request.method === "POST" && url.pathname === "/api/bridge/diagnostics") {
     if (!sameOriginWriteAllowed(request)) return json({ ok: false, error: "Same-origin diagnostic request required." }, 403);
@@ -212,8 +213,32 @@ async function handleApi(request, env, url) {
   if (request.method === "GET" && url.pathname === "/api/sheets") {
     if (!productionStore) return json({ ok: false, error: "Production source registry is not configured." }, 503);
     try {
+      const forceLiveRefresh = url.searchParams.get("refresh") === "1";
+      const cachedRegistry = await productionStore.listSheets();
+      if (!forceLiveRefresh && cachedRegistry.length > 0) {
+        const profiles = await productionStore.listProfiles();
+        const latestDiscovery = cachedRegistry.reduce((latest, sheet) => Math.max(latest, Date.parse(sheet.lastDiscoveredAt || "") || 0), 0);
+        const response = {
+          ok: true,
+          source: "registry",
+          sheets: cachedRegistry.filter((sheet) => sheet.baselineState !== "EXISTING_UNCONNECTED").map((sheet) => publicSourceStateWithProfile(sheet, profiles)),
+          profiles,
+          discoveredAt: latestDiscovery ? new Date(latestDiscovery).toISOString() : null
+        };
+        if (isSheetRegistryStale(cachedRegistry)) {
+          if (executionContext?.waitUntil) {
+            executionContext.waitUntil(discoverContentSheets(env, productionStore).catch(() => {
+              console.warn("sheet_registry_background_refresh_failed");
+            }));
+          } else {
+            const discovery = await discoverContentSheets(env, productionStore);
+            return json({ ok: true, source: "sheet", sheets: discovery.sheets, profiles: discovery.profiles, discoveredAt: new Date().toISOString() });
+          }
+        }
+        return json(response);
+      }
       const discovery = await discoverContentSheets(env, productionStore);
-      return json({ ok: true, spreadsheetId: SPREADSHEET_ID, sheets: discovery.sheets, profiles: discovery.profiles, discoveredAt: new Date().toISOString() });
+      return json({ ok: true, source: "sheet", spreadsheetId: SPREADSHEET_ID, sheets: discovery.sheets, profiles: discovery.profiles, discoveredAt: new Date().toISOString() });
     } catch (error) { return json({ ok: false, error: error.message, sheets: await productionStore.listSheets().catch(() => []) }, 503); }
   }
   if (request.method === "GET" && url.pathname === "/api/sheet-templates") return json({ ok: true, templates: SHEET_TEMPLATES.map(publicSheetTemplate) });
@@ -359,10 +384,10 @@ async function handleApi(request, env, url) {
 }
 
 export default {
-  async fetch(request, env = {}) {
+  async fetch(request, env = {}, executionContext) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/intelligence/")) return handleIntelligenceApi(request, env, url);
-    if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
+    if (url.pathname.startsWith("/api/")) return handleApi(request, env, url, executionContext);
     if (url.pathname === "/styles.css") return new Response(CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
     if (url.pathname === "/content-model.js") return new Response(CONTENT_MODEL, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
