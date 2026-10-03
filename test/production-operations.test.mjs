@@ -222,6 +222,19 @@ test("workflow advances one stage at a time and refuses client-asserted publicat
   assert.ok(key);
 });
 
+test("workflow reads use D1 without fetching the full worksheet again", async () => {
+  const store = seededStore();
+  const path = `/api/production/workflow?sheetId=${sheet.sheetId}&contentId=${content.contentId}`;
+  const noBridge = { validateContentRef: async () => { throw new Error("Unexpected Sheet bridge read"); } };
+  const empty = await call(store, path, "GET", undefined, {}, noBridge);
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.workflow, null);
+  await store.saveWorkflow({ sheetId: sheet.sheetId, contentId: content.contentId, stage: "EDITORIAL_REVIEW", actor: "Editor", note: "In review", updatedAt: "2026-10-03T00:00:00.000Z" });
+  const saved = await call(store, path, "GET", undefined, {}, noBridge);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.workflow.stage, "EDITORIAL_REVIEW");
+});
+
 test("manual publication can be recorded without inventing zero metrics; result snapshots need an observed metric", async () => {
   const store = seededStore();
   const publication = { sheetId: sheet.sheetId, contentId: content.contentId, pageProfileId: profile.profileId, contentType: "RECIPE", contentFormat: "Carousel", publishedAt: "2026-09-25", postUrl: "https://facebook.com/posts/123", currency: "MYR", enteredBy: "Operator", publicationOnly: true };

@@ -30,7 +30,9 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
 });
 
 async function fetchBridgeRead(url, body) {
-  const retryable = new Set([429, 500, 502, 503, 504]);
+  // Apps Script's one-time ContentService output URL can intermittently return 404.
+  // This helper is used only for read actions, so a fresh POST may be retried safely.
+  const retryable = new Set([404, 429, 500, 502, 503, 504]);
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {

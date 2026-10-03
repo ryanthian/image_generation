@@ -55,6 +55,15 @@ const state = {
 const APPROVED_OPPORTUNITIES_SOURCE = "V4.2 Approved Opportunities";
 const WORKFLOW_STAGES = ["IDEA", "COPY_DRAFT", "EDITORIAL_REVIEW", "COPY_APPROVED", "VISUAL_VIDEO_PROMPT", "ASSET_CREATED", "QC_PASSED", "SCHEDULED_PUBLISHED", "RESULTS_RECORDED"];
 const WORKFLOW_LABELS = ["Idea", "Copy draft", "Editorial review", "Copy approved", "Visual/video prompt", "Asset created", "QC passed", "Scheduled / published", "Results recorded"];
+function initialWorkflowStage(content) {
+  const status=String(content?.lifecycleStatus||'').trim().toUpperCase();
+  if(status==='POSTED'||status==='PUBLISHED')return 'SCHEDULED_PUBLISHED';
+  if(status==='QC_PASSED')return 'QC_PASSED';
+  if(status==='ASSET_CREATED')return 'ASSET_CREATED';
+  if(status==='APPROVED'||status==='COPY_APPROVED')return 'COPY_APPROVED';
+  if(status.includes('REVIEW'))return 'EDITORIAL_REVIEW';
+  return content?.contentBody||content?.caption?'COPY_DRAFT':'IDEA';
+}
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value = "") => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 let toastTimer;
@@ -337,7 +346,7 @@ function applyContent(content) {
   state.imageReviews = {};
   state.assets = {};
   state.editorialReviewRecord = null;
-  state.workflow = null;
+  state.workflow = {stage:initialWorkflowStage(content),actor:'',note:'',updatedAt:null};
   state.currentPublicationId = "";
   state.visualQcConfirmedFor = "";
   state.plan = state.content.resolvedAssetPlan;
@@ -561,19 +570,17 @@ function renderResults() {
 async function loadContentOperations(token = state.contentLoadToken) {
   if (!state.content || !state.sourceId || state.source === "approved-opportunities") return;
   const query = new URLSearchParams({ sheetId: String(state.sourceId), contentId: state.content.contentId });
-  const [reviewData, workflowData, resultsData] = await Promise.all([
-    apiJson(`/api/production/editorial-review?${query}`),
+  const [workflowData, resultsData] = await Promise.all([
     apiJson(`/api/production/workflow?${query}`),
     apiJson(`/api/production/results?${new URLSearchParams({ sheetId: String(state.sourceId), pageProfileId: state.pageProfile?.profileId || "" })}`)
   ]);
   if (token !== state.contentLoadToken) return;
-  state.editorialReviewRecord = reviewData.review;
-  state.workflow = workflowData.workflow;
+  // The selected /api/recipes response already contains the Sheet review.
+  // Re-reading the entire worksheet here caused a redundant Apps Script request per selection.
+  state.editorialReviewRecord = state.content.editorialReviewPresent ? {source:'sheet',review:state.content.editorialReview} : null;
+  state.workflow = workflowData.workflow || {stage:initialWorkflowStage(state.content),actor:'',note:'',updatedAt:null};
   state.resultsSummary = resultsData.summary;
-  if (reviewData.review?.review && !state.appliedWork) {
-    state.content = { ...state.content, editorialReview: reviewData.review.review };
-    renderEditorialForm(reviewData.review.review);
-  } else renderEditorialForm(state.content.editorialReview || {});
+  renderEditorialForm(state.content.editorialReview || {});
   renderWorkflow();
   renderResults();
   renderQc();

@@ -426,8 +426,10 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
       const sheetId = Number(url.searchParams.get("sheetId")); const contentId = asText(url.searchParams.get("contentId"));
       if (!sheetId || !contentId) return json({ ok: false, error: "sheetId and contentId are required." }, 400);
       const stored = await store.getWorkflow(sheetId, contentId);
-      const content = await validateRef(context, sheetId, contentId);
-      return json({ ok: true, workflow: stored || { sheetId, contentId, stage: inferWorkflowStage(content?.lifecycleStatus, Boolean(content?.contentBody || content?.caption)), actor: "", note: "", updatedAt: null } });
+      // A read of D1 workflow state needs no second full Google Sheet fetch.
+      // The client infers an unsaved initial stage from its already loaded source record;
+      // every workflow write still validates the connected Sheet and its gates.
+      return json({ ok: true, workflow: stored });
     }
     if (request.method === "POST" && url.pathname === "/api/production/workflow") {
       const error = writeGuard(request); if (error) return json({ ok: false, error }, 403);
