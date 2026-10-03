@@ -49,9 +49,11 @@ test("dynamic method composition uses stable source IDs and downloads final asse
   const methodSource = appSource.match(/async function buildMethodGrid\(assetItem\) \{[\s\S]*?\n\}/)?.[0];
   assert.ok(methodSource, "buildMethodGrid should exist");
   assert.match(methodSource, /state\.images\[input\.slot_id\]/);
-  assert.match(methodSource, /assetItem\.generation_inputs\.length/);
+  assert.match(methodSource, /inputs\.slice\(offset,offset\+2\)/);
+  assert.match(methodSource, /outputs\.push\(canvas\)/);
   assert.match(appSource, /\["method_grid_2x3", "method_grid_adaptive"\]\.includes\(assetItem\.layout_type\) && assetItem\.generation_inputs\.length > 1/);
-  assert.match(appSource, /state\.plan\.forEach\(\(item, index\)/);
+  assert.match(appSource, /exportEntries\(state\.content,state\.plan,state\.assets\)/);
+  assert.match(appSource, /createZip\(files\)/);
   assert.doesNotMatch(appSource, /state\.manifest\.entries\.forEach\(\(item, index\).*downloadBlob/s);
 });
 
@@ -60,7 +62,8 @@ test("V4.1 renderer uses adaptive Ingredients and Method layouts", () => {
   assert.match(appSource, /calculateMethodGrid/);
   assert.match(appSource, /assetItem\.asset_type === "INGREDIENTS"/);
   assert.match(appSource, /"method_grid_adaptive"/);
-  assert.match(appSource, /state\.content\.schemaVersion < 4/);
+  assert.match(appSource, /const heading = assetItem\.local_heading \|\| ""/);
+  assert.match(appSource, /fitText/);
   assert.doesNotMatch(appSource, /state\.content\.title, 130, 1125/);
 });
 

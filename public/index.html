@@ -23,7 +23,7 @@
           <a href="#publish"><span>04</span>Publish</a>
         </nav>
         <div class="sidebar-progress">
-          <div class="progress-copy"><span>Images ready</span><b id="progressText">0 / 9</b></div>
+          <div class="progress-copy"><span>Images ready</span><b id="progressText">0 / 0</b></div>
           <div class="progress-track"><span id="progressBar"></span></div>
         </div>
         <p class="eyebrow intelligence-label">CONTENT INTELLIGENCE</p>
@@ -51,6 +51,9 @@
       </header>
 
       <div class="content" id="productionView">
+        <div id="persistentError" class="persistent-error" role="alert" hidden></div>
+        <section class="card production-steps" aria-label="Image production steps"><ol><li>Copy ChatGPT prompt</li><li>Generate images</li><li>Import images</li><li>Build final assets</li><li>Download package</li></ol><p id="nextAction" role="status">Choose a content source to begin.</p></section>
+        <section class="card" id="rejectedPanel" hidden><div class="card-header"><h2 id="rejectedCount">Rejected records</h2></div><div class="table-scroll"><table><thead><tr><th>Content ID</th><th>Field</th><th>Reason</th><th>Suggested repair</th></tr></thead><tbody id="rejectedRecords"></tbody></table></div></section>
         <section class="card recipe-card" id="recipe">
           <div class="recipe-toolbar">
             <label class="select-field">
@@ -120,12 +123,17 @@
               <div class="quality-gate pass" id="contractGate"><span>Contract</span><strong id="qcStatus">CHECKING</strong><small>Structural / deterministic QC</small></div>
               <div class="quality-gate review" id="editorialGate"><span>Editorial</span><strong id="editorialStatus">CHECKING</strong><small>Content completeness + review</small></div>
               <div class="quality-gate blocked" id="generationGate"><span>Generation</span><strong id="generationStatus">CHECKING</strong><small>Prompt and input readiness</small></div>
+              <div class="quality-gate" id="sourceImagesGate"><span>Source images</span><strong id="sourceImagesStatus">INCOMPLETE</strong></div>
+              <div class="quality-gate" id="technicalGate"><span>Technical image QC</span><strong id="technicalStatus">NOT READY</strong></div>
+              <div class="quality-gate" id="finalAssetsGate"><span>Final assets</span><strong id="finalAssetsStatus">NOT BUILT</strong></div>
+              <div class="quality-gate" id="exportGate"><span>Export</span><strong id="exportStatus">NOT READY</strong></div>
               <div class="quality-gate not-run" id="visualGate"><span>Visual QC</span><strong id="visualStatus">NOT RUN</strong><small>Rendered asset inspection</small></div>
               <div class="quality-gate blocked" id="publishingGate"><span>Publishing</span><strong id="publishingStatus">NOT READY</strong><small>All prior gates required</small></div>
             </div>
+            <p><b>MONETISATION READINESS</b> <span id="monetizationScore"></span></p><p class="helper" id="monetizationDetails"></p>
             <p class="editorial-note" id="editorialNote">Separate readiness checks are being calculated…</p>
             <pre id="qcDetails">Checking current plan…</pre>
-            <label class="visual-qc-confirm"><input id="visualQcCheck" type="checkbox" disabled> I reviewed every final asset for source fidelity, readability and image/text match.</label>
+            <label class="visual-qc-confirm"><input id="visualQcCheck" type="checkbox" disabled> I reviewed every image for realism, continuity, correct objects/stages, accurate comparisons, crop, text readability, unexpected logos and AI artifacts.</label>
             <small class="helper" id="visualQcHint">Build all final assets before recording a visual review.</small>
           </section>
           <section class="card editorial-review-card" aria-labelledby="editorialReviewTitle">
@@ -195,13 +203,15 @@
             <p class="helper" id="slotHelper">Slots follow the resolved Generation Manifest.</p>
           </div>
           <div id="slots" class="slot-grid"></div>
+          <section id="unmatchedPanel" class="setup-card-body" hidden><h3>Unmatched images</h3><p>Choose each destination explicitly. No image is assigned by upload order.</p><div id="unmatchedList"></div></section>
         </section>
 
         <section class="card" id="assets">
           <div class="card-header">
             <div><p class="eyebrow">1440 × 1800</p><h2 id="assetHeading">Final Facebook assets</h2></div>
-            <button id="downloadAll" class="btn btn-neutral" type="button" disabled>Download All</button>
+            <button id="downloadAll" class="btn btn-neutral" type="button" disabled>Download All ZIP</button>
           </div>
+          <p id="exportHint" class="helper setup-card-body">Build and review the complete ordered set before export.</p>
           <div id="assetGrid" class="asset-grid"></div>
         </section>
 

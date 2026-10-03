@@ -3,7 +3,8 @@ import { logAppsScriptTrace, postAppsScriptRequest } from "./apps-script-bridge.
 import { buildOpportunityCanary, normalizePerformance } from "./opportunity-engine.mjs";
 import { compileV4CanaryCandidate, V4_CANARY_HEADERS } from "./v4-preappend.mjs";
 import { isSheetRegistryStale } from "./sheet-registry-cache.mjs";
-import { deriveGenerationReadiness, normalizeContentRecord, runContentQc, runEditorialReview } from "./content-model.mjs";
+import { deriveGenerationReadiness, normalizeContentRecordsSafely, normalizeContentRecord, runContentQc, runEditorialReview } from "./content-model.mjs";
+import { auditContent } from "./content-quality.mjs";
 import { D1ProductionStore, inspectSheetHeaders, isReservedSheetName, publicSheetTemplate, SHEET_TEMPLATES, handleProductionOperationsApi } from "./production-operations.mjs";
 import { INITIAL_SOURCE_SEEDS } from "./sheet-contracts.mjs";
 
@@ -13,6 +14,9 @@ const INDEX = __INDEX_HTML__;
 const CSS = __STYLES_CSS__;
 const APP = __APP_JS__;
 const CONTENT_MODEL = __CONTENT_MODEL_JS__;
+const PRODUCTION_CORE = __PRODUCTION_CORE_JS__;
+const CONTENT_QUALITY = __CONTENT_QUALITY_JS__;
+const BUILD_INFO = __BUILD_INFO_JSON__;
 const INTELLIGENCE = __INTELLIGENCE_JS__;
 const OPPORTUNITIES = __OPPORTUNITIES_JS__;
 const SPREADSHEET_ID = "1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s";
@@ -148,9 +152,8 @@ async function resolveSourceRecords(env, source) {
       throw new Error(liveSchema.reasons.join(" ") || "Worksheet headers do not match a supported content contract.");
     }
     const records = result.records || result.recipes || [];
-    const normalized = [];
-    for (const raw of records) normalized.push(normalizeContentRecord(raw));
-    return { ok: true, result, records, normalized };
+    const safe = normalizeContentRecordsSafely(records);
+    return { ok: true, result, records: safe.records.map(item => item.raw), normalized: safe.records, rejected: safe.rejected, totalRows: records.length };
   } catch (error) {
     return { ok: false, status: 422, error: `Worksheet content failed strict validation: ${error.message}`, setupStatus: "NEEDS_SETUP", setupReasons: [error.message] };
   }
@@ -163,6 +166,7 @@ function sameOriginWriteAllowed(request) {
 
 async function handleApi(request, env, url, executionContext) {
   const productionStore = env.DB ? new D1ProductionStore(env.DB) : null;
+  if (request.method === "GET" && url.pathname === "/api/build") return json(BUILD_INFO);
   if (request.method === "POST" && url.pathname === "/api/bridge/diagnostics") {
     if (!sameOriginWriteAllowed(request)) return json({ ok: false, error: "Same-origin diagnostic request required." }, 403);
     if (!env.GOOGLE_SHEETS_BRIDGE_URL || !env.GOOGLE_SHEETS_BRIDGE_TOKEN || !env.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN) {
@@ -308,7 +312,7 @@ async function handleApi(request, env, url, executionContext) {
       }
       const pageProfile = sheet.targetPageProfileId ? await productionStore.getProfile(sheet.targetPageProfileId) : null;
       const pageProfileComplete = Boolean(pageProfile?.active && pageProfile.facebookPageId && pageProfile.displayName && pageProfile.audience && pageProfile.primaryLanguage && pageProfile.toneGuidance && pageProfile.avoidTopics?.length);
-      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: loaded.result.sheetName || sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: availableSheets, profiles, headers: loaded.result.headers || [], records: loaded.records });
+      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: loaded.result.sheetName || sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: availableSheets, profiles, headers: loaded.result.headers || [], records: loaded.records, rejected: loaded.rejected, totalRows: loaded.totalRows });
     } catch (error) { return json({ ok: false, source: "sheet", error: error.message, records: [] }, 503); }
   }
 
@@ -333,9 +337,11 @@ async function handleApi(request, env, url, executionContext) {
       const contract = runContentQc(content);
       const editorial = runEditorialReview(content);
       const generation = deriveGenerationReadiness(content, { structuralQc: contract, editorialReview: editorial });
+      const monetisation = auditContent(content);
       const profileReady = Boolean(pageProfile?.active && pageProfile.facebookPageId && pageProfile.displayName && pageProfile.audience && pageProfile.primaryLanguage && pageProfile.toneGuidance && pageProfile.avoidTopics?.length);
       if (!profileReady || !generation.ready) return json({ ok: false, error: "Posting is blocked until the selected Page profile, structural contract and editorial review all pass.", contract: contract.status, editorial: editorial.status, generation: generation.status }, 422);
-      if (body.requiredImagesPresent !== true || body.finalAssetsPresent !== true || body.visualQcPass !== true) return json({ ok: false, error: "Confirm all required source images, final assets and visual QC before marking Posted." }, 422);
+      if (monetisation.status !== "READY") return json({ ok: false, error: "Internal monetisation readiness must be READY before marking Posted.", monetisationReadiness: monetisation.status }, 422);
+      if (body.requiredImagesPresent !== true || body.finalAssetsPresent !== true || body.visualQcPass !== true || body.technicalImageQcPass !== true || body.noStaleAssets !== true) return json({ ok: false, error: "Confirm all required source images, final assets and visual QC before marking Posted." }, 422);
       const workflow = await productionStore.getWorkflow(sheetId, contentId);
       if (!["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(workflow?.stage)) return json({ ok: false, error: "Advance the recorded production workflow to Scheduled / Published first." }, 422);
       const results = await productionStore.listResults({ sheetId });
@@ -343,6 +349,7 @@ async function handleApi(request, env, url, executionContext) {
       if (!publication) return json({ ok: false, error: "A matching publication record with HTTPS post URL and publish date is required." }, 422);
       if (!env.GOOGLE_SHEETS_ADMIN_TOKEN) return json({ ok: false, error: "Secure Google Sheets write authorization is not configured." }, 503);
       const result = await bridgeRequest(env, "markPosted", sheetId, { contentId, status: "Posted", adminToken: env.GOOGLE_SHEETS_ADMIN_TOKEN });
+      if (result.contentId !== contentId || Number(result.sheetId) !== sheetId || result.status !== "Posted") throw new Error("Status write readback did not match the selected record.");
       return json({ ok: true, ...result });
     } catch (error) {
       return json({ ok: false, error: error.message }, 502);
@@ -388,11 +395,13 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/intelligence/")) return handleIntelligenceApi(request, env, url);
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url, executionContext);
-    if (url.pathname === "/styles.css") return new Response(CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public,max-age=300" } });
-    if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
-    if (url.pathname === "/content-model.js") return new Response(CONTENT_MODEL, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
-    if (url.pathname === "/intelligence.js") return new Response(INTELLIGENCE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
-    if (url.pathname === "/opportunities.js") return new Response(OPPORTUNITIES, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public,max-age=300" } });
+    if (url.pathname === "/styles.css") return new Response(CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === "/production-core.js") return new Response(PRODUCTION_CORE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === "/content-quality.js") return new Response(CONTENT_QUALITY, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === "/content-model.js") return new Response(CONTENT_MODEL, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === "/intelligence.js") return new Response(INTELLIGENCE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === "/opportunities.js") return new Response(OPPORTUNITIES, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/favicon.svg") return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#f96332"/><path d="M18 17h28v30H18z" fill="#fff"/><path d="M23 25h18M23 32h18M23 39h12" stroke="#f96332" stroke-width="4" stroke-linecap="round"/></svg>', { headers: { "content-type": "image/svg+xml" } });
     return new Response(INDEX, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'self'; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'" } });
   }

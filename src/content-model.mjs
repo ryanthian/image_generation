@@ -230,7 +230,7 @@ function validateMethodMappings(plan) {
 
 export function resolveAssetPlan(record, registry = TEMPLATE_REGISTRY) {
   const definition = registry[record.templateType];
-  if (!definition) throw new Error(`Unknown Template_Type: ${record.templateType}`);
+  if (!Object.hasOwn(registry, record.templateType)) throw new Error(`Unknown Template_Type: ${record.templateType}`);
   if (!definition.compatible_content_types.includes(record.contentType)) throw new Error(`${record.templateType} is not compatible with ${record.contentType}`);
   const requested = Array.isArray(record.assetOverrides) && record.assetOverrides.length ? record.assetOverrides : definition.default_asset_plan;
   const plan = requested.map((item, index) => withGenerationInputs(item, index, record.visualProfile));
@@ -246,7 +246,10 @@ export function resolveAssetPlan(record, registry = TEMPLATE_REGISTRY) {
   for (const item of plan) {
     for (const sourceId of item.source_input_ids || []) if (!generatedIds.has(sourceId)) throw new Error(`Unknown composition source input ID: ${sourceId}`);
   }
-  return plan;
+  if (plan.length > 30) throw new Error("Asset plan exceeds 30 assets.");
+  if (new Set(plan.map(item => item.asset_id)).size !== plan.length) throw new Error("Duplicate asset ID.");
+  if (new Set(plan.map(item => item.sequence)).size !== plan.length || plan.some(item => !Number.isSafeInteger(item.sequence) || item.sequence < 1)) throw new Error("Invalid or duplicate asset sequence.");
+  return plan.sort((a, b) => a.sequence - b.sequence);
 }
 
 export function adaptLegacyRecipe(record) {
@@ -708,7 +711,7 @@ export function runEditorialReview(content) {
 
 export function deriveGenerationReadiness(content, { structuralQc = runContentQc(content), editorialReview = runEditorialReview(content) } = {}) {
   const blockers = [];
-  if (structuralQc.status !== "PASS") blockers.push(`Contract QC is ${structuralQc.status}.`);
+  if (structuralQc.failures.length) blockers.push(`Contract QC is ${structuralQc.status}.`);
   if (editorialReview.status !== "PASS") blockers.push(`Editorial status is ${editorialReview.status}.`);
   try {
     const manifest = buildGenerationManifest(content);
@@ -739,12 +742,12 @@ export function buildAssetSourceRevision(assetItem, imageSlots = {}) {
     ...(assetItem?.generation_inputs || []).map((input) => input.slot_id),
     ...(assetItem?.source_input_ids || [])
   ].filter(Boolean))].sort();
-  return JSON.stringify(slotIds.map((slotId) => [slotId, imageSlots[slotId]?.updatedAt || null]));
+  return JSON.stringify(slotIds.map((slotId) => [slotId, imageSlots[slotId]?.revision || imageSlots[slotId]?.updatedAt || null]));
 }
 
 /** Fail closed for stale sources, while safely recognizing pre-fingerprint assets by timestamps. */
 export function isStoredAssetStale(assetItem, storedAsset, imageSlots = {}) {
-  if (!storedAsset) return true;
+  if (!storedAsset || storedAsset.stale) return true;
   const slotIds = [...new Set([
     ...(assetItem?.generation_inputs || []).map((input) => input.slot_id),
     ...(assetItem?.source_input_ids || [])
@@ -761,6 +764,9 @@ export function isStoredAssetStale(assetItem, storedAsset, imageSlots = {}) {
 }
 
 export function normalizeContentRecord(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error("Content row must be an object.");
+  if (typeof (record.Content_ID || record.content_id) !== "string" || !(record.Content_ID || record.content_id).trim()) throw new Error("Content_ID must be an opaque non-empty string.");
+  if (!(record.Title || record.Draft_Title || record.title)) throw new Error("Title is required.");
   const schema = Number(record.Schema_Version || record.schema_version || 0);
   return schema >= 4 || record.Content_Type || record.content_type ? adaptV4Record(record) : adaptLegacyRecipe(record);
 }
@@ -772,13 +778,22 @@ export function identifyContentRecord(record, index = 0) {
 export function normalizeContentRecordsSafely(rawRecords = []) {
   const records = [];
   const rejected = [];
+  if (!Array.isArray(rawRecords)) throw new Error("Source must return a records array.");
+  const counts = new Map();
+  for (const row of rawRecords) { const id = row?.Content_ID || row?.content_id; if (id) counts.set(id, (counts.get(id) || 0) + 1); }
   rawRecords.forEach((record, index) => {
     try {
-      records.push(normalizeContentRecord(record));
+      if (counts.get(record?.Content_ID || record?.content_id) > 1) throw new Error("Duplicate Content_ID in this worksheet; status writes are unsafe.");
+      const normalized = normalizeContentRecord(record);
+      buildGenerationManifest(normalized);
+      records.push(normalized);
     } catch (error) {
       rejected.push({
         contentId: identifyContentRecord(record, index),
-        message: error.message
+        message: error.message,
+        rowNumber: index + 2,
+        field: /Content_ID/.test(error.message) ? "Content_ID" : /Title/.test(error.message) ? "Title" : /Template|compatible/.test(error.message) ? "Template_Type / Content_Type" : "Asset_Plan_JSON",
+        suggestedRepair: /Duplicate/.test(error.message) ? "Resolve duplicate identifiers; preserve the intended record IDs before using status writes." : "Repair the named field using the source content, then reload this worksheet."
       });
     }
   });
@@ -800,7 +815,8 @@ export function buildGenerationManifest(content) {
         assetType: assetItem.asset_type,
         imagePrompt: input.image_prompt,
         overlayText: input.overlay_text,
-        semanticKey: `${input.image_prompt}\n${input.overlay_text}`,
+        semanticKey: JSON.stringify([content.contentId, content.contentBody, content.visualProfile, content.consistencyRules, input.image_prompt, input.overlay_text, input.source_role]),
+        expectedFilename: `${String(entries.length + 1).padStart(2, "0")}_${input.slot_id.toUpperCase()}.png`,
         regenRequiredReason: input.regen_required_reason,
         required: input.required !== false
       });
@@ -833,21 +849,27 @@ export function buildSessionPrompt(content) {
     pageGuidance ? `PAGE-SPECIFIC CONTENT DIRECTION:\n${pageGuidance}` : "",
     content.consistencyRules.length ? `VISUAL CONSISTENCY:\n${content.consistencyRules.join("\n")}` : "",
     content.qualityRules.length ? `QUALITY CHECK:\n${content.qualityRules.join("\n")}` : "",
+    "PHOTO DIRECTION: Portrait 4:5. Frame the essential subject inside the central 80% safe area with room for a later crop. Use realistic editorial photography, natural textures and small natural imperfections. Soft directional daylight and an appropriate top-down or eye-level view; keep the entire instructional action legible. Malaysian home context only where supported by the subject. No embedded text, letters, numbers, logos, labels or watermarks.",
+    "CONTINUITY: Same subject identity, plate/bowl or tools, countertop and compatible lighting throughout. Each slot must show its own assigned state and logical progression, not repeat the finished cover. SOURCE facts and the current slot take priority over conflicting style adjectives in older prompts.",
+    "AVOID: plastic textures, repeated identical pieces, floating objects, impossible utensils or hands, excessive steam, unnatural gloss, hyper-saturated colour, distracting blur, wrong ingredient state. Do not add objects, ingredients or factual details absent from the source.",
     `GENERATION MANIFEST — ${manifest.expectedAssets} IMAGES\n${stages}`,
-    ...manifest.entries.map((entry) => `${String(entry.sequence).padStart(2, "0")} ${entry.label} [${entry.assetType}]\n${entry.imagePrompt}${entry.overlayText ? `\nConsole overlay: ${entry.overlayText}` : ""}`)
+    ...manifest.entries.map((entry) => `${String(entry.sequence).padStart(2, "0")} ${entry.label} [${entry.assetType}]\nCONTENT ID: ${content.contentId}\nSAVE AS: ${entry.expectedFilename}\nSUBJECT / SCENE / REQUIRED STATE: ${entry.imagePrompt}${entry.overlayText ? `\nConsole overlay: ${entry.overlayText}` : ""}`)
   ].filter(Boolean).join("\n\n");
 }
 
 export function matchGenerationSlot(filename, manifest) {
-  const normalized = String(filename || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-  if (!normalized) return null;
-  const numbered = normalized.match(/(?:^|asset|image|img)(\d{1,2})/);
-  if (numbered) return manifest.entries[Number(numbered[1]) - 1]?.slotId || null;
-  return manifest.entries.find((entry) => {
-    const slot = entry.slotId.toLowerCase().replace(/[^a-z0-9]+/g, "");
-    const label = entry.label.toLowerCase().replace(/[^a-z0-9]+/g, "");
-    return (slot.length > 1 && normalized.includes(slot)) || (label.length > 2 && normalized.includes(label));
-  })?.slotId || null;
+  const base = String(filename || "").replace(/\.[^.]+$/, "").toLowerCase();
+  const candidates = new Set();
+  const sequence = base.match(/^(?:image[ _-]*|img[ _-]*|asset[ _-]*)?(\d{1,2})(?=[ _-]|$)/);
+  if (sequence) { const entry=manifest.entries[Number(sequence[1])-1]; if(!entry)return null; candidates.add(entry.slotId); }
+  const tokens = base.split(/[^a-z0-9]+/).filter(Boolean);
+  for(const entry of manifest.entries) {
+    const slot = entry.slotId.toLowerCase();
+    const label = entry.label.toLowerCase();
+    const bounded = value => value && new RegExp(`(?:^|[^a-z0-9])${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|[^a-z0-9])`).test(base);
+    if(tokens.includes(slot) || bounded(slot) || (label.length > 2 && bounded(label))) candidates.add(entry.slotId);
+  }
+  return candidates.size === 1 ? [...candidates][0] : null;
 }
 
 export function buildAssetFilename(content, assetItem) {
@@ -863,4 +885,22 @@ export function validateResolvedContent(content) {
     generationCount: manifest.entries.length,
     requiredSlots: manifest.entries.filter((entry) => entry.required).map((entry) => entry.slotId)
   };
+}
+
+export function buildSlotPrompt(content, slotId) {
+  const manifest = buildGenerationManifest(content);
+  const entry = manifest.entries.find(item => item.slotId === slotId);
+  if (!entry) throw new Error("Unknown generation slot.");
+  return [
+    `CURRENT SLOT ONLY — ${entry.sequence}/${manifest.entries.length} — ${entry.label}`,
+    `CONTENT ID: ${content.contentId}\nSLOT ROLE: ${entry.assetType}\nSAVE AS: ${entry.expectedFilename}`,
+    `SUBJECT / SCENE / REQUIRED STATE: ${entry.imagePrompt}`,
+    `SOURCE FACTS: ${content.contentBody}`,
+    `VISUAL PROFILE: ${content.visualProfile}. Keep the same subject identity, plate/bowl, tools, countertop and compatible lighting as the other images in this set. Show only this assigned stage, with realistic materials and natural imperfections.`,
+    `CAMERA / COMPOSITION: Editorial photography with an angle that clearly shows the action or decision cue. Portrait 4:5, central 80% safe crop, room for Console overlays. Soft natural light where appropriate.`,
+    `REQUIRED OBJECTS: Only objects supported by the source and described in this slot. REQUIRED STATE: ${entry.label}.`,
+    `DO NOT SHOW: Embedded text, letters, numbers, logos, watermarks, floating objects, plastic food, repeated identical pieces, impossible tools or hands, excessive steam, unnatural gloss, wrong ingredient state.`,
+    entry.overlayText ? `Console-controlled text added later (do not embed): ${entry.overlayText}` : "",
+    "Generate exactly one image for this slot."
+  ].filter(Boolean).join("\n\n");
 }

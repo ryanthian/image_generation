@@ -11,6 +11,8 @@ const store = new MemoryIntelligenceStore();
 const files = {
   "/": ["public/index.html", "text/html; charset=utf-8"],
   "/styles.css": ["public/styles.css", "text/css; charset=utf-8"],
+  "/production-core.js": ["src/production-core.mjs", "text/javascript; charset=utf-8"],
+  "/content-quality.js": ["src/content-quality.mjs", "text/javascript; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/content-model.js": ["src/content-model.mjs", "text/javascript; charset=utf-8"],
   "/intelligence.js": ["public/intelligence.js", "text/javascript; charset=utf-8"],
@@ -32,16 +34,21 @@ const contentBySheetId = new Map([
   [812541719, { records: [] }],
   [433728120, { ...canary, records: canary.records }]
 ]);
+if (process.env.AUDIT_SNAPSHOT_DIR) {
+  for (const seed of INITIAL_SOURCE_SEEDS) {
+    try { const snapshot = JSON.parse(await readFile(`${process.env.AUDIT_SNAPSHOT_DIR}/source-${seed.sheetId}.json`, "utf8")); contentBySheetId.set(seed.sheetId, snapshot); } catch (error) { console.warn(`Snapshot unavailable for ${seed.sheetId}: ${error.message}`); }
+  }
+}
 const discoveredPreviewSheets = INITIAL_SOURCE_SEEDS.map((seed) => ({ ...seed, headers: [], rowCount: contentBySheetId.get(seed.sheetId)?.records.length || 0 }));
 await productionStore.initializeBaseline(discoveredPreviewSheets, INITIAL_SOURCE_SEEDS);
 await productionStore.saveProfile(previewProfile);
-for (const seed of INITIAL_SOURCE_SEEDS) await productionStore.saveSheetSettings(seed.sheetId, previewProfile.profileId, true);
+if (!process.env.AUDIT_SNAPSHOT_DIR) for (const seed of INITIAL_SOURCE_SEEDS) await productionStore.saveSheetSettings(seed.sheetId, previewProfile.profileId, true);
 let nextPreviewSheetId = 900000001;
 async function listPreviewSources() {
   const profiles = await productionStore.listProfiles();
   return (await productionStore.listSheets())
     .filter((item) => item.baselineState !== "EXISTING_UNCONNECTED")
-    .map((item) => ({ ...publicSourceState(item, profiles), rowCount: contentBySheetId.get(item.sheetId)?.records.length || 0 }));
+    .map((item) => ({ ...publicSourceState(item, profiles), source: 'local-preview', writable: false, rowCount: contentBySheetId.get(item.sheetId)?.records.length || 0 }));
 }
 const previewContext = {
   validateContentRef: async (sheetId, contentId) => {
@@ -85,7 +92,7 @@ createServer(async (incoming, outgoing) => {
     const sheets = await listPreviewSources();
     const sourceState = sheets.find((item) => item.sheetId === source.sheetId);
     outgoing.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    outgoing.end(JSON.stringify({ ok: true, source: "local-preview", writable: false, sheetId: source.sheetId, sheetName: source.title, setupStatus: sourceState?.setupStatus, setupReasons: sourceState?.setupReasons || [], sourceState, pageProfile: selectedProfile, pageProfileComplete: Boolean(selectedProfile?.active), profiles, sheets, records: source.active && source.schemaStatus === "READY" ? snapshot.records : [] }));
+    outgoing.end(JSON.stringify({ ok: true, source: "local-preview", writable: false, sheetId: source.sheetId, sheetName: source.title, setupStatus: sourceState?.setupStatus, setupReasons: sourceState?.setupReasons || [], sourceState, pageProfile: selectedProfile, pageProfileComplete: Boolean(selectedProfile?.active), profiles, sheets, rejected: snapshot.rejected || [], totalRows: snapshot.totalRows ?? snapshot.records.length, records: source.active && source.schemaStatus === "READY" ? snapshot.records : [] }));
     return;
   }
   if (incoming.method === "GET" && url.pathname === "/api/sheets") {

@@ -12,16 +12,22 @@ const [template, data, canary, performanceHistory, index, css, app, contentModel
   readFile("public/intelligence.js", "utf8"),
   readFile("public/opportunities.js", "utf8")
 ]);
+const productionCore = await readFile("src/production-core.mjs", "utf8");
+const contentQuality = await readFile("src/content-quality.mjs", "utf8");
+const buildInfo = { commit: (await import("node:child_process")).execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), builtAt: new Date().toISOString() };
 const output = template
-  .replace("__RECIPES_JSON__", data.trim())
-  .replace("__CANARY_JSON__", canary.trim())
+  .replace("__BUILD_INFO_JSON__", () => JSON.stringify(buildInfo))
+  .replace("__PRODUCTION_CORE_JS__", () => JSON.stringify(productionCore))
+  .replace("__CONTENT_QUALITY_JS__", () => JSON.stringify(contentQuality))
+  .replace("__RECIPES_JSON__", () => data.trim())
+  .replace("__CANARY_JSON__", () => canary.trim())
   .replace("__V42_HISTORY_JSON__", performanceHistory.trim())
-  .replace("__INDEX_HTML__", JSON.stringify(index))
-  .replace("__STYLES_CSS__", JSON.stringify(css))
-  .replace("__APP_JS__", JSON.stringify(app))
-  .replace("__CONTENT_MODEL_JS__", JSON.stringify(contentModel))
-  .replace("__INTELLIGENCE_JS__", JSON.stringify(intelligence))
-  .replace("__OPPORTUNITIES_JS__", JSON.stringify(opportunities));
+  .replace("__INDEX_HTML__", () => JSON.stringify(index))
+  .replace("__STYLES_CSS__", () => JSON.stringify(css))
+  .replace("__APP_JS__", () => JSON.stringify(app))
+  .replace("__CONTENT_MODEL_JS__", () => JSON.stringify(contentModel))
+  .replace("__INTELLIGENCE_JS__", () => JSON.stringify(intelligence))
+  .replace("__OPPORTUNITIES_JS__", () => JSON.stringify(opportunities));
 await mkdir("dist/server", { recursive: true });
 await mkdir("dist/.openai", { recursive: true });
 await mkdir("dist/.openai/drizzle/meta", { recursive: true });
@@ -30,6 +36,7 @@ await copyFile("src/intelligence-core.mjs", "dist/server/intelligence-core.mjs")
 await copyFile("src/intelligence-server.mjs", "dist/server/intelligence-server.mjs");
 await copyFile("src/opportunity-engine.mjs", "dist/server/opportunity-engine.mjs");
 await copyFile("src/content-model.mjs", "dist/server/content-model.mjs");
+await copyFile("src/content-quality.mjs", "dist/server/content-quality.mjs");
 await copyFile("src/apps-script-bridge.mjs", "dist/server/apps-script-bridge.mjs");
 await copyFile("src/sheet-registry-cache.mjs", "dist/server/sheet-registry-cache.mjs");
 await copyFile("src/production-operations.mjs", "dist/server/production-operations.mjs");

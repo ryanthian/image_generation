@@ -1,5 +1,6 @@
 import {
   buildAssetFilename,
+  buildSlotPrompt,
   buildAssetSourceRevision,
   buildGenerationManifest,
   buildSessionPrompt,
@@ -15,7 +16,14 @@ import {
   runEditorialReview
 } from "/content-model.js";
 
+import { assetSemanticKey, sourceLabel, imageQc, verifyImageSignature, hashBlob, planImports, fitText, wrapText, sessionSignature, productionGates, exportEntries, createZip, safeFilename, BATCH_LIMIT } from "/production-core.js";
+import { auditContent } from "/content-quality.js";
+
 const state = {
+  unmatched: [],
+  sourceLoadToken: 0,
+  busy: false,
+  rejected: [],
   records: [],
   filtered: [],
   content: null,
@@ -53,15 +61,38 @@ function toast(message, error) {
   const node = $("toast");
   node.textContent = message;
   node.className = `toast show${error ? " error" : ""}`;
+  if (error && $("persistentError")) { $("persistentError").hidden = false; $("persistentError").textContent = message; }
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { node.className = "toast"; }, 3600);
 }
 
 function reportRejectedRecords(rejected) {
-  if (!rejected.length) return;
-  console.warn("Skipped invalid content records", rejected);
-  const sample = rejected.slice(0, 3).map((item) => item.contentId).join(", ");
-  toast(`${rejected.length} record${rejected.length === 1 ? "" : "s"} skipped due to validation error: ${sample}`, true);
+  state.rejected = rejected;
+  $("rejectedPanel").hidden = !rejected.length;
+  $("rejectedCount").textContent = `${rejected.length} rejected records`;
+  $("rejectedRecords").innerHTML = rejected.map(item => `<tr><td>${escapeHtml(item.contentId)}</td><td>${escapeHtml(item.field || "Source row")}</td><td>${escapeHtml(item.message)}</td><td>${escapeHtml(item.suggestedRepair || "Repair the source field and reload.")}</td></tr>`).join("");
+}
+const previewUrls = new Map();
+function clearPreviewUrls(group) { for (const url of previewUrls.get(group) || []) URL.revokeObjectURL(url); previewUrls.set(group, []); }
+function previewUrl(blob, group) { const url = URL.createObjectURL(blob); previewUrls.get(group)?.push(url); return url; }
+function reviewSignature() { return sessionSignature(state.content, state.manifest, state.images, state.assets); }
+function invalidateReview() { state.visualQcConfirmedFor = ""; }
+function refreshStale() {
+  for (const item of state.plan) if (state.assets[item.asset_id]) {
+    const ids = [...item.generation_inputs.map(i => i.slot_id), ...(item.source_input_ids || [])];
+    state.assets[item.asset_id].stale = state.assets[item.asset_id].semanticKey !== assetSemanticKey(item)
+      || isStoredAssetStale(item, state.assets[item.asset_id], state.images)
+      || ids.some(id => { const entry=state.manifest.entries.find(e=>e.slotId===id); return !state.images[id] || state.images[id].semanticKey!==entry?.semanticKey; });
+  }
+}
+function renderUnmatched() {
+  $("unmatchedPanel").hidden = !state.unmatched.length;
+  $("unmatchedList").innerHTML = state.unmatched.map((item,index)=>`<div class="unmatched-row"><span>${escapeHtml(item.file.name)} — ${escapeHtml(item.reason)}</span><select aria-label="Destination for ${escapeHtml(item.file.name)}" data-destination="${index}"><option value="">Choose slot…</option>${state.manifest.entries.map(e=>`<option value="${escapeHtml(e.slotId)}">${escapeHtml(e.expectedFilename)}${state.images[e.slotId]?" (replace)":""}</option>`).join("")}</select><button class="btn btn-neutral" data-assign="${index}">Assign image</button></div>`).join("");
+  $("unmatchedList").querySelectorAll('[data-assign]').forEach(button=>button.addEventListener('click',async()=>{
+    const index=Number(button.dataset.assign),slot=$("unmatchedList").querySelector(`[data-destination="${index}"]`).value;
+    if(!slot)return toast("Choose a destination first.",true);
+    if(await saveImage(slot,state.unmatched[index].file)){state.unmatched.splice(index,1);renderUnmatched();}
+  }));
 }
 
 function openDb() {
@@ -84,6 +115,7 @@ async function idb(store, mode, action) {
     const result = action(tx.objectStore(store));
     tx.oncomplete = () => resolve(result && result.result);
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Storage transaction aborted."));
   }).finally(() => db.close());
 }
 
@@ -94,7 +126,7 @@ const sourceKey = () => state.sourceId ? String(state.sourceId) : state.sourceNa
 const writeHeaders = () => ({ "content-type": "application/json", "x-content-intelligence-request": "1" });
 const splitLines = (value) => String(value || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 const keyFor = (kind, name) => `${sourceKey()}:${state.content.contentId}:${kind}:${name}`;
-const assetSemanticKey = (item) => JSON.stringify({ layout: item.layout_type, text: item.overlay_text, heading: item.local_heading, inputs: item.generation_inputs.map((input) => [input.slot_id, input.overlay_text]), sources: item.source_input_ids || [] });
+
 const assetSourceRevision = (item) => buildAssetSourceRevision(item, state.images);
 
 async function apiJson(path, options = {}) {
@@ -137,30 +169,33 @@ function imageUrl(value) {
 }
 
 function renderManifest() {
-  $("manifestCount").textContent = `Generation Images: ${state.manifest.expectedAssets} · Final Assets: ${state.plan.length}`;
+  $("manifestCount").textContent = `Generation Images: ${state.manifest.expectedAssets} · Planned assets: ${state.plan.length} (long method/text may span more pages)`;
   $("manifestList").innerHTML = state.manifest.entries.map((entry) =>
-    `<li><b>${String(entry.sequence).padStart(2, "0")}</b><span>${escapeHtml(entry.label)}</span><small>${escapeHtml(entry.assetType)}</small></li>`
+    `<li><b>${String(entry.sequence).padStart(2, "0")}</b><span>${escapeHtml(entry.label)}</span><small>${escapeHtml(entry.expectedFilename)}</small></li>`
   ).join("");
 }
 
 function renderSlots() {
+  clearPreviewUrls("slots");
   const container = $("slots");
   container.innerHTML = "";
   for (const entry of state.manifest.entries) {
     const stored = state.images[entry.slotId];
     const generationBlocked = !state.generationReadiness?.ready;
     const node = document.createElement("article");
-    const stale = Boolean(stored && entry.regenRequiredReason && stored.semanticKey !== entry.semanticKey);
+    const stale = Boolean(stored && stored.semanticKey !== entry.semanticKey);
     node.className = `slot${stored ? " ready" : ""}${stale ? " stale" : ""}`;
     node.dataset.slot = entry.slotId;
     node.innerHTML = `
       <div class="slot-preview">${stored ? `<img alt="${escapeHtml(entry.label)} imported image">` : `<div class="slot-empty"><b>${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</b><span>${escapeHtml(entry.assetType)} · Drop PNG, JPG or WebP</span></div>`}</div>
       <div class="slot-footer">
-        <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stale ? `REGEN REQUIRED · ${escapeHtml(entry.regenRequiredReason)}` : stored ? "Complete" : entry.required ? "Required" : "Optional"}</div></div>
-        <div class="slot-actions"><button type="button" data-choose ${generationBlocked ? "disabled" : ""}>${stored ? "Replace" : "Choose"}</button>${stored ? `<button type="button" data-remove ${generationBlocked ? "disabled" : ""}>Remove</button>` : ""}</div>
+        <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stale ? `REGEN REQUIRED · source definition changed` : stored ? "Complete" : entry.required ? "Required" : "Optional"}</div></div>
+        <small class="image-facts">${escapeHtml(entry.expectedFilename)}${stored?.qc ? `<br>${stored.qc.width} × ${stored.qc.height} · ${stored.qc.orientation}${stored.qc.cropFraction > .03 ? " · Crop required" : ""}<br>${escapeHtml(stored.qc.warnings.join(" "))}` : ""}</small>
+        <div class="slot-actions"><button type="button" data-copy-slot ${generationBlocked ? "disabled" : ""}>Copy slot prompt</button><button type="button" data-choose ${generationBlocked ? "disabled" : ""}>${stored ? "Replace" : "Choose"}</button>${stored ? `<button type="button" data-remove ${generationBlocked ? "disabled" : ""}>Remove</button>` : ""}</div>
         <input type="file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>`;
-    if (stored) node.querySelector("img").src = imageUrl(stored);
+    if (stored) node.querySelector("img").src = previewUrl(stored.blob, "slots");
+    node.querySelector("[data-copy-slot]").addEventListener("click", () => copyText(buildSlotPrompt(state.content, entry.slotId), "Slot prompt copied."));
     const input = node.querySelector("input");
     node.querySelector("[data-choose]").addEventListener("click", () => input.click());
     input.addEventListener("change", () => input.files[0] && saveImage(entry.slotId, input.files[0]));
@@ -174,19 +209,21 @@ function renderSlots() {
 }
 
 function renderAssets() {
-  const container = $("assetGrid");
-  container.innerHTML = "";
-  for (const assetItem of state.plan) {
-    const stored = state.assets[assetItem.asset_id];
-    const node = document.createElement("article");
-    node.className = `asset${stored?.stale ? " stale" : ""}`;
-    node.dataset.asset = assetItem.asset_id;
-    node.innerHTML = `<div class="asset-preview">${stored ? `<img alt="${escapeHtml(assetItem.title)}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(assetItem.sequence).padStart(2, "0")} · ${escapeHtml(assetItem.title)}</strong><small>${escapeHtml(assetItem.asset_type)}${stored?.stale ? " · REBUILD REQUIRED" : ""}</small></div><button type="button" ${stored && !stored.stale ? "" : "disabled"}>Download</button></div>`;
-    if (stored) node.querySelector("img").src = imageUrl(stored);
-    node.querySelector("button").addEventListener("click", () => stored && !stored.stale && downloadBlob(stored.blob, stored.filename));
-    container.appendChild(node);
+  refreshStale();
+  clearPreviewUrls("assets");
+  const container = $("assetGrid"); container.innerHTML = "";
+  let sequence=0;
+  for (const item of state.plan) {
+    const stored=state.assets[item.asset_id];
+    for(const page of stored?.pages?.length ? stored.pages : [stored]) {
+      const order=++sequence,node=document.createElement("article");
+      node.className=`asset${stored?.stale ? " stale" : ""}`;node.dataset.asset=item.asset_id;
+      const filename=`${String(order).padStart(2,"0")}_${safeFilename(item.asset_type)}.png`;
+      node.innerHTML=`<div class="asset-preview">${page ? `<img alt="${escapeHtml(item.title)} page ${order}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(order).padStart(2,"0")} · ${escapeHtml(item.title)}</strong><small>${stored?.stale ? "STALE — REBUILD REQUIRED" : stored ? "CURRENT · 1440 × 1800" : "Build required"}</small></div><button type="button" ${stored && !stored.stale ? "" : "disabled"}>Download</button></div>`;
+      if(page)node.querySelector("img").src=previewUrl(page.blob,"assets");
+      node.querySelector("button").addEventListener("click",()=>{refreshStale();if(!stored.stale)downloadBlob(page.blob,filename);});container.appendChild(node);
+    }
   }
-  $("downloadAll").disabled = state.plan.some((item) => item.required && (!state.assets[item.asset_id] || state.assets[item.asset_id].stale));
   updateProgress();
 }
 
@@ -203,65 +240,41 @@ function updateProgress() {
 }
 
 async function saveImage(slotId, file) {
-  if (!state.generationReadiness?.ready) return toast("Generation is blocked. Complete the editorial and specification gate before importing source images.", true);
-  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return toast("Use a PNG, JPG or WebP image.", true);
-  if (file.size > 35 * 1024 * 1024) return toast("Image is larger than 35 MB.", true);
-  const entry = state.manifest.entries.find((item) => item.slotId === slotId);
-  const value = { blob: file, name: file.name, type: file.type, semanticKey: entry?.semanticKey || "", updatedAt: Date.now() };
-  await putStored("images", keyFor("image", slotId), value);
-  state.images[slotId] = value;
-  state.visualQcConfirmedFor = "";
-  for (const assetItem of state.plan) {
-    const sourceIds = [...(assetItem.generation_inputs || []).map((input) => input.slot_id), ...(assetItem.source_input_ids || [])];
-    if (sourceIds.includes(slotId) && state.assets[assetItem.asset_id]) state.assets[assetItem.asset_id].stale = true;
-  }
-  renderSlots();
-  renderAssets();
-  renderQc();
+  if(state.busy) { toast("Wait for the current build or export to finish.",true); return false; }
+  if (!state.generationReadiness?.ready) { toast("Resolve the editorial and specification gate before importing images.",true); return false; }
+  const token=state.contentLoadToken,entry=state.manifest.entries.find(item=>item.slotId===slotId),key=keyFor("image",slotId);
+  if(!entry)return false;
+  try {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 35*1024*1024) throw Error("Use PNG, JPEG or WebP up to 35 MB.");
+    if(!await verifyImageSignature(file))throw Error("File signature does not match its declared image type.");
+    const decoded=await loadImage(file);
+    const qc=imageQc({type:file.type,size:file.size,width:decoded.naturalWidth,height:decoded.naturalHeight});
+    if(qc.status==='FAIL')throw Error(qc.errors.join(' '));
+    const hash=await hashBlob(file);
+    const duplicate=Object.entries(state.images).find(([id,image])=>id!==slotId && image.hash===hash);
+    if(duplicate)qc.warnings.push(`Identical image also used in ${duplicate[0]}; verify that the stages are correct.`);
+    if(token!==state.contentLoadToken)return false;
+    const value={blob:file,name:file.name,type:file.type,semanticKey:entry.semanticKey,hash,revision:crypto.randomUUID(),qc,updatedAt:Date.now()};
+    await putStored("images",key,value);
+    if(token!==state.contentLoadToken)return false;
+    state.images[slotId]=value;invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();return true;
+  } catch(error){toast(`${file.name}: ${error.message}`,true);return false;}
 }
-
 async function removeImage(slotId) {
-  await deleteStored("images", keyFor("image", slotId));
-  delete state.images[slotId];
-  state.visualQcConfirmedFor = "";
-  for (const assetItem of state.plan) {
-    const sourceIds = [...(assetItem.generation_inputs || []).map((input) => input.slot_id), ...(assetItem.source_input_ids || [])];
-    if (sourceIds.includes(slotId) && state.assets[assetItem.asset_id]) state.assets[assetItem.asset_id].stale = true;
-  }
-  renderSlots();
-  renderAssets();
-  renderQc();
-  toast("Image removed. Import a replacement before building.");
+  if(state.busy)return;
+  const token=state.contentLoadToken;
+  await deleteStored("images",keyFor("image",slotId));
+  if(token!==state.contentLoadToken)return;
+  delete state.images[slotId];invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();
 }
-
 async function importMany(files) {
-  if (!state.generationReadiness?.ready) return toast("Generation is blocked until the editorial review and production specification pass.", true);
-  const valid = Array.from(files).filter((file) => /^image\/(png|jpeg|webp)$/.test(file.type));
-  if (!valid.length) return toast("No supported images selected.", true);
-  const byId = new Map(state.manifest.entries.map((entry) => [entry.slotId, entry]));
-  const assigned = new Set();
-  const pending = [];
-  let named = 0;
-  for (const file of valid) {
-    const mapped = matchGenerationSlot(file.name, state.manifest);
-    if (mapped && byId.has(mapped) && !assigned.has(mapped)) {
-      await saveImage(mapped, file);
-      assigned.add(mapped);
-      named += 1;
-    } else {
-      pending.push(file);
-    }
-  }
-  const available = state.manifest.entries.map((entry) => entry.slotId).filter((slotId) => !assigned.has(slotId) && !state.images[slotId]);
-  let sequential = 0;
-  for (let index = 0; index < pending.length && index < available.length; index += 1) {
-    await saveImage(available[index], pending[index]);
-    sequential += 1;
-  }
-  const ignored = valid.length - named - sequential;
-  const detail = [named ? `${named} matched by filename` : "", sequential ? `${sequential} assigned by manifest order` : "", ignored ? `${ignored} extra ignored` : ""].filter(Boolean).join("; ");
-  toast(`${named + sequential} image${named + sequential === 1 ? "" : "s"} imported. ${detail}`, Boolean(ignored));
-  $("allFiles").value = "";
+  if(state.busy || !state.generationReadiness?.ready)return toast("Complete the generation gate before importing.",true);
+  const list=Array.from(files);
+  if(list.length>60 || list.reduce((sum,file)=>sum+file.size,0)>BATCH_LIMIT)return toast("Import at most 60 files / 160 MB in one batch.",true);
+  const token=state.contentLoadToken,{matched,unmatched}=planImports(list,state.manifest,matchGenerationSlot);
+  state.unmatched=unmatched;let imported=0;
+  for(const {file,slotId} of matched){if(token!==state.contentLoadToken)return;if(await saveImage(slotId,file))imported++;else state.unmatched.push({file,reason:"Import failed; see the error above."});}
+  renderUnmatched();toast(`${imported} images matched. ${state.unmatched.length} require explicit assignment.`);$("allFiles").value="";
 }
 
 async function loadContentState(token = state.contentLoadToken) {
@@ -272,7 +285,11 @@ async function loadContentState(token = state.contentLoadToken) {
     const legacyKey = `${state.sourceName}:${state.content.contentId}:image:${entry.slotId}`;
     const value = await getStored("images", stableKey) || (legacyKey !== stableKey ? await getStored("images", legacyKey) : null);
     if (token !== state.contentLoadToken) return;
-    if (value) state.images[entry.slotId] = value;
+    if (value) {
+      if(!value.qc) { try { if(!await verifyImageSignature(value.blob))throw Error("File signature mismatch."); const decoded=await loadImage(value.blob); value.qc=imageQc({type:value.blob.type,size:value.blob.size,width:decoded.naturalWidth,height:decoded.naturalHeight}); } catch { value.qc={status:"FAIL",width:0,height:0,errors:["Stored image cannot decode."],warnings:[]}; } }
+      if(token!==state.contentLoadToken)return;
+      state.images[entry.slotId] = value;
+    }
     if (value && stableKey !== legacyKey && !await getStored("images", stableKey)) await putStored("images", stableKey, value);
   }));
   await Promise.all(state.plan.map(async (item) => {
@@ -280,13 +297,15 @@ async function loadContentState(token = state.contentLoadToken) {
     const legacyKey = `${state.sourceName}:${state.content.contentId}:asset:${item.asset_id}`;
     const value = await getStored("assets", stableKey) || (legacyKey !== stableKey ? await getStored("assets", legacyKey) : null);
     if (token !== state.contentLoadToken) return;
-    if (value?.semanticKey === assetSemanticKey(item)) {
+    if (value) {
       const sourceRevision = assetSourceRevision(item);
-      state.assets[item.asset_id] = { ...value, sourceRevision: value.sourceRevision || sourceRevision, stale: isStoredAssetStale(item, value, state.images) };
+      state.assets[item.asset_id] = { ...value, sourceRevision: value.sourceRevision || sourceRevision, stale: value.semanticKey !== assetSemanticKey(item) || isStoredAssetStale(item, value, state.images) };
       if (stableKey !== legacyKey && !await getStored("assets", stableKey)) await putStored("assets", stableKey, value);
     }
   }));
   if (token !== state.contentLoadToken) return;
+  refreshStale();
+  state.visualQcConfirmedFor = localStorage.getItem(`capc:visual:${keyFor("review", "visual")}`) || "";
   renderSlots();
   renderAssets();
   renderQc();
@@ -295,6 +314,8 @@ async function loadContentState(token = state.contentLoadToken) {
 function applyContent(content) {
   state.contentLoadToken += 1;
   const token = state.contentLoadToken;
+  state.unmatched = []; renderUnmatched();
+  $("persistentError").hidden = true;
   state.content = { ...content, pageProfile: state.pageProfile || content.pageProfile || null };
   state.images = {};
   state.assets = {};
@@ -320,8 +341,8 @@ function applyContent(content) {
   $("hookType").textContent = state.content.hookType;
   $("hookText").textContent = state.content.hookText;
   $("slotHeading").textContent = `${state.manifest.expectedAssets} generation slots`;
-  $("slotHelper").textContent = `Import in manifest order: ${state.manifest.entries.map((entry) => entry.label).join(" → ")}.`;
-  $("assetHeading").textContent = `${state.plan.length} final Facebook assets`;
+  $("slotHelper").textContent = `Match files by sequence or slot name: ${state.manifest.entries.map((entry) => entry.label).join(" → ")}.`;
+  $("assetHeading").textContent = `${state.plan.length} planned Facebook assets`;
   renderEditorialForm(state.content.editorialReview || {});
   renderQc();
   renderManifest();
@@ -335,14 +356,15 @@ function renderQc() {
   const qc = runContentQc(state.content);
   const editorial = runEditorialReview(state.content);
   const generation = deriveGenerationReadiness(state.content, { structuralQc: qc, editorialReview: editorial });
-  const stale = state.manifest.entries.filter((entry) => entry.regenRequiredReason && state.images[entry.slotId] && state.images[entry.slotId].semanticKey !== entry.semanticKey);
+  refreshStale();
+  const stale = state.manifest.entries.filter((entry) => state.images[entry.slotId] && state.images[entry.slotId].semanticKey !== entry.semanticKey);
   const contractStatus = qc.failures.length ? "FAIL" : stale.length || qc.warnings.length ? "WARNING" : "PASS";
   const allFinalAssetsBuilt = state.plan.length > 0 && state.plan.every((item) => {
     const built = state.assets[item.asset_id];
     return built?.qc_status === "PASS" && !built.stale && built.sourceRevision === assetSourceRevision(item);
   });
   const requiredImagesPresent = state.manifest.entries.filter((entry) => entry.required).every((entry) => Boolean(state.images[entry.slotId]));
-  const visualQcStatus = !allFinalAssetsBuilt ? "NOT RUN" : state.visualQcConfirmedFor === state.content.contentId ? "PASS" : "REVIEW REQUIRED";
+  const visualQcStatus = !allFinalAssetsBuilt ? "NOT RUN" : state.visualQcConfirmedFor === reviewSignature() ? "PASS" : "REVIEW REQUIRED";
   const publishing = derivePublishingReadiness(state.content, {
     generationReadiness: generation,
     requiredImagesPresent,
@@ -350,11 +372,24 @@ function renderQc() {
     visualQcStatus: visualQcStatus === "REVIEW REQUIRED" ? "NOT CONFIRMED" : visualQcStatus,
     pageProfileReady: state.pageProfileComplete
   });
+  const quality = auditContent(state.content);
+  const gates = productionGates({contract:qc,editorial,generation,manifest:state.manifest,images:state.images,plan:state.plan,assets:state.assets,visualReviewed:visualQcStatus === "PASS",monetization:quality});
+  if(!gates.technicalImageQc || stale.length || quality.status !== "READY") { publishing.ready=false; if(publishing.status!=="PUBLISHED")publishing.status="NOT_READY"; publishing.blockers.push("Technical image QC, current source definitions and monetisation readiness must pass."); }
+  state.gates=gates;
+  $("monetizationScore").textContent=`${quality.score}/100 · ${quality.status} · heuristic, not measured performance`;
+  $("monetizationDetails").textContent=quality.issues.map(i=>i.repair).join(" ") || "Complete human editorial and visual review before posting. This internal score does not guarantee Meta eligibility.";
+  setGate("sourceImagesGate","sourceImagesStatus",gates.sourceImagesComplete?"COMPLETE":"INCOMPLETE");
+  setGate("technicalGate","technicalStatus",gates.technicalImageQc?"PASS":"NOT READY");
+  setGate("finalAssetsGate","finalAssetsStatus",gates.finalAssetsBuilt?"BUILT":"REBUILD REQUIRED");
+  setGate("exportGate","exportStatus",gates.exportReady?"READY":"NOT READY");
+  $("downloadAll").disabled=!gates.exportReady || state.busy;
+  $("exportHint").textContent=gates.exportReady?"Review the numbered thumbnails, then download one ZIP with images, caption and manifest.":"ZIP requires editorial approval, current images and final assets, technical QC, monetisation readiness and manual visual review.";
+  $("nextAction").textContent=!generation.ready?"Next: resolve editorial and generation blockers below.":!gates.sourceImagesComplete?"Next: copy the prompt, generate images, and import the named files.":!gates.finalAssetsBuilt?"Next: build or rebuild the final assets.":visualQcStatus!=="PASS"?"Next: inspect every preview and confirm the visual review checklist.":"Next: download your ordered production ZIP.";
   const combinedStatus = contractStatus === "FAIL" ? "fail" : editorial.status === "BLOCKED" ? "blocked" : editorial.status === "REVIEW" || generation.status === "GENERATION_BLOCKED" ? "review" : "pass";
   const details = [
     ...qc.failures.map((item) => `${item.code}: ${item.detail}`),
     ...qc.warnings.map((item) => `${item.code}: ${item.detail}`),
-    ...stale.map((entry) => `REGEN REQUIRED: ${entry.label} — ${entry.regenRequiredReason}`),
+    ...stale.map((entry) => `REGEN REQUIRED: ${entry.label} — source definition changed`),
     ...editorial.issues.map((item) => `${item.severity} · ${item.code}: ${item.detail}`),
     ...generation.blockers.map((item) => `GENERATION BLOCKER: ${item}`),
     ...publishing.blockers.map((item) => `PUBLISHING BLOCKER: ${item}`)
@@ -372,13 +407,13 @@ function renderQc() {
   const workflowPublished = ["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(state.workflow?.stage);
   $("markPosted").disabled = !state.writable || !publishing.ready || !publicationRecorded || !workflowPublished;
   $("visualQcCheck").disabled = !allFinalAssetsBuilt;
-  $("visualQcCheck").checked = state.visualQcConfirmedFor === state.content.contentId;
+  $("visualQcCheck").checked = state.visualQcConfirmedFor === reviewSignature();
   $("visualQcHint").textContent = allFinalAssetsBuilt
-    ? "Review every final preview for source fidelity, readability and image/text match. This confirmation is session-only and resets when you switch content or reload."
+    ? "Review realism, continuity, correct objects and stages, comparison accuracy, safe crop, readable text, logos and AI artifacts. Confirmation survives reload and resets when dependencies change."
     : "Build all final assets before recording a visual review.";
   $("copyPrompt").disabled = !generation.ready;
   $("importAll").disabled = !generation.ready;
-  $("buildAssets").disabled = !generation.ready || !requiredImagesPresent;
+  $("buildAssets").disabled = !generation.ready || !gates.technicalImageQc || stale.length > 0 || state.busy;
   $("copyCaption").disabled = editorial.status !== "PASS";
   $("copyCaptionBottom").disabled = editorial.status !== "PASS";
   $("writeHint").textContent = state.writable
@@ -577,7 +612,7 @@ async function advanceWorkflow() {
       sheetId: state.sourceId, contentId: state.content.contentId, nextStage,
       actor: $("workflowActor").value, note: $("workflowNote").value,
       requiredImagesPresent, finalAssetsPresent,
-      visualQcPass: state.visualQcConfirmedFor === state.content.contentId
+      visualQcPass: state.visualQcConfirmedFor === reviewSignature()
     }) });
     state.workflow = result.workflow;
     $("workflowNote").value = "";
@@ -632,6 +667,7 @@ async function saveManualResults() {
 function clearContentView(message) {
   state.content = null;
   state.records = [];
+  state.filtered = [];
   state.plan = [];
   state.manifest = { entries: [], expectedAssets: 0 };
   state.images = {};
@@ -639,13 +675,32 @@ function clearContentView(message) {
   state.editorialReviewRecord = null;
   state.workflow = null;
   state.resultsSummary = null;
+  state.gates = null;
+  state.generationReadiness = null;
+  state.publishingReadiness = null;
+  state.visualQcConfirmedFor = "";
   $("recipeSelect").innerHTML = "";
   $("title").textContent = message;
   $("contentId").textContent = "—";
+  for (const id of ["contentType", "templateType", "visualProfile", "hookType", "hookText"]) $(id).textContent = "—";
+  $("captionPreview").textContent = "";
+  $("publishHeading").textContent = "NOT READY TO POST";
+  $("monetizationScore").textContent = "Not evaluated";
+  $("monetizationDetails").textContent = message;
+  $("editorialNote").textContent = "Choose a valid content record to run the editorial check.";
+  $("nextAction").textContent = message;
+  $("exportHint").textContent = "Choose a valid content record before exporting.";
+  $("writeHint").textContent = "No content record is selected; status writes are blocked.";
+  for (const [container, status] of [["contractGate", "qcStatus"], ["editorialGate", "editorialStatus"], ["generationGate", "generationStatus"], ["sourceImagesGate", "sourceImagesStatus"], ["technicalGate", "technicalStatus"], ["finalAssetsGate", "finalAssetsStatus"], ["exportGate", "exportStatus"], ["visualGate", "visualStatus"], ["publishingGate", "publishingStatus"]]) setGate(container, status, "NOT RUN");
+  $("visualQcCheck").checked = false;
+  $("visualQcCheck").disabled = true;
   $("sideRecipe").textContent = message;
   $("sideId").textContent = "";
+  clearPreviewUrls("slots"); clearPreviewUrls("assets");
   $("slots").innerHTML = "";
   $("assetGrid").innerHTML = "";
+  $("downloadAll").disabled = true;
+  state.unmatched=[];renderUnmatched();
   $("manifestList").innerHTML = "";
   $("manifestCount").textContent = "Generation Images: 0 · Final Assets: 0";
   $("slotHeading").textContent = "No generation inputs";
@@ -708,25 +763,17 @@ function coverDraw(context, image, x, y, width, height) {
   context.drawImage(image, sx, sy, sourceWidth, sourceHeight, x, y, width, height);
 }
 
-function linesFor(context, text, maxWidth) {
-  const output = [];
-  for (const paragraph of String(text || "").split(/\n/)) {
-    if (!paragraph) { output.push(""); continue; }
-    let line = "";
-    const tokens = /\s/.test(paragraph) ? paragraph.split(/(\s+)/) : Array.from(paragraph);
-    for (const token of tokens) {
-      if (context.measureText(line + token).width > maxWidth && line) { output.push(line.trim()); line = token.trimStart(); }
-      else line += token;
-    }
-    if (line) output.push(line.trim());
-  }
-  return output;
-}
-
-function drawLines(context, text, x, y, maxWidth, lineHeight, maxLines) {
-  const lines = linesFor(context, text, maxWidth).slice(0, maxLines || 99);
-  lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
-  return lines.length;
+let renderOverflow=[];
+function linesFor(context, text, maxWidth) { return wrapText(text,maxWidth,value=>context.measureText(value).width); }
+function drawLines(context,text,x,y,width,lineHeight,maxLines) {
+  const originalFont=context.font;
+  const size=Number(originalFont.match(/(\d+(?:\.\d+)?)px/)?.[1]||38);
+  const bottom=Math.min(1720,y+lineHeight*(maxLines||99));
+  const fit=fitText(text,{width,height:bottom-y,maxSize:size,minSize:Math.min(size,30),measure:(value,fontSize)=>{context.font=originalFont.replace(/[\d.]+px/,`${fontSize}px`);return context.measureText(value).width;}});
+  context.font=originalFont.replace(/[\d.]+px/,`${fit.size}px`);
+  fit.lines.forEach((line,index)=>context.fillText(line,x,y+index*fit.lineHeight));
+  if(fit.overflow.length)renderOverflow.push(fit.overflow.join("\n"));
+  context.font=originalFont;return fit.lines.length;
 }
 
 function gradient(context, y, height, top) {
@@ -761,16 +808,18 @@ async function buildInformationAsset(assetItem) {
   context.fillRect(0, 0, 1440, 1800);
   const isIngredients = assetItem.layout_type === "ingredients_compact" || assetItem.asset_type === "INGREDIENTS";
   const label = assetItem.section_label || (isIngredients ? "食材" : assetItem.title);
-  const heading = assetItem.local_heading || (state.content.schemaVersion < 4 || assetItem.asset_type === "COVER" ? state.content.title : "");
+  const heading = assetItem.local_heading || "";
   const body = String(assetItem.overlay_text || assetItem.purpose).replace(/；/g, "\n").replace(/。$/g, "");
-  context.font = '500 38px "Noto Sans SC", "PingFang SC", sans-serif';
+  context.font = '500 50px "Noto Sans SC", "PingFang SC", sans-serif';
   const metrics = calculateAdaptivePanel({ label, heading, body, measure: (text) => context.measureText(text).width });
+  metrics.panelHeight=Math.max(metrics.panelHeight, Math.min(1200,180+linesFor(context,body,1170).length*70));
+  metrics.imageHeight=1800-metrics.panelHeight;
   coverDraw(context, await firstImageFor(assetItem), 0, 0, 1440, metrics.imageHeight + 70);
   context.fillStyle = "#fff";
   context.fillRect(70, metrics.imageHeight, 1300, metrics.panelHeight - 70);
   context.fillStyle = "#f96332";
-  context.font = '700 36px Montserrat, "Noto Sans SC", sans-serif';
-  context.fillText(label, 130, metrics.imageHeight + 100);
+  context.font = '700 44px Montserrat, "Noto Sans SC", sans-serif';
+  drawLines(context,label,130,metrics.imageHeight+70,1170,58,1);
   let cursorY = metrics.imageHeight + 145;
   if (heading) {
     context.fillStyle = "#252422";
@@ -779,48 +828,40 @@ async function buildInformationAsset(assetItem) {
     cursorY += drawLines(context, heading, 130, cursorY, 1170, 72, 3) * 72 + 18;
   }
   context.fillStyle = "#252422";
-  context.font = '500 38px "Noto Sans SC", "PingFang SC", sans-serif';
+  context.font = '500 50px "Noto Sans SC", "PingFang SC", sans-serif';
   context.textBaseline = "top";
-  drawLines(context, body, 130, cursorY, 1170, 58, 10);
+  drawLines(context, body, 130, cursorY, 1170, 67, Math.floor((1720-cursorY)/67));
   return canvas;
 }
 
 async function buildMethodGrid(assetItem) {
-  const { canvas, context } = canvas2d();
-  context.fillStyle = "#f4f3ef";
-  context.fillRect(0, 0, 1440, 1800);
-  const tiles = calculateMethodGrid(assetItem.generation_inputs.length);
-  for (let index = 0; index < assetItem.generation_inputs.length; index += 1) {
-    const input = assetItem.generation_inputs[index];
-    const { x, y, width: cellWidth, height: cellHeight } = tiles[index];
-    const [title, ...bodyParts] = String(input.overlay_text || input.label).split(/\n/);
-    context.font = '500 24px "Noto Sans SC", "PingFang SC", sans-serif';
-    const bodyLines = Math.max(1, linesFor(context, bodyParts.join(" "), cellWidth - 155).length);
-    const captionHeight = Math.max(142, Math.min(Math.round(cellHeight * 0.3), 92 + bodyLines * 34));
-    const imageHeight = cellHeight - captionHeight;
-    const image = await loadImage(state.images[input.slot_id].blob);
-    coverDraw(context, image, x + 8, y + 8, cellWidth - 16, imageHeight - 8);
-    context.fillStyle = "#fff";
-    context.fillRect(x + 8, y + imageHeight, cellWidth - 16, captionHeight - 8);
-    context.fillStyle = "#f96332";
-    context.beginPath();
-    context.arc(x + 61, y + imageHeight + 55, 34, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = "#fff";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.font = "700 30px Montserrat, sans-serif";
-    context.fillText(String(index + 1), x + 61, y + imageHeight + 56);
-    context.textAlign = "left";
-    context.textBaseline = "top";
-    context.fillStyle = "#252422";
-    context.font = '700 31px "Noto Sans SC", "PingFang SC", sans-serif';
-    context.fillText(title, x + 111, y + imageHeight + 24);
-    context.fillStyle = "#66615b";
-    context.font = '500 24px "Noto Sans SC", "PingFang SC", sans-serif';
-    drawLines(context, bodyParts.join(" "), x + 111, y + imageHeight + 71, cellWidth - 155, 34, Math.max(2, Math.floor((captionHeight - 80) / 34)));
+  const outputs=[];
+  const inputs=assetItem.generation_inputs;
+  for(let offset=0;offset<inputs.length;offset+=2) {
+    const {canvas,context}=canvas2d();
+    context.fillStyle="#f4f3ef";context.fillRect(0,0,1440,1800);
+    const group=inputs.slice(offset,offset+2);
+    for(let local=0;local<group.length;local++) {
+      const input=group[local],index=offset+local;
+      const cellHeight=group.length===1?1800:900,y=local*cellHeight,captionHeight=group.length===1?390:270,imageHeight=cellHeight-captionHeight;
+      const image=await loadImage(state.images[input.slot_id].blob);
+      coverDraw(context,image,8,y+8,1424,imageHeight-8);
+      context.fillStyle="#fff";context.fillRect(8,y+imageHeight,1424,captionHeight-8);
+      context.fillStyle="#f96332";context.beginPath();context.arc(88,y+imageHeight+70,43,0,Math.PI*2);context.fill();
+      context.fillStyle="#fff";context.textAlign="center";context.textBaseline="middle";context.font="700 38px Montserrat,sans-serif";context.fillText(String(index+1),88,y+imageHeight+70);
+      context.fillStyle="#252422";context.textAlign="left";context.textBaseline="top";
+      const caption=String(input.overlay_text||`${input.step_heading||input.label}\n${input.step_supporting_text||""}`);
+      const [heading,...body]=caption.split("\n");context.font='700 50px "Noto Sans SC", "PingFang SC", sans-serif';
+      drawLines(context,heading,165,y+imageHeight+29,1190,65,1);
+      context.font='500 43px "Noto Sans SC", "PingFang SC", sans-serif';
+      const support=body.join(" ")||input.step_supporting_text||"";
+      const before=renderOverflow.length;
+      drawLines(context,support,165,y+imageHeight+112,1190,60,group.length===1?4:2);
+      if(renderOverflow.length>before)renderOverflow[renderOverflow.length-1]=`步骤 ${index+1} ${heading}\n${renderOverflow[renderOverflow.length-1]}`;
+    }
+    outputs.push(canvas);
   }
-  return canvas;
+  return outputs;
 }
 
 async function buildDetailAsset(assetItem) {
@@ -840,9 +881,9 @@ async function buildDetailAsset(assetItem) {
 
 async function buildAssetCanvas(assetItem) {
   if (["method_grid_2x3", "method_grid_adaptive"].includes(assetItem.layout_type) && assetItem.generation_inputs.length > 1) return buildMethodGrid(assetItem);
-  if (assetItem.layout_type === "cover_overlay") return buildCoverAsset(assetItem);
-  if (assetItem.layout_type === "detail_overlay") return buildDetailAsset(assetItem);
-  return buildInformationAsset(assetItem);
+  if (assetItem.layout_type === "cover_overlay") return [await buildCoverAsset(assetItem)];
+  if (assetItem.layout_type === "detail_overlay") return [await buildDetailAsset(assetItem)];
+  return [await buildInformationAsset(assetItem)];
 }
 
 function canvasBlob(canvas) {
@@ -853,16 +894,39 @@ async function buildAssets() {
   if (!state.generationReadiness?.ready) return toast("Build is blocked until editorial and generation readiness pass.", true);
   const missing = state.manifest.entries.filter((entry) => entry.required && !state.images[entry.slotId]).map((entry) => entry.label);
   if (missing.length) return toast(`Missing required images: ${missing.join(", ")}.`, true);
+  if(state.busy)return;
+  state.busy=true;invalidateReview();
+  const token=state.contentLoadToken;
   const button = $("buildAssets");
   button.disabled = true;
   button.textContent = `Building ${state.plan.length} assets…`;
   try {
+    await document.fonts.ready;
+    await document.fonts.load('500 38px "PingFang SC"', '食材做法熟透');
     for (const assetItem of state.plan) {
       try {
-        const canvas = await buildAssetCanvas(assetItem);
-        if (canvas.width !== 1440 || canvas.height !== 1800) throw new Error("Incorrect output dimensions.");
+        if(state.assets[assetItem.asset_id] && !state.assets[assetItem.asset_id].stale && state.assets[assetItem.asset_id].sourceRevision===assetSourceRevision(assetItem))continue;
+        const dependency=assetSourceRevision(assetItem),semantic=assetSemanticKey(assetItem);
+        const storageKey=keyFor("asset",assetItem.asset_id);
+        renderOverflow=[];
+        const canvases = await buildAssetCanvas(assetItem);
+        const pages=[];
+        for (const canvas of canvases) { if(canvas.width!==1440 || canvas.height!==1800)throw Error("Incorrect output dimensions."); pages.push({blob:await canvasBlob(canvas)});canvas.width=1;canvas.height=1; }
+        const overflow=renderOverflow.join("\n\n");
+        if(overflow) {
+          let remaining=overflow;
+          while(remaining) {
+            const {canvas:extra,context:ctx}=canvas2d();ctx.fillStyle="#f4f3ef";ctx.fillRect(0,0,1440,1800);ctx.textBaseline="top";ctx.fillStyle="#f96332";ctx.font='700 36px "PingFang SC",sans-serif';ctx.fillText("补充说明",100,90);
+            const fit=fitText(remaining,{width:1240,height:1470,maxSize:46,minSize:36,measure:(value,size)=>{ctx.font=`500 ${size}px "Noto Sans SC", "PingFang SC", sans-serif`;return ctx.measureText(value).width;}});
+            ctx.fillStyle="#252422";ctx.font=`500 ${fit.size}px "Noto Sans SC", "PingFang SC", sans-serif`;fit.lines.forEach((line,index)=>ctx.fillText(line,100,210+index*fit.lineHeight));
+            pages.push({blob:await canvasBlob(extra)});extra.width=1;extra.height=1;remaining=fit.overflow.join("\n");
+            if(pages.length>30)throw Error("Text exceeds 30 continuation pages; restructure the source.");
+          }
+        }
+        if(token!==state.contentLoadToken || dependency!==assetSourceRevision(assetItem) || semantic!==assetSemanticKey(assetItem))throw Error("Content or images changed during build; rebuild required.");
         const value = {
-          blob: await canvasBlob(canvas),
+          blob: pages[0].blob,
+          pages,
           filename: buildAssetFilename(state.content, assetItem),
           width: 1440,
           height: 1800,
@@ -872,7 +936,8 @@ async function buildAssets() {
           stale: false,
           updatedAt: Date.now()
         };
-        await putStored("assets", keyFor("asset", assetItem.asset_id), value);
+        await putStored("assets", storageKey, value);
+        if(token!==state.contentLoadToken)return;
         state.assets[assetItem.asset_id] = value;
       } catch (error) {
         throw new Error(`${assetItem.title} failed: ${error.message}`);
@@ -880,13 +945,15 @@ async function buildAssets() {
     }
     renderAssets();
     renderQc();
-    toast(`${state.plan.length} final assets are ready.`);
+    toast(`${Object.values(state.assets).reduce((n,a)=>n+(a.pages?.length||1),0)} final assets are ready.`);
   } catch (error) {
     renderAssets();
+    renderQc();
     toast(error.message, true);
   } finally {
-    button.disabled = false;
-    button.innerHTML = "<span>03</span>Build Final Assets";
+    state.busy=false;
+    renderQc();
+    button.innerHTML = "<span>04</span>Build Final Assets";
   }
 }
 
@@ -911,8 +978,9 @@ async function markPosted() {
     const result = await apiJson(`/api/recipes/${encodeURIComponent(state.content.contentId)}/status`, {
       method: "POST",
       headers: writeHeaders(),
-      body: JSON.stringify({ status: "Posted", sheetId: state.sourceId, requiredImagesPresent: true, finalAssetsPresent: true, visualQcPass: state.visualQcConfirmedFor === state.content.contentId })
+      body: JSON.stringify({ technicalImageQcPass: state.gates.technicalImageQc, noStaleAssets: state.gates.finalAssetsBuilt, status: "Posted", sheetId: state.sourceId, requiredImagesPresent: true, finalAssetsPresent: true, visualQcPass: state.visualQcConfirmedFor === reviewSignature() })
     });
+    if(result.contentId!==state.content.contentId || Number(result.sheetId)!==state.sourceId || result.status!=="Posted")throw Error("Status readback did not match the selected record.");
     state.content.lifecycleStatus = "Posted";
     $("status").textContent = "Posted";
     $("status").classList.add("posted");
@@ -930,15 +998,15 @@ function bindEvents() {
   $("sheetSelect").addEventListener("change", (event) => loadSource(event.target.value));
   $("recipeSelect").addEventListener("change", (event) => {
     const content = state.records.find((item) => item.contentId === event.target.value);
-    if (content) applyContent(content);
+    if (content && !state.busy) applyContent(content);
   });
   $("search").addEventListener("input", (event) => {
     const query = event.target.value.trim().toLowerCase();
     const records = query ? state.records.filter((content) => [content.contentId, content.title, content.topic, content.contentType, content.templateType].some((value) => String(value).toLowerCase().includes(query))) : state.records;
     renderOptions(records);
   });
-  $("prev").addEventListener("click", () => moveContent(-1));
-  $("next").addEventListener("click", () => moveContent(1));
+  $("prev").addEventListener("click", () => { if(!state.busy)moveContent(-1); });
+  $("next").addEventListener("click", () => { if(!state.busy)moveContent(1); });
   $("copyPrompt").addEventListener("click", () => {
     if (!state.generationReadiness?.ready) return toast("Generation is blocked. Resolve the editorial and specification blockers first.", true);
     return copyText(buildSessionPrompt(state.content), "One deterministic ChatGPT image session prompt copied.");
@@ -975,19 +1043,22 @@ function bindEvents() {
   $("newSheetTemplate").addEventListener("change", renderSheetTemplatePreview);
   $("createSheet").addEventListener("click", createSheet);
   $("visualQcCheck").addEventListener("change", (event) => {
-    state.visualQcConfirmedFor = event.target.checked ? state.content.contentId : "";
+    state.visualQcConfirmedFor = event.target.checked ? reviewSignature() : "";
+    localStorage.setItem(`capc:visual:${keyFor("review", "visual")}`, state.visualQcConfirmedFor);
     renderQc();
   });
-  $("downloadAll").addEventListener("click", () => state.plan.forEach((item, index) => {
-    const stored = state.assets[item.asset_id];
-    if (stored && !stored.stale) setTimeout(() => downloadBlob(stored.blob, stored.filename), index * 250);
-  }));
+  $("downloadAll").addEventListener("click", downloadPackage);
+  for(const event of ["dragover","drop"]) $("images").addEventListener(event,e=>e.preventDefault());
+  $("images").addEventListener("drop",e=>{if(!e.target.closest(".slot"))importMany(e.dataTransfer.files);});
+
 }
 
 function renderSourceOptions() {
   const currentValue = state.source === "approved-opportunities" ? APPROVED_OPPORTUNITIES_SOURCE : String(state.sourceId || "");
-  const options = state.sources.map((source) => `<option value="${escapeHtml(source.sheetId)}">${escapeHtml(source.label || source.title || source.name)}</option>`);
-  options.push(`<option value="${escapeHtml(APPROVED_OPPORTUNITIES_SOURCE)}">V4.2 development ideas · local handoff</option>`);
+  const options = state.sources.map((source) => `<option value="${escapeHtml(source.sheetId)}">${escapeHtml(sourceLabel(source))}</option>`);
+  let localCount = 'count unavailable';
+  try { const handoffs = JSON.parse(localStorage.getItem('content-ai-v4-2-approved') || '[]'); if (Array.isArray(handoffs)) localCount = `${handoffs.filter(item => item?.production_draft).length} records`; } catch { /* The handoff loader reports malformed data. */ }
+  options.push(`<option value="${escapeHtml(APPROVED_OPPORTUNITIES_SOURCE)}">V4.2 Approved Opportunities · ${localCount} · Local handoff · read-only</option>`);
   $("sheetSelect").innerHTML = options.join("");
   if ([...$("sheetSelect").options].some((option) => option.value === currentValue)) $("sheetSelect").value = currentValue;
 }
@@ -1002,7 +1073,8 @@ async function refreshSheets(keepCurrent = false, forceLiveRefresh = false) {
     const legacyMatch = state.sources.find((source) => source.title === stored || source.name === stored);
     const preferred = keepCurrent && state.sourceId ? String(state.sourceId) : legacyMatch ? String(legacyMatch.sheetId) : stored;
     const chosen = state.sources.find((source) => String(source.sheetId) === preferred) || state.sources.find((source) => source.active && source.schemaStatus === "READY") || state.sources[0];
-    if (chosen) await loadSource(String(chosen.sheetId));
+    if (stored === APPROVED_OPPORTUNITIES_SOURCE) await loadSource(APPROVED_OPPORTUNITIES_SOURCE);
+    else if (chosen) await loadSource(String(chosen.sheetId));
     else { clearContentView("No supported content worksheets were discovered."); $("connection").lastElementChild.textContent = "No content worksheets"; }
   } catch (error) {
     $("connection").className = "connection offline";
@@ -1012,8 +1084,12 @@ async function refreshSheets(keepCurrent = false, forceLiveRefresh = false) {
 }
 
 async function loadSource(sourceValue) {
+  if(state.busy)return toast("Wait for the current build or export.",true);
+  const sourceToken=++state.sourceLoadToken;
+  state.contentLoadToken++;
+  reportRejectedRecords([]);
   if (sourceValue === APPROVED_OPPORTUNITIES_SOURCE) {
-    const approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]");
+    let approved; try { approved = JSON.parse(localStorage.getItem("content-ai-v4-2-approved") || "[]"); if(!Array.isArray(approved))throw Error("Invalid handoff list"); } catch(error) { clearContentView("Local handoff data is malformed.");return toast(error.message,true); }
     const rawRecords = approved.map((item) => item.production_draft).filter(Boolean);
     const normalized = normalizeContentRecordsSafely(rawRecords);
     state.records = normalized.records;
@@ -1021,15 +1097,16 @@ async function loadSource(sourceValue) {
     state.source = "approved-opportunities";
     state.sourceId = null;
     state.currentSheet = null;
-    state.pageProfile = null;
+    state.pageProfile = null; state.pageProfileComplete = false;
     state.sourceName = APPROVED_OPPORTUNITIES_SOURCE;
     localStorage.setItem("capc:selectedSource", state.sourceName);
+    localStorage.setItem("capc:selectedSourceId", APPROVED_OPPORTUNITIES_SOURCE);
     renderSourceOptions();
     $("connection").className = "connection offline";
     $("connection").lastElementChild.textContent = `Development handoffs · ${state.records.length} · read-only`;
     $("writeHint").textContent = "Idea approved for development only. Complete the content specification and editorial review before generation; nothing is published automatically.";
     renderPageProfiles();
-    if (!state.records.length) return clearContentView("No V4.2 ideas have been approved for development yet.");
+    if (!state.records.length) { clearContentView("No valid V4.2 handoffs have been approved for development yet."); reportRejectedRecords(normalized.rejected); return; }
     renderOptions(state.records);
     applyContent(state.records[0]);
     reportRejectedRecords(normalized.rejected);
@@ -1054,6 +1131,8 @@ async function loadSource(sourceValue) {
   connection.lastElementChild.textContent = `${source.title} · ${source.contentType} · ${source.targetPageName} · ${source.setupStatus}`;
   try {
     const data = await apiJson(`/api/recipes?${new URLSearchParams({ sheetId: String(source.sheetId) })}`);
+    if(sourceToken!==state.sourceLoadToken)return;
+    state.source=data.source || "sheet";
     state.currentSheet = { ...source, ...(data.sourceState || {}), setupStatus: data.setupStatus || source.setupStatus, setupReasons: data.setupReasons || source.setupReasons };
     state.profiles = data.profiles || state.profiles;
     state.pageProfile = data.pageProfile || state.profiles.find((item) => item.profileId === state.currentSheet.targetPageProfileId) || null;
@@ -1062,6 +1141,11 @@ async function loadSource(sourceValue) {
     if (!Array.isArray(rawRecords)) throw new Error("Worksheet source did not return a records array.");
     const normalized = normalizeContentRecordsSafely(rawRecords);
     state.records = normalized.records;
+    source.rowCount = data.totalRows ?? rawRecords.length;
+    source.source = data.source;
+    source.writable = Boolean(data.writable && data.source === "sheet");
+    renderSourceOptions();
+    normalized.rejected.push(...(data.rejected || []));
     state.writable = Boolean(data.writable && data.source === "sheet");
     connection.className = state.writable ? "connection live" : "connection offline";
     connection.lastElementChild.textContent = state.writable
@@ -1078,6 +1162,7 @@ async function loadSource(sourceValue) {
     applyContent(state.records.find((item) => item.contentId === saved) || state.records[0]);
     reportRejectedRecords(normalized.rejected);
   } catch (error) {
+    if(sourceToken!==state.sourceLoadToken)return;
     state.writable = false;
     connection.className = "connection offline";
     connection.lastElementChild.textContent = `${state.sourceName} · load failed`;
@@ -1164,3 +1249,16 @@ async function start() {
 }
 
 start();
+
+async function downloadPackage() {
+  renderQc();if(!state.gates?.exportReady || state.busy)return toast("Complete the export gates first.",true);
+  state.busy=true;renderQc();
+  try {
+    const entries=exportEntries(state.content,state.plan,state.assets);
+    const folder=safeFilename(`${state.content.contentId}_${state.content.title}`);
+    const metadata={Content_ID:state.content.contentId,Title:state.content.title,source:{name:state.sourceName,sheetId:state.sourceId,kind:state.source},template:state.content.templateType,builtAt:new Date(Math.max(...Object.values(state.assets).map(a=>a.updatedAt))).toISOString(),exportedAt:new Date().toISOString(),qc:state.gates,monetisationReadiness:auditContent(state.content).status,assetOrder:entries.map(({blob,...entry})=>entry)};
+    const files=entries.map(e=>({name:`${folder}/${e.filename}`,blob:e.blob}));
+    files.push({name:`${folder}/caption.txt`,blob:new Blob([state.content.caption],{type:"text/plain;charset=utf-8"})},{name:`${folder}/manifest.json`,blob:new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"})});
+    downloadBlob(await createZip(files),`${folder}.zip`);toast("One ordered production ZIP downloaded.");
+  }catch(error){toast(error.message,true);}finally{state.busy=false;renderQc();}
+}
