@@ -4,7 +4,7 @@ import { buildOpportunityCanary, normalizePerformance } from "./opportunity-engi
 import { compileV4CanaryCandidate, V4_CANARY_HEADERS } from "./v4-preappend.mjs";
 import { isSheetRegistryStale } from "./sheet-registry-cache.mjs";
 import { deriveGenerationReadiness, normalizeContentRecordsSafely, normalizeContentRecord, runContentQc, runEditorialReview } from "./content-model.mjs";
-import { auditContent } from "./content-quality.mjs";
+import {applyEditorialWork,sourceFingerprint} from './editorial-pipeline.mjs';
 import { D1ProductionStore, inspectSheetHeaders, isReservedSheetName, publicSheetTemplate, SHEET_TEMPLATES, handleProductionOperationsApi } from "./production-operations.mjs";
 import { INITIAL_SOURCE_SEEDS } from "./sheet-contracts.mjs";
 
@@ -16,6 +16,9 @@ const APP = __APP_JS__;
 const CONTENT_MODEL = __CONTENT_MODEL_JS__;
 const PRODUCTION_CORE = __PRODUCTION_CORE_JS__;
 const CONTENT_QUALITY = __CONTENT_QUALITY_JS__;
+const EDITORIAL_PIPELINE = __EDITORIAL_PIPELINE_JS__;
+const BATCH_01 = __BATCH_01_JSON__;
+const CANONICAL_MAP = __CANONICAL_MAP_JSON__;
 const BUILD_INFO = __BUILD_INFO_JSON__;
 const INTELLIGENCE = __INTELLIGENCE_JS__;
 const OPPORTUNITIES = __OPPORTUNITIES_JS__;
@@ -167,6 +170,8 @@ function sameOriginWriteAllowed(request) {
 async function handleApi(request, env, url, executionContext) {
   const productionStore = env.DB ? new D1ProductionStore(env.DB) : null;
   if (request.method === "GET" && url.pathname === "/api/build") return json(BUILD_INFO);
+  if (request.method === 'GET' && url.pathname === '/api/editorial/batch') return json({ok:true,batch:BATCH_01});
+  if (request.method === 'GET' && url.pathname === '/api/editorial/canonical-map') return json({ok:true,map:CANONICAL_MAP});
   if (request.method === "POST" && url.pathname === "/api/bridge/diagnostics") {
     if (!sameOriginWriteAllowed(request)) return json({ ok: false, error: "Same-origin diagnostic request required." }, 403);
     if (!env.GOOGLE_SHEETS_BRIDGE_URL || !env.GOOGLE_SHEETS_BRIDGE_TOKEN || !env.GOOGLE_SHEETS_EDITORIAL_REVIEW_TOKEN) {
@@ -312,7 +317,10 @@ async function handleApi(request, env, url, executionContext) {
       }
       const pageProfile = sheet.targetPageProfileId ? await productionStore.getProfile(sheet.targetPageProfileId) : null;
       const pageProfileComplete = Boolean(pageProfile?.active && pageProfile.facebookPageId && pageProfile.displayName && pageProfile.audience && pageProfile.primaryLanguage && pageProfile.toneGuidance && pageProfile.avoidTopics?.length);
-      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: loaded.result.sheetName || sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: availableSheets, profiles, headers: loaded.result.headers || [], records: loaded.records, rejected: loaded.rejected, totalRows: loaded.totalRows });
+      const savedWorks=await productionStore.listReviews(Number(sheet.sheetId));
+      const workById=new Map(savedWorks.map(item=>[item.contentId,item]));
+      const editorialWork=Object.fromEntries(await Promise.all(loaded.records.map(async record=>{const contentId=String(record.Content_ID||record.content_id||'');const saved=workById.get(contentId);return [contentId,saved?{...saved,stale:saved.review.sourceFingerprint!==await sourceFingerprint(record)}:null];})));
+      return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetId: Number(sheet.sheetId), sheetName: loaded.result.sheetName || sheet.title, sourceState, pageProfile, pageProfileComplete, publishingSetupBlockers: pageProfileComplete ? [] : ["Assign and activate a complete target Facebook Page profile before publishing."], sheets: availableSheets, profiles, headers: loaded.result.headers || [], records: loaded.records, editorialWork, rejected: loaded.rejected, totalRows: loaded.totalRows });
     } catch (error) { return json({ ok: false, source: "sheet", error: error.message, records: [] }, 503); }
   }
 
@@ -334,13 +342,13 @@ async function handleApi(request, env, url, executionContext) {
       const pageProfile = sheet.targetPageProfileId ? await productionStore.getProfile(sheet.targetPageProfileId) : null;
       let content = loaded.normalized[recordIndex];
       if (pageProfile) content = { ...content, pageProfile };
+      const savedWork=await productionStore.getReview(sheetId,contentId);
+      if(savedWork)content=applyEditorialWork(content,savedWork,await sourceFingerprint(content.raw)).content;
       const contract = runContentQc(content);
       const editorial = runEditorialReview(content);
       const generation = deriveGenerationReadiness(content, { structuralQc: contract, editorialReview: editorial });
-      const monetisation = auditContent(content);
       const profileReady = Boolean(pageProfile?.active && pageProfile.facebookPageId && pageProfile.displayName && pageProfile.audience && pageProfile.primaryLanguage && pageProfile.toneGuidance && pageProfile.avoidTopics?.length);
       if (!profileReady || !generation.ready) return json({ ok: false, error: "Posting is blocked until the selected Page profile, structural contract and editorial review all pass.", contract: contract.status, editorial: editorial.status, generation: generation.status }, 422);
-      if (monetisation.status !== "READY") return json({ ok: false, error: "Internal monetisation readiness must be READY before marking Posted.", monetisationReadiness: monetisation.status }, 422);
       if (body.requiredImagesPresent !== true || body.finalAssetsPresent !== true || body.visualQcPass !== true || body.technicalImageQcPass !== true || body.noStaleAssets !== true) return json({ ok: false, error: "Confirm all required source images, final assets and visual QC before marking Posted." }, 422);
       const workflow = await productionStore.getWorkflow(sheetId, contentId);
       if (!["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(workflow?.stage)) return json({ ok: false, error: "Advance the recorded production workflow to Scheduled / Published first." }, 422);
@@ -358,6 +366,7 @@ async function handleApi(request, env, url, executionContext) {
   if (url.pathname.startsWith("/api/production/")) {
     const store = productionStore;
     const context = {
+      isHeldDuplicate: (sheetId,contentId)=>CANONICAL_MAP.groups.some(group=>group.duplicates.some(item=>Number(item.sheetId)===Number(sheetId)&&item.contentId===contentId)),
       validateContentRef: async (sheetId, contentId) => {
         const source = await store.getSheet(sheetId);
         const loaded = await resolveSourceRecords(env, source);
@@ -399,6 +408,7 @@ export default {
     if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/production-core.js") return new Response(PRODUCTION_CORE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/content-quality.js") return new Response(CONTENT_QUALITY, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if (url.pathname === '/editorial-pipeline.js' || url.pathname === '/editorial-pipeline.mjs') return new Response(EDITORIAL_PIPELINE, {headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
     if (url.pathname === "/content-model.js") return new Response(CONTENT_MODEL, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/intelligence.js") return new Response(INTELLIGENCE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/opportunities.js") return new Response(OPPORTUNITIES, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });

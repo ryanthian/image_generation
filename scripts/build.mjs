@@ -14,11 +14,17 @@ const [template, data, canary, performanceHistory, index, css, app, contentModel
 ]);
 const productionCore = await readFile("src/production-core.mjs", "utf8");
 const contentQuality = await readFile("src/content-quality.mjs", "utf8");
+const editorialPipeline = await readFile('src/editorial-pipeline.mjs','utf8');
+const batch01 = await readFile('output/production-batch-01.json','utf8');
+const canonicalMap = await readFile('output/canonical-content-map.json','utf8');
 const buildInfo = { commit: (await import("node:child_process")).execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), builtAt: new Date().toISOString() };
 const output = template
   .replace("__BUILD_INFO_JSON__", () => JSON.stringify(buildInfo))
   .replace("__PRODUCTION_CORE_JS__", () => JSON.stringify(productionCore))
   .replace("__CONTENT_QUALITY_JS__", () => JSON.stringify(contentQuality))
+  .replace('__EDITORIAL_PIPELINE_JS__',()=>JSON.stringify(editorialPipeline))
+  .replace('__BATCH_01_JSON__',()=>batch01.trim())
+  .replace('__CANONICAL_MAP_JSON__',()=>canonicalMap.trim())
   .replace("__RECIPES_JSON__", () => data.trim())
   .replace("__CANARY_JSON__", () => canary.trim())
   .replace("__V42_HISTORY_JSON__", performanceHistory.trim())
@@ -37,6 +43,7 @@ await copyFile("src/intelligence-server.mjs", "dist/server/intelligence-server.m
 await copyFile("src/opportunity-engine.mjs", "dist/server/opportunity-engine.mjs");
 await copyFile("src/content-model.mjs", "dist/server/content-model.mjs");
 await copyFile("src/content-quality.mjs", "dist/server/content-quality.mjs");
+await copyFile('src/editorial-pipeline.mjs','dist/server/editorial-pipeline.mjs');
 await copyFile("src/apps-script-bridge.mjs", "dist/server/apps-script-bridge.mjs");
 await copyFile("src/sheet-registry-cache.mjs", "dist/server/sheet-registry-cache.mjs");
 await copyFile("src/production-operations.mjs", "dist/server/production-operations.mjs");

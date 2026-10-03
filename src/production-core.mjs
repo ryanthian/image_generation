@@ -71,7 +71,7 @@ export function productionGates({contract,editorial,generation,manifest,images,p
   const sourceImagesComplete=required.length>0 && required.every(e=>images[e.slotId] && images[e.slotId].semanticKey===e.semanticKey);
   const technicalImageQc=sourceImagesComplete && required.every(e=>images[e.slotId]?.qc?.status==='PASS');
   const finalAssetsBuilt=plan.length>0 && plan.every(a=>assets[a.asset_id]?.qc_status==='PASS' && !assets[a.asset_id].stale);
-  const exportReady=contract.failures.length===0 && editorial.status==='PASS' && generation.ready && technicalImageQc && finalAssetsBuilt && visualReviewed && monetization?.status==='READY';
+  const exportReady=contract.failures.length===0 && editorial.status==='PASS' && generation.ready && technicalImageQc && finalAssetsBuilt && visualReviewed;
   return {contractValid:contract.failures.length===0,editorialReview:editorial.status,generationReady:generation.ready,sourceImagesComplete,technicalImageQc,visualReview:visualReviewed,finalAssetsBuilt,exportReady};
 }
 export function exportEntries(content, plan, assets) {

@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-10-03T14:12:03.480Z",
+  "warning": "Fixture review, synthetic image QC, and synthetic ZIP only. No human approval, real image, or Sheet mutation.",
+  "results": [
+    {
+      "sheetId": 2026091901,
+      "contentId": "EN-NEW-009",
+      "label": "Draft 20",
+      "sourceRowsUnchanged": true,
+      "riskTier": "LOW",
+      "contract": "PASS",
+      "editorialFixtureStatus": "PASS",
+      "generationFixtureStatus": "GENERATION_READY",
+      "slots": 9,
+      "deterministicFilenameMatching": true,
+      "syntheticGatePass": true,
+      "orderedSyntheticZipFiles": [
+        "01_COVER.png",
+        "02_INGREDIENTS.png",
+        "03_METHOD.png",
+        "04_CLOSEUP.png"
+      ],
+      "syntheticZipBytes": 484,
+      "realImageValidation": "NOT RUN",
+      "humanApproval": "NOT GRANTED",
+      "sourceMutation": "NONE"
+    },
+    {
+      "sheetId": 812541719,
+      "contentId": "EN-NEW-022",
+      "label": "Draft 100",
+      "sourceRowsUnchanged": true,
+      "riskTier": "LOW",
+      "contract": "PASS",
+      "editorialFixtureStatus": "PASS",
+      "generationFixtureStatus": "GENERATION_READY",
+      "slots": 9,
+      "deterministicFilenameMatching": true,
+      "syntheticGatePass": true,
+      "orderedSyntheticZipFiles": [
+        "01_COVER.png",
+        "02_INGREDIENTS.png",
+        "03_METHOD.png",
+        "04_CLOSEUP.png"
+      ],
+      "syntheticZipBytes": 484,
+      "realImageValidation": "NOT RUN",
+      "humanApproval": "NOT GRANTED",
+      "sourceMutation": "NONE"
+    },
+    {
+      "sheetId": 433728120,
+      "contentId": "GS-V4-SG-002",
+      "label": "V4",
+      "sourceRowsUnchanged": true,
+      "riskTier": "LOW",
+      "contract": "PASS",
+      "editorialFixtureStatus": "PASS",
+      "generationFixtureStatus": "GENERATION_READY",
+      "slots": 7,
+      "deterministicFilenameMatching": true,
+      "syntheticGatePass": true,
+      "orderedSyntheticZipFiles": [
+        "01_COVER.png",
+        "02_GOOD_BAD_COMPARE.png",
+        "03_INSPECTION_DETAIL.png",
+        "04_INSPECTION_DETAIL.png",
+        "05_INSPECTION_DETAIL.png",
+        "06_CHECKLIST.png",
+        "07_CLOSEUP.png"
+      ],
+      "syntheticZipBytes": 905,
+      "realImageValidation": "NOT RUN",
+      "humanApproval": "NOT GRANTED",
+      "sourceMutation": "NONE"
+    }
+  ]
+}

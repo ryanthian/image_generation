@@ -1,3 +1,5 @@
+import {classifyClaimRisk} from './editorial-pipeline.mjs';
+
 const DEFAULT_VISUAL_PROFILE = "REALISTIC_MALAYSIAN_KITCHEN";
 const DEFAULT_TYPOGRAPHY = "PAPER_FACEBOOK_CN";
 
@@ -534,6 +536,8 @@ export function runEditorialReview(content) {
   const evidenceType = String(evidence.type || metadata.evidence_type || (String(metadata.source_evidence_status || "").toUpperCase() === "VERIFIED" ? "SOURCE_DIRECT" : "UNVERIFIED")).toUpperCase();
   const evidenceReferences = Array.isArray(evidence.references) ? evidence.references.map(textValue).filter(Boolean) : [];
   const evidenceNotes = textValue(evidence.notes || metadata.source_notes || metadata.claim_evidence);
+  const risk=classifyClaimRisk(content);
+  const internalEvidenceAccepted=risk.tier==='LOW' && evidenceType==='SOURCE_INTERNAL' && metadata.internal_consistency_checked===true && String(metadata.source_evidence_status||'').toUpperCase()==='INTERNAL_REVIEWED';
 
   if (content.editorialReviewParseError) add("EDITORIAL_REVIEW_JSON_INVALID", content.editorialReviewParseError);
   if (!editorialMaterialExists) {
@@ -565,13 +569,7 @@ export function runEditorialReview(content) {
   const pageProfileReady = Boolean(content.pageProfile?.active && content.pageProfile.facebookPageId
     && content.pageProfile.displayName && content.pageProfile.audience && content.pageProfile.primaryLanguage
     && content.pageProfile.toneGuidance && content.pageProfile.avoidTopics?.length);
-  if (pageProfileReady && String(metadata.page_fit_status || "").toUpperCase() !== "PASS") {
-    add("PAGE_AUDIENCE_FIT_NOT_REVIEWED", "Review audience, language, tone and format against the selected Page profile before publishing.");
-  }
-  if (pageProfileReady && (
-    textValue(metadata.page_profile_id) !== textValue(content.pageProfile.profileId)
-    || (content.pageProfile.updatedAt && textValue(metadata.page_profile_updated_at) !== textValue(content.pageProfile.updatedAt))
-  )) add("PAGE_PROFILE_REVIEW_STALE", "The Page profile changed or differs from the profile used for the last editorial review; re-review audience fit.");
+  // Page fit is a publishing-only decision. It must not block image prompts or ZIP export.
   if (!body || !caption) add("READER_VALUE_OR_CAPTION_MISSING", "A developed source body and reader-facing caption are both required.");
   if (caption && caption.length < 12) add("CAPTION_VALUE_TOO_THIN", "Caption is too short to demonstrate useful reader-facing value.");
   if (body && INTERNAL_NOTE_PATTERN.test(body)) add("INTERNAL_NOTE_IN_SOURCE_BODY", "Move the internal instruction out of Content_Body into Editorial_Notes; keep the reader-facing copy separate.");
@@ -581,11 +579,12 @@ export function runEditorialReview(content) {
   const genericSource = genericSourcePattern.test(source);
   const specificEvidenceNotes = [metadata.source_notes, evidence.notes, metadata.claim_evidence].map(textValue).filter((value) => value && !genericSourcePattern.test(value));
   const validEvidenceReferences = evidenceReferences.filter((reference) => !genericSourcePattern.test(reference));
-  if (!source && !specificEvidenceNotes.length && !validEvidenceReferences.length) add("SOURCE_EVIDENCE_MISSING", "Add an identifiable source or evidence note for factual statements.");
-  else if (genericSource && !specificEvidenceNotes.length && !validEvidenceReferences.length) add("SOURCE_EVIDENCE_IS_PLACEHOLDER", "The current source label identifies the canary, not evidence supporting this content.");
-  if (!["SOURCE_DIRECT", "SOURCE_GENERAL", "HEURISTIC", "UNVERIFIED"].includes(evidenceType)) add("EVIDENCE_TYPE_INVALID", `Unsupported evidence type: ${evidenceType}.`);
+  if (!internalEvidenceAccepted && !source && !specificEvidenceNotes.length && !validEvidenceReferences.length) add("SOURCE_EVIDENCE_MISSING", "Add an identifiable source or evidence note for factual statements.");
+  else if (!internalEvidenceAccepted && genericSource && !specificEvidenceNotes.length && !validEvidenceReferences.length) add("SOURCE_EVIDENCE_IS_PLACEHOLDER", "The current source label identifies the canary, not evidence supporting this content.");
+  if (!["SOURCE_DIRECT", "SOURCE_GENERAL", "HEURISTIC", "UNVERIFIED", "SOURCE_INTERNAL"].includes(evidenceType)) add("EVIDENCE_TYPE_INVALID", `Unsupported evidence type: ${evidenceType}.`);
+  if (evidenceType === 'SOURCE_INTERNAL' && !internalEvidenceAccepted) add('INTERNAL_REVIEW_INSUFFICIENT','Internal consistency review can replace an external citation only for low-risk content, with explicit reviewer attestation.');
   if (evidenceType === "UNVERIFIED") add("SOURCE_EVIDENCE_UNVERIFIED", "Evidence is explicitly unverified; Editorial PASS is not available.");
-  else if (String(metadata.source_evidence_status || "").toUpperCase() !== "VERIFIED") add("SOURCE_EVIDENCE_NOT_VERIFIED", "The reviewer has not confirmed that the cited source or evidence was checked.");
+  else if (!internalEvidenceAccepted && String(metadata.source_evidence_status || "").toUpperCase() !== "VERIFIED") add("SOURCE_EVIDENCE_NOT_VERIFIED", "The reviewer has not confirmed that the cited source or evidence was checked.");
   if (evidenceType === "SOURCE_DIRECT" && !validEvidenceReferences.length && !specificEvidenceNotes.length && (genericSource || !source)) add("SOURCE_DIRECT_REFERENCE_MISSING", "Direct-source evidence requires an identifiable reference that supports the stated claim.");
   if (evidenceType === "SOURCE_GENERAL" && !evidenceNotes) add("SOURCE_GENERAL_NOTE_MISSING", "Explain the established general knowledge supporting the factual statements.");
   if (evidenceType === "HEURISTIC") {
@@ -733,6 +732,12 @@ export function derivePublishingReadiness(content, { generationReadiness = deriv
     && content.pageProfile.displayName && content.pageProfile.audience && content.pageProfile.primaryLanguage
     && content.pageProfile.toneGuidance && content.pageProfile.avoidTopics?.length);
   if (!hasPageProfile) blockers.push("Assign a complete target Facebook Page profile before publishing.");
+  else {
+    const review=content.editorialReview||{};
+    if (String(review.page_fit_status||'').toUpperCase()!=='PASS') blockers.push('Review copy fit against the assigned Page before publishing.');
+    if (textValue(review.page_profile_id)!==textValue(content.pageProfile.profileId)
+      || (content.pageProfile.updatedAt&&textValue(review.page_profile_updated_at)!==textValue(content.pageProfile.updatedAt))) blockers.push('Page fit review is stale for this Page profile.');
+  }
   return { status: blockers.length ? "NOT_READY" : "READY", ready: blockers.length === 0, blockers };
 }
 

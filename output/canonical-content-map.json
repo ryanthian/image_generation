@@ -1,0 +1,2579 @@
+{
+  "generatedAt": "2026-10-03T14:09:17.967Z",
+  "sourceAuditCommit": "c0d29224cb4974e9124c550baf127aa1df5c0dd4",
+  "candidatePairs": 106,
+  "strongGroups": 100,
+  "heldDuplicates": 100,
+  "groups": [
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-021",
+        "title": "椒麻脆皮鸡腿"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-00000021",
+          "title": "椒麻脆皮鸡腿",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-022",
+        "title": "蜜汁蒜香鸡翅"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-022",
+          "title": "蜜汁蒜香鸡翅",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-023",
+        "title": "柚子胡椒鸡块"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-023",
+          "title": "柚子胡椒鸡块",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-024",
+        "title": "番茄洋葱焖鸡"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-024",
+          "title": "番茄洋葱焖鸡",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-025",
+        "title": "黑蒜香菇鸡煲"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-025",
+          "title": "黑蒜香菇鸡煲",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-026",
+        "title": "香茅青柠鸡腿"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-026",
+          "title": "香茅青柠鸡腿",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-027",
+        "title": "豆豉彩椒鸡丁"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-027",
+          "title": "豆豉彩椒鸡丁",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-028",
+        "title": "南乳莲藕焖鸡"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-028",
+          "title": "南乳莲藕焖鸡",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-029",
+        "title": "葱油手撕鸡"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-029",
+          "title": "葱油手撕鸡",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-030",
+        "title": "咖喱土豆鸡块"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-030",
+          "title": "咖喱土豆鸡块",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-031",
+        "title": "陈皮话梅排骨"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-031",
+          "title": "陈皮话梅排骨",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-032",
+        "title": "蒜香椒盐排骨"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-032",
+          "title": "蒜香椒盐排骨",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-033",
+        "title": "菠萝彩椒咕咾肉"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-033",
+          "title": "菠萝彩椒咕咾肉",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-034",
+        "title": "黑椒杏鲍菇肉片"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-034",
+          "title": "黑椒杏鲍菇肉片",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-035",
+        "title": "梅香土豆烧肉"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-035",
+          "title": "梅香土豆烧肉",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-036",
+        "title": "腐乳芋头蒸肉"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-036",
+          "title": "腐乳芋头蒸肉",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-037",
+        "title": "莲藕紫菜肉饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-037",
+          "title": "莲藕紫菜肉饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-038",
+        "title": "香橙蜜汁里脊"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-038",
+          "title": "香橙蜜汁里脊",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-039",
+        "title": "萝卜香菇烧肉"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-039",
+          "title": "萝卜香菇烧肉",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-040",
+        "title": "孜然洋葱肉片"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-040",
+          "title": "孜然洋葱肉片",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-041",
+        "title": "蒜蓉粉丝开背虾"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-041",
+          "title": "蒜蓉粉丝开背虾",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-042",
+        "title": "椒盐玉米虾球"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-042",
+          "title": "椒盐玉米虾球",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-043",
+        "title": "青柠薄荷烤虾"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-043",
+          "title": "青柠薄荷烤虾",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-044",
+        "title": "番茄豆腐焖鱼片"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-044",
+          "title": "番茄豆腐焖鱼片",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-045",
+        "title": "豆豉彩椒蒸鱼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-045",
+          "title": "豆豉彩椒蒸鱼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-046",
+        "title": "香煎柠檬鲭鱼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-046",
+          "title": "香煎柠檬鲭鱼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-047",
+        "title": "姜葱蛤蜊豆腐煲"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-047",
+          "title": "姜葱蛤蜊豆腐煲",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-048",
+        "title": "咖喱椰香鱼丸煲"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-048",
+          "title": "咖喱椰香鱼丸煲",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-049",
+        "title": "蒜香奶油鱿鱼圈"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-049",
+          "title": "蒜香奶油鱿鱼圈",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-050",
+        "title": "紫苏梅汁三文鱼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-050",
+          "title": "紫苏梅汁三文鱼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-051",
+        "title": "虾仁丝瓜蒸蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-051",
+          "title": "虾仁丝瓜蒸蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-052",
+        "title": "海苔玉米肉末蛋羹"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-052",
+          "title": "海苔玉米肉末蛋羹",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-053",
+        "title": "番茄菌菇滑蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-053",
+          "title": "番茄菌菇滑蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-054",
+        "title": "韭菜豆腐煎蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-054",
+          "title": "韭菜豆腐煎蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-055",
+        "title": "咸蛋黄金沙豆腐"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-055",
+          "title": "咸蛋黄金沙豆腐",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-056",
+        "title": "椒麻皮蛋豆腐"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-056",
+          "title": "椒麻皮蛋豆腐",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-057",
+        "title": "香菇酿豆腐"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-057",
+          "title": "香菇酿豆腐",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-058",
+        "title": "南瓜豆乳炖豆腐"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-058",
+          "title": "南瓜豆乳炖豆腐",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-059",
+        "title": "青椒木耳炒鸡蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-059",
+          "title": "青椒木耳炒鸡蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-060",
+        "title": "萝卜干肉末煎蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-060",
+          "title": "萝卜干肉末煎蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-061",
+        "title": "蒜香豆角烧茄子"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-061",
+          "title": "蒜香豆角烧茄子",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-062",
+        "title": "蚝油双菇西兰花"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-062",
+          "title": "蚝油双菇西兰花",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-063",
+        "title": "椒盐杏鲍菇条"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-063",
+          "title": "椒盐杏鲍菇条",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-064",
+        "title": "芝麻酱拌菠菜"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-064",
+          "title": "芝麻酱拌菠菜",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-065",
+        "title": "醋香手撕包菜"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-065",
+          "title": "醋香手撕包菜",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-066",
+        "title": "咸蛋黄焗玉米笋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-066",
+          "title": "咸蛋黄焗玉米笋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-067",
+        "title": "蒜蓉粉丝蒸娃娃菜"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-067",
+          "title": "蒜蓉粉丝蒸娃娃菜",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-068",
+        "title": "番茄金针菇豆腐锅"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-068",
+          "title": "番茄金针菇豆腐锅",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-069",
+        "title": "香煎莲藕蔬菜饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-069",
+          "title": "香煎莲藕蔬菜饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-070",
+        "title": "黑椒黄油芦笋口蘑"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-070",
+          "title": "黑椒黄油芦笋口蘑",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-071",
+        "title": "腊香香菇焖饭"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-071",
+          "title": "腊香香菇焖饭",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-072",
+        "title": "番茄牛肉烩饭"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-072",
+          "title": "番茄牛肉烩饭",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-073",
+        "title": "南瓜栗子鸡肉饭"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-073",
+          "title": "南瓜栗子鸡肉饭",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-074",
+        "title": "咖喱虾仁蛋炒饭"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-074",
+          "title": "咖喱虾仁蛋炒饭",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-075",
+        "title": "香葱鸡丝芝麻面"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-075",
+          "title": "香葱鸡丝芝麻面",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-076",
+        "title": "花生酱酸辣凉面"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-076",
+          "title": "花生酱酸辣凉面",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-077",
+        "title": "香菇肉末炒年糕"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-077",
+          "title": "香菇肉末炒年糕",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-078",
+        "title": "蒜香蛤蜊意面"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-078",
+          "title": "蒜香蛤蜊意面",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-079",
+        "title": "芝麻鸡丝荞麦面"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-079",
+          "title": "芝麻鸡丝荞麦面",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-080",
+        "title": "南乳芋头焖米粉"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-080",
+          "title": "南乳芋头焖米粉",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-081",
+        "title": "玉米山药排骨汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-081",
+          "title": "玉米山药排骨汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-082",
+        "title": "莲藕花生鸡汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-082",
+          "title": "莲藕花生鸡汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-083",
+        "title": "番茄土豆牛肉汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-083",
+          "title": "番茄土豆牛肉汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-084",
+        "title": "冬瓜薏米鸭汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-084",
+          "title": "冬瓜薏米鸭汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-085",
+        "title": "海带豆腐蛤蜊汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-085",
+          "title": "海带豆腐蛤蜊汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-086",
+        "title": "白萝卜香菇肉丸汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-086",
+          "title": "白萝卜香菇肉丸汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-087",
+        "title": "南瓜玉米浓汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-087",
+          "title": "南瓜玉米浓汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-088",
+        "title": "紫菜虾皮豆腐汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-088",
+          "title": "紫菜虾皮豆腐汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-089",
+        "title": "苹果胡萝卜瘦肉汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-089",
+          "title": "苹果胡萝卜瘦肉汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-090",
+        "title": "菌菇白菜鸡肉汤"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-090",
+          "title": "菌菇白菜鸡肉汤",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-091",
+        "title": "空气炸锅蜜汁叉烧"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-091",
+          "title": "空气炸锅蜜汁叉烧",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-092",
+        "title": "空气炸锅柠檬鸡翅"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-092",
+          "title": "空气炸锅柠檬鸡翅",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-093",
+        "title": "海苔椒盐豆腐块"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-093",
+          "title": "海苔椒盐豆腐块",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-094",
+        "title": "孜然土豆鸡肉串"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-094",
+          "title": "孜然土豆鸡肉串",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-095",
+        "title": "脆皮紫菜虾饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-095",
+          "title": "脆皮紫菜虾饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-096",
+        "title": "玉米芝士鸡肉饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-096",
+          "title": "玉米芝士鸡肉饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-097",
+        "title": "椒盐豆腐薯角"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-097",
+          "title": "椒盐豆腐薯角",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-098",
+        "title": "香酥燕麦鸡柳"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-098",
+          "title": "香酥燕麦鸡柳",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-099",
+        "title": "蒜香奶油玉米排"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-099",
+          "title": "蒜香奶油玉米排",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-100",
+        "title": "芝麻红薯糯米饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-100",
+          "title": "芝麻红薯糯米饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-101",
+        "title": "蒜蓉粉丝蒸扇贝"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-101",
+          "title": "蒜蓉粉丝蒸扇贝",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-102",
+        "title": "香菇马蹄蒸肉饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-102",
+          "title": "香菇马蹄蒸肉饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-103",
+        "title": "豆豉南瓜蒸排骨"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-103",
+          "title": "豆豉南瓜蒸排骨",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-104",
+        "title": "金针菇蒸鸡卷"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-104",
+          "title": "金针菇蒸鸡卷",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-105",
+        "title": "虾仁玉子豆腐蒸蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-105",
+          "title": "虾仁玉子豆腐蒸蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-106",
+        "title": "梅菜芋头蒸五花"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-106",
+          "title": "梅菜芋头蒸五花",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-107",
+        "title": "姜丝冬菜蒸鱼片"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-107",
+          "title": "姜丝冬菜蒸鱼片",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-108",
+        "title": "蒜香丝瓜蒸粉丝"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-108",
+          "title": "蒜香丝瓜蒸粉丝",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-109",
+        "title": "香橙蒸鸡腿"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-109",
+          "title": "香橙蒸鸡腿",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-110",
+        "title": "香菇糯米蒸排骨"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-110",
+          "title": "香菇糯米蒸排骨",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-111",
+        "title": "芒果椰香奇亚燕麦杯"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-111",
+          "title": "芒果椰香奇亚燕麦杯",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-112",
+        "title": "紫薯酸奶坚果杯"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-112",
+          "title": "紫薯酸奶坚果杯",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-113",
+        "title": "香蕉花生燕麦饼"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-113",
+          "title": "香蕉花生燕麦饼",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-114",
+        "title": "南瓜牛奶烤蛋"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-114",
+          "title": "南瓜牛奶烤蛋",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-115",
+        "title": "苹果肉桂燕麦方"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-115",
+          "title": "苹果肉桂燕麦方",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-116",
+        "title": "黑芝麻山药糕"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-116",
+          "title": "黑芝麻山药糕",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-117",
+        "title": "红枣核桃蒸蛋糕"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-117",
+          "title": "红枣核桃蒸蛋糕",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-118",
+        "title": "椰香玉米烙"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-118",
+          "title": "椰香玉米烙",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-119",
+        "title": "抹茶红豆燕麦杯"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-119",
+          "title": "抹茶红豆燕麦杯",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    },
+    {
+      "canonical": {
+        "sheetId": 2026091901,
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-120",
+        "title": "芝麻花生糯米糍"
+      },
+      "duplicates": [
+        {
+          "sheetId": 812541719,
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-120",
+          "title": "芝麻花生糯米糍",
+          "treatment": "HOLD_DUPLICATE"
+        }
+      ],
+      "signals": [
+        "title",
+        "recipe",
+        "caption",
+        "asset-concept"
+      ],
+      "reason": "Strong title/body/recipe/caption evidence; chosen by completeness, review status and source detail. Human confirmation is still required."
+    }
+  ],
+  "reviewPairs": [
+    {
+      "kinds": [
+        "near-title"
+      ],
+      "left": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-007"
+      },
+      "right": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-068"
+      },
+      "recommendations": [
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-007",
+          "action": "KEEP"
+        },
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-068",
+          "action": "REWORK"
+        }
+      ],
+      "basis": "Heuristic completeness and textual similarity; human comparison required. No rows removed.",
+      "recommendedTreatment": "REWORK",
+      "reason": "Textual similarity requires human comparison; no automatic duplicate hold."
+    },
+    {
+      "kinds": [
+        "near-title"
+      ],
+      "left": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-007"
+      },
+      "right": {
+        "source": "Eunice Recipe Draft 100 - 2026-09-20",
+        "contentId": "EN-NEW-068"
+      },
+      "recommendations": [
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-007",
+          "action": "KEEP"
+        },
+        {
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-068",
+          "action": "REWORK"
+        }
+      ],
+      "basis": "Heuristic completeness and textual similarity; human comparison required. No rows removed.",
+      "recommendedTreatment": "REWORK",
+      "reason": "Textual similarity requires human comparison; no automatic duplicate hold."
+    },
+    {
+      "kinds": [
+        "caption"
+      ],
+      "left": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-041"
+      },
+      "right": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-101"
+      },
+      "recommendations": [
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-101",
+          "action": "KEEP"
+        },
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-041",
+          "action": "REWORK"
+        }
+      ],
+      "basis": "Heuristic completeness and textual similarity; human comparison required. No rows removed.",
+      "recommendedTreatment": "REWORK",
+      "reason": "Textual similarity requires human comparison; no automatic duplicate hold."
+    },
+    {
+      "kinds": [
+        "caption"
+      ],
+      "left": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-041"
+      },
+      "right": {
+        "source": "Eunice Recipe Draft 100 - 2026-09-20",
+        "contentId": "EN-NEW-101"
+      },
+      "recommendations": [
+        {
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-101",
+          "action": "KEEP"
+        },
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-041",
+          "action": "REWORK"
+        }
+      ],
+      "basis": "Heuristic completeness and textual similarity; human comparison required. No rows removed.",
+      "recommendedTreatment": "REWORK",
+      "reason": "Textual similarity requires human comparison; no automatic duplicate hold."
+    },
+    {
+      "kinds": [
+        "caption"
+      ],
+      "left": {
+        "source": "Eunice Recipe Draft 20 - 2026-09-19",
+        "contentId": "EN-NEW-101"
+      },
+      "right": {
+        "source": "Eunice Recipe Draft 100 - 2026-09-20",
+        "contentId": "EN-NEW-041"
+      },
+      "recommendations": [
+        {
+          "source": "Eunice Recipe Draft 20 - 2026-09-19",
+          "contentId": "EN-NEW-101",
+          "action": "KEEP"
+        },
+        {
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-041",
+          "action": "REWORK"
+        }
+      ],
+      "basis": "Heuristic completeness and textual similarity; human comparison required. No rows removed.",
+      "recommendedTreatment": "REWORK",
+      "reason": "Textual similarity requires human comparison; no automatic duplicate hold."
+    },
+    {
+      "kinds": [
+        "caption"
+      ],
+      "left": {
+        "source": "Eunice Recipe Draft 100 - 2026-09-20",
+        "contentId": "EN-NEW-041"
+      },
+      "right": {
+        "source": "Eunice Recipe Draft 100 - 2026-09-20",
+        "contentId": "EN-NEW-101"
+      },
+      "recommendations": [
+        {
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-101",
+          "action": "KEEP"
+        },
+        {
+          "source": "Eunice Recipe Draft 100 - 2026-09-20",
+          "contentId": "EN-NEW-041",
+          "action": "REWORK"
+        }
+      ],
+      "basis": "Heuristic completeness and textual similarity; human comparison required. No rows removed.",
+      "recommendedTreatment": "REWORK",
+      "reason": "Textual similarity requires human comparison; no automatic duplicate hold."
+    }
+  ]
+}

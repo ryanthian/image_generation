@@ -144,16 +144,20 @@ test("content review and generation can PASS without a Page profile while publis
   assert.ok(publishing.blockers.some((reason) => reason.includes("Facebook Page profile")));
 });
 
-test("a complete Page profile still requires Page-specific editorial fit before PASS", () => {
+test("Page fit blocks publishing but allows editorial image preparation", () => {
   const raw = recipeRecord();
   const review = JSON.parse(raw.Editorial_Review_JSON);
   review.page_fit_status = "DEFERRED";
   review.page_profile_id = "";
   review.page_profile_updated_at = "";
   raw.Editorial_Review_JSON = JSON.stringify(review);
-  const editorial = runEditorialReview(withApprovedPage(normalizeContentRecord(raw)));
-  assert.equal(editorial.status, "REVIEW");
-  assert.ok(editorial.issues.some((issue) => issue.code === "PAGE_AUDIENCE_FIT_NOT_REVIEWED"));
+  const content=withApprovedPage(normalizeContentRecord(raw));
+  const editorial = runEditorialReview(content);
+  assert.equal(editorial.status, "PASS");
+  assert.equal(deriveGenerationReadiness(content,{editorialReview:editorial}).ready,true);
+  const publishing=derivePublishingReadiness(content,{generationReadiness:{ready:true,blockers:[]},requiredImagesPresent:true,finalAssetsPresent:true,visualQcStatus:'PASS'});
+  assert.equal(publishing.ready,false);
+  assert.ok(publishing.blockers.some(reason=>reason.includes('Page')));
 });
 
 test("a direct reference cannot pass until the reviewer explicitly verifies it", () => {

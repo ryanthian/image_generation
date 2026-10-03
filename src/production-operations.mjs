@@ -1,4 +1,6 @@
 import { inspectSheetHeaders, isReservedSheetName, publicSheetTemplate, SHEET_TEMPLATES } from "./sheet-contracts.mjs";
+import {applyEditorialWork,classifyClaimRisk,sourceFingerprint} from './editorial-pipeline.mjs';
+import {runContentQc,runEditorialReview,deriveGenerationReadiness} from './content-model.mjs';
 
 export const WORKFLOW_STAGES = Object.freeze([
   "IDEA", "COPY_DRAFT", "EDITORIAL_REVIEW", "COPY_APPROVED", "VISUAL_VIDEO_PROMPT",
@@ -203,6 +205,7 @@ export class MemoryProductionStore {
   async saveSheetSettings(sheetId, targetPageProfileId, active) { const item = this.sheets.get(Number(sheetId)); if (!item) return null; if (targetPageProfileId !== undefined) item.targetPageProfileId = targetPageProfileId || ""; if (active !== undefined) item.active = Boolean(active); item.lastDiscoveredAt = now(); return structuredClone(item); }
   reviewKey(sheetId, contentId) { return `${Number(sheetId)}:${contentId}`; }
   async getReview(sheetId, contentId) { const value = this.reviews.get(this.reviewKey(sheetId, contentId)); return value ? structuredClone(value) : null; }
+  async listReviews(sheetId = null) { return [...this.reviews.values()].filter(value=>sheetId===null||value.sheetId===Number(sheetId)).map(value=>structuredClone(value)); }
   async saveReview(review) { this.reviews.set(this.reviewKey(review.sheetId, review.contentId), structuredClone(review)); return structuredClone(review); }
   async getWorkflow(sheetId, contentId) { return structuredClone(this.workflows.get(this.reviewKey(sheetId, contentId)) || null); }
   async saveWorkflow(workflow) { this.workflows.set(this.reviewKey(workflow.sheetId, workflow.contentId), structuredClone(workflow)); return structuredClone(workflow); }
@@ -241,6 +244,7 @@ export class D1ProductionStore {
   async saveSheetSettings(sheetId, pageProfileId, active) { const item = await this.getSheet(sheetId); if (!item) return null; if (pageProfileId !== undefined) item.targetPageProfileId = pageProfileId || ""; if (active !== undefined) item.active = Boolean(active); return this.writeSheet(item); }
   mapReview(row) { return row ? { sheetId: Number(row.sheet_id), contentId: row.content_id, review: JSON.parse(row.review_json), reviewer: row.reviewer_name, status: row.review_status, reviewedAt: row.reviewed_at } : null; }
   async getReview(sheetId, contentId) { return this.mapReview(await this.one("SELECT * FROM production_editorial_reviews WHERE sheet_id=? AND content_id=?", Number(sheetId), contentId)); }
+  async listReviews(sheetId = null) { return (await this.all(sheetId===null?"SELECT * FROM production_editorial_reviews":"SELECT * FROM production_editorial_reviews WHERE sheet_id=?",...(sheetId===null?[]:[Number(sheetId)]))).map(row=>this.mapReview(row)); }
   async saveReview(r) { await this.run(`INSERT INTO production_editorial_reviews (sheet_id,content_id,review_json,reviewer_name,review_status,reviewed_at) VALUES (?,?,?,?,?,?) ON CONFLICT(sheet_id,content_id) DO UPDATE SET review_json=excluded.review_json,reviewer_name=excluded.reviewer_name,review_status=excluded.review_status,reviewed_at=excluded.reviewed_at`, Number(r.sheetId), r.contentId, JSON.stringify(r.review), r.reviewer, r.status, r.reviewedAt); return this.getReview(r.sheetId, r.contentId); }
   mapWorkflow(row) { return row ? { sheetId: Number(row.sheet_id), contentId: row.content_id, stage: row.stage, actor: row.actor, note: row.note, updatedAt: row.updated_at } : null; }
   async getWorkflow(sheetId, contentId) { return this.mapWorkflow(await this.one("SELECT * FROM production_workflows WHERE sheet_id=? AND content_id=?", Number(sheetId), contentId)); }
@@ -298,6 +302,49 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
       if (body.targetPageProfileId && !await store.getProfile(body.targetPageProfileId)) return json({ ok: false, error: "Selected page profile does not exist." }, 400);
       const sheet = await store.saveSheetSettings(sheetId, body.targetPageProfileId, body.active);
       return sheet ? json({ ok: true, sheet }) : json({ ok: false, error: "Worksheet registry entry not found." }, 404);
+    }
+    if (request.method === 'GET' && url.pathname === '/api/production/editorial-work') {
+      const sheetId=url.searchParams.has('sheetId')?Number(url.searchParams.get('sheetId')):null;
+      if(sheetId!==null&&(!Number.isSafeInteger(sheetId)||sheetId<=0))return json({ok:false,error:'Invalid sheetId.'},400);
+      return json({ok:true,items:await store.listReviews(sheetId)});
+    }
+    if (request.method === 'POST' && url.pathname === '/api/production/editorial-work') {
+      const error=writeGuard(request);if(error)return json({ok:false,error},403);
+      const body=await readBody(request),sheetId=Number(body.sheetId),contentId=asText(body.contentId);
+      if(!Number.isSafeInteger(sheetId)||sheetId<=0||!contentId)return json({ok:false,error:'A valid Sheet and Content_ID are required.'},400);
+      const decision=asText(body.decision).toUpperCase(),reviewer=asText(body.reviewer);
+      if(!['APPROVED','NEEDS_CHANGES','HOLD','SKIP'].includes(decision))return json({ok:false,error:'Choose an editorial decision.'},400);
+      if(decision==='APPROVED'&&context.isHeldDuplicate?.(sheetId,contentId))return json({ok:false,error:'This record is held as a strong duplicate. Review the canonical record or record a rework decision first.'},422);
+      if(!reviewer)return json({ok:false,error:'Name the human reviewer before recording a decision.'},400);
+      const source=await validateRef(context,sheetId,contentId);if(!source)return json({ok:false,error:'Connected source verification is unavailable.'},503);
+      const fingerprint=await sourceFingerprint(source.raw);
+      if(!body.sourceFingerprint)return json({ok:false,error:'Reload the source before saving; a source fingerprint is required.'},400);
+      if(body.sourceFingerprint!==fingerprint)return json({ok:false,error:'The source changed since this review opened; reload before saving.'},409);
+      const originalProposal={title:source.title,hook:source.hookText,body:source.contentBody,caption:source.caption};
+      const proposal=Object.fromEntries(Object.entries(originalProposal).map(([key,value])=>[key,asText(body.proposal?.[key]??value)]));
+      if(Object.values(proposal).some(value=>value.length>30000)||!proposal.title||!proposal.body||!proposal.caption)return json({ok:false,error:'Proposed title, body and caption are required and must fit within 30,000 characters each.'},400);
+      const factualQuestions=Array.isArray(body.questions)?body.questions.map(asText).filter(Boolean).slice(0,20):[];
+      if(decision==='APPROVED'&&factualQuestions.length)return json({ok:false,error:'Resolve or remove the outstanding factual questions before approving editorial copy.'},422);
+      const candidate={...source,title:proposal.title,hookText:proposal.hook,contentBody:proposal.body,caption:proposal.caption};
+      const risk=classifyClaimRisk(candidate),approved=decision==='APPROVED',reviewStatus=approved?'PASS':decision==='HOLD'?'BLOCKED':decision==='SKIP'?'NOT_REVIEWED':'REVIEW';
+      const page=source.pageProfile,pageReady=Boolean(page?.active&&page.facebookPageId&&page.displayName&&page.audience&&page.primaryLanguage&&page.toneGuidance&&page.avoidTopics?.length);
+      const evidenceReferences=Array.isArray(body.evidenceReferences)?body.evidenceReferences.map(asText).filter(Boolean):[];
+      if(approved&&risk.tier!=='LOW'&&(body.evidenceVerified!==true||!evidenceReferences.length))return json({ok:false,error:`${risk.tier}-risk claims require a checked, identifiable supporting reference before approval.`},422);
+      if(approved&&[body.captionApproved,body.readerFacingCopyReviewed,body.claimSafetyOk,body.noInternalNotes,body.consistencyChecked].some(value=>value!==true))return json({ok:false,error:'Human caption, copy, claim, internal-note and consistency checks must all be confirmed.'},422);
+      const evidenceType=risk.tier==='LOW'?'SOURCE_INTERNAL':asText(body.evidenceType).toUpperCase()||'SOURCE_DIRECT';
+      const editorial={...(source.editorialReview||{}),schema_version:1,review_status:reviewStatus,reviewer,reviewed_at:now(),review_note:asText(body.reviewNote),audience_need:asText(body.audienceNeed),reader_value:asText(body.readerValue),
+        evidence_type:evidenceType,evidence:{type:evidenceType,references:evidenceReferences,notes:asText(body.evidenceNotes)},source_evidence_status:approved?(risk.tier==='LOW'?'INTERNAL_REVIEWED':'VERIFIED'):'UNVERIFIED',internal_consistency_checked:body.consistencyChecked===true,
+        caption_review_status:body.captionApproved===true?'PASS':'REVIEW',reader_facing_copy_reviewed:body.readerFacingCopyReviewed===true,internal_note_leakage:body.noInternalNotes===true?false:null,claim_safety_ok:body.claimSafetyOk===true,
+        page_fit_status:pageReady&&body.pageFitApproved===true?'PASS':pageReady?'REVIEW':'DEFERRED',page_profile_id:pageReady?page.profileId:'',page_profile_updated_at:pageReady?page.updatedAt||'':'',
+        limitations:asText(body.limitations??source.editorialReview?.limitations),claim_evidence:asText(body.claimEvidence??source.editorialReview?.claim_evidence),timing_guidance:asText(body.timingGuidance??source.editorialReview?.timing_guidance),serving_expectation:asText(body.servingExpectation??source.editorialReview?.serving_expectation),cause_explanation:asText(body.causeExplanation??source.editorialReview?.cause_explanation),consequence:asText(body.consequence??source.editorialReview?.consequence),expected_result:asText(body.expectedResult??source.editorialReview?.expected_result),option_suitability:asText(body.optionSuitability??source.editorialReview?.option_suitability),tradeoffs:asText(body.tradeoffs??source.editorialReview?.tradeoffs),decision_logic:asText(body.decisionLogic??source.editorialReview?.decision_logic)};
+      const evaluated=runEditorialReview({...candidate,editorialReview:editorial,editorialReviewPresent:true,editorialReviewParseError:''});
+      if(approved&&evaluated.status!=='PASS')return json({ok:false,error:'Editorial approval is blocked by unresolved review issues.',issues:evaluated.issues},422);
+      const work={version:1,decision,sourceFingerprint:fingerprint,proposal,editorial,riskTier:risk.tier,changes:Array.isArray(body.changes)?body.changes.map(asText).slice(0,20):[],questions:factualQuestions,updatedAt:now()};
+      const saved=await store.saveReview({sheetId,contentId,review:work,reviewer,status:reviewStatus,reviewedAt:editorial.reviewed_at});
+      const readback=await store.getReview(sheetId,contentId);
+      if(!readback||readback.review.sourceFingerprint!==fingerprint||readback.review.decision!==decision)return json({ok:false,error:'Editorial work readback did not match; treat save as failed.'},502);
+      const resolved=applyEditorialWork(source,readback,fingerprint);
+      return json({ok:true,item:saved,evaluated,applied:resolved.content!==source,risk},201);
     }
     if (request.method === "GET" && url.pathname === "/api/production/editorial-review") {
       const sheetId = Number(url.searchParams.get("sheetId")); const contentId = asText(url.searchParams.get("contentId"));
@@ -389,8 +436,11 @@ export async function handleProductionOperationsApi(request, env, url, injectedS
       if (!content) return json({ ok: false, error: "Content verification is unavailable." }, 503);
       const prior = await store.getWorkflow(sheetId, contentId);
       const currentStage = prior?.stage || inferWorkflowStage(content.lifecycleStatus, Boolean(content.contentBody || content.caption));
-      const review = content.editorialReviewPresent ? { source: "sheet", review: content.editorialReview } : null;
-      const gates = await context.getWorkflowGates?.(sheetId, contentId, content, review, body) || {};
+      const savedWork=await store.getReview(sheetId,contentId);
+      const resolved=applyEditorialWork(content,savedWork,await sourceFingerprint(content.raw));
+      const workflowContent=resolved.content;
+      const review = resolved.content!==content ? {source:'editorial-work',review:workflowContent.editorialReview} : content.editorialReviewPresent ? { source: "sheet", review: content.editorialReview } : null;
+      const gates = await context.getWorkflowGates?.(sheetId, contentId, workflowContent, review, body) || {};
       if (!asText(body.actor)) return json({ ok: false, error: "Record the operator name for this workflow transition." }, 400);
       if (["ASSET_CREATED", "QC_PASSED", "SCHEDULED_PUBLISHED"].includes(asText(body.nextStage)) && !asText(body.note)) return json({ ok: false, error: "Add a short human verification note for this production transition." }, 400);
       let resultRecorded = false;

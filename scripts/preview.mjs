@@ -5,6 +5,7 @@ import { buildOpportunityCanary, normalizePerformance } from "../src/opportunity
 import { deriveGenerationReadiness, normalizeContentRecord, runContentQc, runEditorialReview } from "../src/content-model.mjs";
 import { MemoryProductionStore, handleProductionOperationsApi, publicSourceState, publicSheetTemplate, SHEET_TEMPLATES } from "../src/production-operations.mjs";
 import { INITIAL_SOURCE_SEEDS } from "../src/sheet-contracts.mjs";
+import {sourceFingerprint} from '../src/editorial-pipeline.mjs';
 
 const port = Number(process.env.PORT || 4173);
 const store = new MemoryIntelligenceStore();
@@ -13,6 +14,8 @@ const files = {
   "/styles.css": ["public/styles.css", "text/css; charset=utf-8"],
   "/production-core.js": ["src/production-core.mjs", "text/javascript; charset=utf-8"],
   "/content-quality.js": ["src/content-quality.mjs", "text/javascript; charset=utf-8"],
+  "/editorial-pipeline.js": ["src/editorial-pipeline.mjs", "text/javascript; charset=utf-8"],
+  "/editorial-pipeline.mjs": ["src/editorial-pipeline.mjs", "text/javascript; charset=utf-8"],
   "/app.js": ["public/app.js", "text/javascript; charset=utf-8"],
   "/content-model.js": ["src/content-model.mjs", "text/javascript; charset=utf-8"],
   "/intelligence.js": ["public/intelligence.js", "text/javascript; charset=utf-8"],
@@ -21,6 +24,7 @@ const files = {
 };
 const recipes = JSON.parse(await readFile("data/recipes.json", "utf8"));
 const canary = JSON.parse(await readFile("data/content-v4-canary.json", "utf8"));
+const canonicalMap = JSON.parse(await readFile('output/canonical-content-map.json','utf8'));
 const opportunityHistory = JSON.parse(await readFile("data/v4-2-historical-performance.json", "utf8"));
 const productionStore = new MemoryProductionStore();
 const previewProfile = {
@@ -51,6 +55,7 @@ async function listPreviewSources() {
     .map((item) => ({ ...publicSourceState(item, profiles), source: 'local-preview', writable: false, rowCount: contentBySheetId.get(item.sheetId)?.records.length || 0 }));
 }
 const previewContext = {
+  isHeldDuplicate: (sheetId,contentId)=>canonicalMap.groups.some(group=>group.duplicates.some(item=>Number(item.sheetId)===Number(sheetId)&&item.contentId===contentId)),
   validateContentRef: async (sheetId, contentId) => {
     const raw = contentBySheetId.get(Number(sheetId))?.records.find((item) => String(item.Content_ID || "") === String(contentId));
     if (!raw) return { ok: false, status: 404, error: "Content_ID was not found in this local preview snapshot." };
@@ -67,6 +72,14 @@ const previewContext = {
 
 createServer(async (incoming, outgoing) => {
   const url = new URL(incoming.url, `http://${incoming.headers.host}`);
+  if(incoming.method==='GET'&&url.pathname==='/api/editorial/batch'){
+    const batch=JSON.parse(await readFile('output/production-batch-01.json','utf8'));
+    outgoing.writeHead(200,{'content-type':'application/json; charset=utf-8'});outgoing.end(JSON.stringify({ok:true,batch}));return;
+  }
+  if(incoming.method==='GET'&&url.pathname==='/api/editorial/canonical-map'){
+    const map=JSON.parse(await readFile('output/canonical-content-map.json','utf8'));
+    outgoing.writeHead(200,{'content-type':'application/json; charset=utf-8'});outgoing.end(JSON.stringify({ok:true,map}));return;
+  }
   if (url.pathname.startsWith("/api/intelligence/")) {
     const chunks = [];
     for await (const chunk of incoming) chunks.push(chunk);
@@ -91,8 +104,10 @@ createServer(async (incoming, outgoing) => {
     const selectedProfile = profiles.find((item) => item.profileId === source.targetPageProfileId) || null;
     const sheets = await listPreviewSources();
     const sourceState = sheets.find((item) => item.sheetId === source.sheetId);
+    const savedWorks=await productionStore.listReviews(source.sheetId),byId=new Map(savedWorks.map(item=>[item.contentId,item]));
+    const editorialWork=Object.fromEntries(await Promise.all(snapshot.records.map(async record=>{const contentId=String(record.Content_ID||record.content_id||'');const saved=byId.get(contentId);return [contentId,saved?{...saved,stale:saved.review.sourceFingerprint!==await sourceFingerprint(record)}:null];})));
     outgoing.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    outgoing.end(JSON.stringify({ ok: true, source: "local-preview", writable: false, sheetId: source.sheetId, sheetName: source.title, setupStatus: sourceState?.setupStatus, setupReasons: sourceState?.setupReasons || [], sourceState, pageProfile: selectedProfile, pageProfileComplete: Boolean(selectedProfile?.active), profiles, sheets, rejected: snapshot.rejected || [], totalRows: snapshot.totalRows ?? snapshot.records.length, records: source.active && source.schemaStatus === "READY" ? snapshot.records : [] }));
+    outgoing.end(JSON.stringify({ ok: true, source: "local-preview", writable: false, sheetId: source.sheetId, sheetName: source.title, setupStatus: sourceState?.setupStatus, setupReasons: sourceState?.setupReasons || [], sourceState, pageProfile: selectedProfile, pageProfileComplete: Boolean(selectedProfile?.active), profiles, sheets, rejected: snapshot.rejected || [], totalRows: snapshot.totalRows ?? snapshot.records.length, records: source.active && source.schemaStatus === "READY" ? snapshot.records : [], editorialWork }));
     return;
   }
   if (incoming.method === "GET" && url.pathname === "/api/sheets") {

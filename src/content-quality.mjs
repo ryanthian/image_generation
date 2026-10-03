@@ -1,4 +1,5 @@
 /** Explainable heuristic audit. Scores are not measured performance or human approval. */
+import {classifyClaimRisk} from './editorial-pipeline.mjs';
 const clean=v=>String(v||'').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
 export function auditContent(content,{duplicateSignals=[]}={}) {
   const body=String(content.contentBody||''),caption=String(content.caption||''),hook=String(content.hookText||content.title||'');
@@ -11,7 +12,8 @@ export function auditContent(content,{duplicateSignals=[]}={}) {
   const generic=(copy.match(ai)||[]).length;
   const risky=/(?:治愈|治疗|降血糖|排毒|保证瘦|百分百|保证赚钱|guaranteed)/i.test(copy);
   const price=/RM\s*\d|省下\s*\d|\d+%/.test(copy) && !content.priceClaim?.verified;
-  const evidence=metadata.source_evidence_status==='VERIFIED' && (metadata.evidence?.references?.length || metadata.claim_evidence);
+  const evidence=(metadata.source_evidence_status==='VERIFIED' && (metadata.evidence?.references?.length || metadata.claim_evidence)) ||
+    (classifyClaimRisk(content).tier==='LOW' && metadata.source_evidence_status==='INTERNAL_REVIEWED' && metadata.internal_consistency_checked===true);
   const distinct=new Set(plan.filter(a=>a.asset_type!=='COVER').map(a=>clean(a.overlay_text))).size;
   const dimensions={
     hook_quality:{max:10,score:hook.length>=8 && hook.length<=65 && generic===0?9:hook?5:0},
