@@ -18,6 +18,7 @@ const APP = __APP_JS__;
 const CONTENT_MODEL = __CONTENT_MODEL_JS__;
 const PRODUCTION_CORE = __PRODUCTION_CORE_JS__;
 const CONTENT_QUALITY = __CONTENT_QUALITY_JS__;
+const PRODUCTION_REPAIR=__PRODUCTION_REPAIR_JS__;
 const PRODUCTION_ASSISTANT = __PRODUCTION_ASSISTANT_JS__;
 const EDITORIAL_PIPELINE = __EDITORIAL_PIPELINE_JS__;
 const BATCH_01 = __BATCH_01_JSON__;
@@ -416,6 +417,7 @@ export default {
     if (url.pathname === "/production-core.js" || url.pathname === "/production-core.mjs") return new Response(PRODUCTION_CORE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if ((url.pathname === "/content-quality.js" || url.pathname === "/content-quality.mjs")) return new Response(CONTENT_QUALITY, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === '/editorial-pipeline.js' || url.pathname === '/editorial-pipeline.mjs') return new Response(EDITORIAL_PIPELINE, {headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
+    if(url.pathname==="/production-repair.mjs")return new Response(PRODUCTION_REPAIR,{headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
     if (url.pathname === "/production-assistant.mjs") return new Response(PRODUCTION_ASSISTANT, {headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
     if (url.pathname === "/content-model.js" || url.pathname === "/content-model.mjs") return new Response(CONTENT_MODEL, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/intelligence.js") return new Response(INTELLIGENCE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });

@@ -1,4 +1,4 @@
-import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken} from '/production-assistant.mjs';
+import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken,findNextProductionReadyContent} from '/production-assistant.mjs';
 import {
   buildAssetFilename,
   buildSlotPrompt,
@@ -19,7 +19,7 @@ import {
 import { assetSemanticKey, sourceLabel, imageQc, verifyImageSignature, hashBlob, planImports, fitText, wrapText, sessionSignature, productionGates, exportEntries, createZip, safeFilename, BATCH_LIMIT } from "/production-core.js";
 import { auditContent } from "/content-quality.js";
 import {applyEditorialWork,recordKey} from "/editorial-pipeline.mjs";
-import {createProductionBatch,resolveProductionBatch,planBatchImports,batchImagePrompt,batchPostStamp} from '/batch-production.mjs';
+import {createProductionBatch,resolveProductionBatch,planBatchImports,batchImagePrompt,batchPostStamp,reconcileProductionBatch} from '/batch-production.mjs';
 
 const state = {
   unmatched: [],
@@ -337,6 +337,7 @@ function applyContent(content) {
   state.appliedWork=applied.content!==content&&!savedWork?.stale;
   state.originalContent={...applied.content,pageProfile:state.pageProfile||content.pageProfile||null};
   state.productionSession=readProductionSession(state.originalContent);
+  $('optimiseState').textContent='AI REPAIRING…';
   state.assessment=assessSelected();
   state.content=state.assessment.content;
   state.previewIndex=0;
@@ -375,7 +376,8 @@ function applyContent(content) {
   renderManifest();
   renderWorkflow();
   renderResults();
-  state.contentReady=Promise.all([loadContentState(token).catch(error=>toast(error.message,true)),loadContentOperations(token).catch(error=>toast(`Editorial/workflow state could not be loaded: ${error.message}`,true))]);
+  const productionOverrideKey=keyFor('production-override','version');
+  state.contentReady=Promise.all([putStored('assets',productionOverrideKey,state.assessment.productionOverride).catch(error=>toast(`Production override could not be persisted: ${error.message}`,true)),loadContentState(token).catch(error=>toast(error.message,true)),loadContentOperations(token).catch(error=>toast(`Editorial/workflow state could not be loaded: ${error.message}`,true))]);
 }
 
 function renderQc() {
@@ -680,7 +682,7 @@ function renderOptions(records) {
 
 function queueKey(row) { return recordKey(row.sheetId, row.contentId); }
 function currentQueueRow() { return state.editorialRows.find(row => Number(row.sheetId)===Number(state.sourceId) && row.contentId===state.content?.contentId); }
-function batchItem(row) { return state.editorialBatch?.items?.find(item=>Number(item.sheetId)===Number(row.sheetId)&&item.contentId===row.contentId); }
+function batchItem(row) { const current=state.productionBatch?.number===1?state.productionBatch.posts:null;return (current||state.editorialBatch?.items||[]).find(item=>Number(item.sheetId)===Number(row.sheetId)&&item.contentId===row.contentId); }
 function renderEditorialQueue(){
   const filter=$('queueFilter').value,search=$('queueSearch').value.trim().toLowerCase(),showDup=$('queueShowDuplicates').checked;
   for(const row of state.editorialRows){const a=assessProduction(row.content,{session:readProductionSession(row.content,row.sheetId),duplicateStatus:row.duplicateStatus});row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.riskTier=a.risk.tier;}
@@ -717,11 +719,13 @@ async function loadEditorialQueue(){
     }
     state.editorialRows=rows.sort((a,b)=>(b.recommendation==='PRODUCE')-(a.recommendation==='PRODUCE')||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();await refreshProductionBatch();
     if(state.originalContent){state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderSlots();}
+    if(state.assessment?.gaps.length&&!state.deliberateContentSelection&&!state.batchBusy)queueMicrotask(()=>continueWithGoodContent());
     $('platformStatus').textContent=new Set(rows.map(r=>r.sheetId)).size===3?'PRODUCTION READY':'PRODUCTION READY WITH WARNINGS';$('platformHint').textContent=`${sourceResults.length}/3 sources · ${rows.length} records · per-content gates`;
   }catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
 }
 
 async function openQueueItem(row) {
+  state.deliberateContentSelection=true;
   if(!row||state.batchBusy&&!state.batchInternal)return;
   if(Number(state.sourceId)===Number(row.sheetId)&&state.records.some(item=>item.contentId===row.contentId))applyContent(state.records.find(item=>item.contentId===row.contentId));
   else await loadSource(String(row.sheetId),row.contentId);
@@ -739,7 +743,9 @@ function renderEditorialWorkspace(){
   $('optimiseEngine').textContent=`Source-based automatic compiler · ${p.structure}. Facts and quantities remain source-backed. No human approval is inferred.`;
   $('workspaceAssetPlan').innerHTML=state.plan.map(asset=>`<p><strong>${asset.sequence} · ${escapeHtml(asset.title)}</strong><br><small>${escapeHtml(asset.overlay_text)}</small></p>`).join('');
   $('optimiseState').textContent=`AI OPTIMISED · ${a.recommendation}`;
-  $('factQuestions').hidden=!a.gaps.length;$('factQuestions').innerHTML=a.gaps.length?`<h3>Missing information</h3>${a.gaps.map(g=>`<p>${escapeHtml(g)}</p>`).join('')}<p class="helper">Correct only these facts in the source, then Refresh Sheets. No reviewer form is required.</p>`:'';
+  const repair=a.repair,details=[...repair.autoFixed,...repair.warnings,...repair.critical];
+  $('factQuestions').hidden=false;$('factQuestions').classList.toggle('repair-ready',a.ready);$('factQuestions').innerHTML=`<p class="eyebrow">CONTENT CHECK</p><strong>${a.gaps.length?'SOURCE INCOMPLETE · SKIP':a.ready?'✓ AI FIXED · READY TO PRODUCE':a.recommendation==='IMPROVE'?'AI PREPARED · IMPROVE':'SKIP · source support or quality insufficient'}</strong><p>AI repaired ${repair.autoFixed.length} content issues · ${repair.warnings.length} warnings · ${repair.critical.length} critical unresolved</p>${a.gaps.length?`<p>${escapeHtml(a.gaps[0])}</p>`:''}${a.recommendation==='SKIP'?'<button id="repairNext" class="btn btn-primary" type="button">Skip &amp; Next Good Content →</button>':''}<details id="repairDetails"><summary>View Details</summary>${details.map(i=>`<p>${escapeHtml(i.detail)}</p>`).join('')}${a.verified?'':`<p>${escapeHtml(a.risk.reasons.join(' · '))}</p>`}</details>`;
+  if($('repairNext'))$('repairNext').onclick=()=>continueWithGoodContent();
   $('claimVerification').hidden=a.verified;$('claimReason').textContent=a.risk.reasons.join(' · ');$('claimList').innerHTML=a.claims.map(c=>`<li>${escapeHtml(c)}</li>`).join('');
 }
 function renderProductionSummary(){
@@ -750,7 +756,7 @@ function renderProductionSummary(){
   $('potentialDimensions').innerHTML=Object.entries(a.dimensions).map(([name,value])=>`<div><dt>${escapeHtml(name)}</dt><dd>${value}/10</dd></div>`).join('');
   $('qualityFindings').innerHTML=a.findings.slice(0,5).map(f=>`<li>${escapeHtml(f)}</li>`).join('');
   $('monetizationScore').textContent=`CONTENT POTENTIAL ${a.score}/100`;$('monetizationDetails').textContent=Object.entries(a.dimensions).map(([k,v])=>`${k} ${v}/10`).join(' · ')+' · Internal production score; no guaranteed Facebook earnings.';
-  $('autoImprove').textContent=state.productionSession?.iteration||a.recommendation==='IMPROVE'?'Improve Again':'Auto Improve';
+  $('autoImprove').textContent=a.recommendation==='SKIP'?'View Missing Information':'Improve Again';
   $('primaryAction').className='btn btn-primary';$('autoImprove').className='btn btn-info';$('workNext').className='btn btn-neutral';
   renderVisualPlan();
   $('imageQueueProgress').textContent=`${state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length} / ${state.manifest.entries.length} READY`;
@@ -762,7 +768,7 @@ function renderProductionSummary(){
   $('downloadHeading').textContent=state.gates?.exportReady?'Ready to Download':'Download';
   const row=currentQueueRow();if(row){row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.progress=action.detail;row.nextAction=action.label;}
   const imageCount=state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length;
-  const suggested=state.editorialRows.find(row=>row.recommendation==='PRODUCE'&&row.duplicateStatus!=='HOLD_DUPLICATE'&&!['PUBLISHED','Posted'].includes(row.lifecycleStatus)&&!readProductionSession(row.content,row.sheetId).downloadedAt);
+  const suggested=findNextProductionReadyContent(state.editorialRows);
   state.quickRow=imageCount?null:suggested;
   $('resumeHint').textContent=imageCount?`CONTINUE PRODUCTION · ${state.content.contentId} · Images ${imageCount}/${state.manifest.entries.length} · ${action.detail}`:suggested?`NEXT BEST CONTENT · ${suggested.score} · PRODUCE`:`CONTINUE PRODUCTION · ${state.content.contentId} · ${action.detail}`;
   $('quickTitle').textContent=state.quickRow?.title||state.content.title;
@@ -774,8 +780,8 @@ async function primaryProductionAction(){
   if(state.busy||state.batchBusy||!state.nextBestAction)return;
   const {kind}=state.nextBestAction;
   if(kind==='CANONICAL'){const row=currentQueueRow(),better=state.editorialRows.find(r=>queueKey(r)===row?.canonicalKey);return openQueueItem(better);}
-  if(kind==='NEXT')return nextEditorialReview();
-  if(kind==='FACT'||kind==='CLAIM')return goStage('optimise');
+  if(kind==='NEXT')return continueWithGoodContent();
+  if(kind==='FACT'||kind==='CLAIM')return continueWithGoodContent();
   if(kind==='IMPROVE')return autoImprove();
   if(kind==='IMAGES'){renderVisualPlan();return goStage('images');}
   if(kind==='BUILD'){await buildAssets();return goStage('assets');}
@@ -784,6 +790,7 @@ async function primaryProductionAction(){
 }
 function autoImprove(){
   if(state.busy||state.batchBusy||!state.originalContent)return;
+  if(state.assessment.recommendation==='SKIP'){goStage('factQuestions');$('repairDetails').open=true;return;}
   const before=state.assessment.score;
   saveProductionSession({iteration:(state.productionSession.iteration||0)+1,override:undefined});
   const selected=state.originalContent;applyContent(selected);renderEditorialQueue();goStage('optimise');
@@ -794,8 +801,14 @@ function overrideDecision(decision){
   if(decision==='PRODUCE'&&(state.assessment.gaps.length||!state.assessment.verified||state.assessment.duplicateStatus==='HOLD_DUPLICATE'))return toast('Resolve the specific fact, claim or duplicate first.',true);
   saveProductionSession({override:decision});state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderEditorialQueue();
 }
-function nextSuggested(){return state.editorialRows.find(row=>row.recommendation==='PRODUCE'&&row.duplicateStatus!=='HOLD_DUPLICATE'&&!['PUBLISHED','Posted'].includes(row.lifecycleStatus)&&!(Number(row.sheetId)===Number(state.sourceId)&&row.contentId===state.content?.contentId)&&!readProductionSession(row.content,row.sheetId).downloadedAt);}
-function nextEditorialReview(){const rows=$('queueFilter').value==='BATCH 01'?state.editorialRows.filter(row=>batchItem(row)).sort((a,b)=>batchItem(a).batchOrder-batchItem(b).batchOrder):state.editorialRows.filter(row=>row.duplicateStatus!=='HOLD_DUPLICATE'&&!['PUBLISHED','Posted'].includes(row.lifecycleStatus));const best=nextSuggested();if(best&&$('queueFilter').value!=='BATCH 01')return openQueueItem(best);if(!rows.length)return;const index=rows.findIndex(row=>Number(row.sheetId)===Number(state.sourceId)&&row.contentId===state.content?.contentId);return openQueueItem(rows[(index+1)%rows.length]);}
+function nextSuggested(){return findNextProductionReadyContent(state.editorialRows,{excludeKeys:[recordKey(state.sourceId,state.content?.contentId)]});}
+function nextEditorialReview(){return continueWithGoodContent();}
+async function continueWithGoodContent({quick=false}={}){
+ if(state.busy||state.batchBusy||state.screeningProduction)return;state.screeningProduction=true;const previous=state.content?.contentId,reason=state.assessment?.skipReason,excluded=quick?[]:[recordKey(state.sourceId,previous)];
+ try{if(!state.editorialRows.length)await loadEditorialQueue();for(let attempt=0;attempt<state.editorialRows.length;attempt++){const candidate=findNextProductionReadyContent(state.editorialRows,{excludeKeys:excluded});if(!candidate)break;excluded.push(recordKey(candidate.sheetId,candidate.contentId));await loadSource(String(candidate.sheetId),candidate.contentId);await state.contentReady;candidate.lifecycleStatus=state.originalContent?.lifecycleStatus;candidate.publicationRecorded=(state.resultsSummary?.rows||[]).some(r=>r.contentId===candidate.contentId&&r.postUrl&&Number.isFinite(Date.parse(r.publishedAt)));candidate.downloaded=!!readProductionSession(state.originalContent,candidate.sheetId).downloadedAt;if(state.assessment?.ready&&!candidate.publicationRecorded&&!candidate.downloaded&&!/^(?:posted|published|scheduled_published|results_recorded)$/i.test(candidate.lifecycleStatus||'')){state.deliberateContentSelection=false;goStage('images');if(reason)toast(`Skipped ${previous} · ${reason==='CRITICAL_INFO_MISSING'?'essential source facts unavailable':reason==='DUPLICATE'?'duplicate': 'source support or quality insufficient'}. Loaded next production-ready content.`);return;}candidate.assessment=state.assessment;candidate.recommendation=state.assessment.recommendation;}
+ toast('No complete, low-risk content remains. Current work is preserved; choose another source record to inspect.',true);
+ }catch(error){toast(error.message,true);}finally{state.screeningProduction=false;}
+}
 function finalPages(){return state.plan.flatMap(item=>{const asset=state.assets[item.asset_id];return asset?(asset.pages?.length?asset.pages:[asset]).map(page=>({page,item,asset})):[];});}
 function renderFinalPreview(){
   clearPreviewUrls('final');const pages=finalPages();state.previewIndex=Math.max(0,Math.min(state.previewIndex||0,pages.length-1));const current=pages[state.previewIndex];
@@ -818,6 +831,7 @@ function repairFinal(status){if(state.busy||state.batchBusy)return;const current
 function saveSimpleImageReview(slotId,status){if(state.busy||state.batchBusy)return;const image=state.images[slotId],entry=state.manifest.entries.find(e=>e.slotId===slotId);if(!image||!entry)return;const review={status,method:'SIMPLE_IMAGE_REVIEW',imageRevision:image.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[slotId]=review;localStorage.setItem(slotReviewKey(slotId),JSON.stringify(review));invalidateReview();renderSlots();renderQc();if(status!=='PASS')copyText(`FIX / REGENERATE THIS IMAGE ONLY. Preserve other images.\n\n${buildSlotPrompt(state.content,slotId)}`,'Affected image prompt copied.');}
 
 function moveContent(direction) {
+  state.deliberateContentSelection=true;
   const index = state.records.findIndex((item) => item.contentId === state.content.contentId);
   const next = (index + direction + state.records.length) % state.records.length;
   renderOptions(state.records);
@@ -1103,7 +1117,8 @@ function renderVisualPlan(){
  $('visualPlanCount').textContent=`${entries.length} images required · estimated generations: ${entries.length}`;
  $('visualPlanJobs').innerHTML=entries.map(e=>`<li><b>${String(e.sequence).padStart(2,'0')} ${escapeHtml(e.label)}</b> <small>${escapeHtml(e.expectedFilename)}</small></li>`).join('');
  $('visualPlanHint').textContent=plan?`${plan.previousImageCount} → ${plan.imageCount} source images · all source instructions retained.${plan.aboveTargetReason?' '+plan.aboveTargetReason:''}`:'Every image has a distinct source-defined job.';
- $('startImageProduction').disabled=!state.assessment?.ready||state.busy||state.batchBusy;
+ $('startImageProduction').disabled=state.busy||state.batchBusy||!state.assessment;$('startImageProduction').textContent=state.assessment?.ready?'Start Image Production →':'Skip & Next Good Content →';
+ if(state.assessment&&!state.assessment.ready)$('slotHelper').textContent=`${state.assessment.gaps.length?'Source incomplete': 'Source support or quality insufficient'} · ${state.assessment.gaps[0]||state.assessment.risk.reasons.join(' · ')} Use Skip & Next Good Content to continue.`;
  $('regenerateVisualPlan').disabled=state.busy||state.batchBusy;
 }
 function activeProductionBatch(){try{const value=JSON.parse(localStorage.getItem('capc:activeImageBatch')||'null');return value&&Array.isArray(value.posts)?value:null;}catch{return null;}}
@@ -1114,6 +1129,7 @@ async function refreshProductionBatch(){
  for(const row of state.editorialRows||[]){row.assessment=assessProduction(row.content,{session:readProductionSession(row.content,row.sheetId),duplicateStatus:row.duplicateStatus});row.downloaded=!!readProductionSession(row.content,row.sheetId).downloadedAt;}
  const [imagesByKey,assetsByKey]=state.productionBatch?await Promise.all([storedMap('images'),storedMap('assets')]):[new Map(),new Map()];if(token!==state.batchProgressToken)return;
  const visualByKey=new Map(),reviewsByKey=new Map();for(const post of state.productionBatch?.posts||[]){const key=`${post.sheetId}:${post.contentId}`;visualByKey.set(key,localStorage.getItem(`capc:visual:${key}:review:visual`));for(const storageKey of imagesByKey.keys())if(storageKey.startsWith(`${key}:image:`)){const slot=storageKey.slice(`${key}:image:`.length);try{reviewsByKey.set(`${key}:image-review:${slot}`,JSON.parse(localStorage.getItem(`capc:image-review:${key}:image-review:${slot}`)||'null'));}catch{}}}
+ const cleanup=reconcileProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey});if(cleanup.changed){persistProductionBatch(cleanup.batch);renderEditorialQueue();}if(cleanup.replacements.length)toast(`${cleanup.replacements.length} incomplete batch posts replaced with screened reserve content.`);
  state.productionBatchResolved=resolveProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey,visualByKey,reviewsByKey});renderProductionBatch();
 }
 function renderProductionBatch(){
@@ -1121,10 +1137,11 @@ function renderProductionBatch(){
  $('productionBatchTitle').textContent=batch?`BATCH ${String(batch.number).padStart(2,'0')} · ${r.posts.length} posts`:'Batch image production';
  $('productionBatchHint').textContent=batch?`${r.posts.length} selected / ${batch.requestedCount} requested · ${r.totalImages} images required · ${r.posts.length?(r.totalImages/r.posts.length).toFixed(1):0} per post${r.posts.length<batch.requestedCount?' · Only strong eligible content selected.':''}`:'Strong complete low-risk posts, with variety and duplicates excluded.';
  $('productionBatchStats').innerHTML=batch?[['Posts Ready',r.posts.filter(p=>p.valid).length],['Images Ready',`${r.imagesReady} / ${r.totalImages}`],['Posts Built',`${r.builtCount} / ${r.posts.length}`],['Ready to Download',r.downloadReady]].map(([name,value])=>`<div class="card card-stats"><span>${name}</span><strong>${value}</strong></div>`).join(''):'';
+ $('batchScreeningSummary').textContent=batch?.summary?`Requested ${batch.requestedCount} · Evaluated ${batch.summary.evaluated} · Selected ${batch.summary.selected} · Auto repaired ${batch.summary.autoRepaired} · Skipped incomplete ${batch.summary.skippedIncomplete} · Duplicate ${batch.summary.skippedDuplicate} · Low quality ${batch.summary.skippedLowQuality} · Reserve ${batch.summary.reserve} · Replaced ${batch.summary.replaced}`:'';
  const next=r.next;$('batchNextImage').textContent=next?`NEXT IMAGE · P${String(next.postNumber).padStart(2,'0')} · ${String(next.sequence).padStart(2,'0')} ${next.label}`:batch?'Images complete · build and inspect ready posts.':'Select a batch to begin.';
  $('batchContinue').hidden=!batch;$('batchResumeLabel').textContent=batch?`CONTINUE BATCH ${String(batch.number).padStart(2,'0')} · ${r.imagesReady}/${r.totalImages} images ready`:'';
  for(const id of ['batchCopyNext','batchCopyPost'])$(id).disabled=busy||!next;
- $('batchCopyAll').disabled=busy||!next||!r.posts.length||r.posts.some(p=>!p.valid);$('batchImport').disabled=busy||!r.entries.some(e=>e.valid);$('batchBuildReady').disabled=busy||!r.readyToBuild;$('batchBuildReady').textContent=`Build ${r.readyToBuild||0} Ready Posts`;
+ $('batchCopyAll').disabled=busy||!next||!r.posts.length;$('batchImport').disabled=busy||!r.entries.some(e=>e.valid);$('batchBuildReady').disabled=busy||!r.readyToBuild;$('batchBuildReady').textContent=`Build ${r.readyToBuild||0} Ready Posts`;
  $('batchDownloadReady').disabled=busy||!r.downloadReady;$('batchDownloadReady').textContent=`Download ${r.downloadReady||0} Ready Posts`;
  document.querySelectorAll('[data-batch-size]').forEach(b=>b.disabled=busy||!state.editorialRows?.length);
  $('productionBatchRows').innerHTML=r.posts.map(p=>`<tr data-batch-post="${p.postNumber}"><td><b>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</b><br><small>${escapeHtml(p.contentId)} · ${escapeHtml(p.content?.contentType||'Source unavailable')}</small></td><td>${p.imageCount}/${p.entries.length}</td><td>${escapeHtml(p.status)}</td><td><button type="button" class="btn btn-neutral" data-batch-open="${p.postNumber}" ${busy?'disabled':''}>${p.built?'Preview Final →':'Open Post →'}</button>${!p.valid?`<button class="btn btn-neutral" data-batch-refresh="${p.postNumber}" ${busy?'disabled':''}>Refresh This Plan</button>`:''}</td></tr>`).join('');
@@ -1154,7 +1171,7 @@ async function importBatchImages(files){
  setBatchBusy(true);try{await refreshProductionBatch();const {matched,unmatched}=planBatchImports(list,state.productionBatchResolved);state.batchUnmatched=unmatched;let imported=0;for(const {file,entry} of matched){try{await storeBatchImage(entry,file);imported++;}catch(error){state.batchUnmatched.push({file,reason:error.message});}}await refreshProductionBatch();renderBatchExceptions();if(state.content)await loadContentState();toast(`${imported} matched · ${state.batchUnmatched.length} need attention.`);}catch(error){toast(error.message,true);}finally{$('batchFiles').value='';setBatchBusy(false);}
 }
 async function buildReadyBatchPosts(){
- if(state.batchBusy||state.busy)return;setBatchBusy(true);try{await refreshProductionBatch();const posts=state.productionBatchResolved.posts.filter(p=>p.readyToBuild);let built=0;for(const post of posts){$('productionBatchHint').textContent=`Building P${post.postNumber} · ${post.title}`;await activateBatchPost(post);await buildAssets(true);refreshStale();if(!state.gates?.finalAssetsBuilt)throw Error(`P${post.postNumber} did not build. See its error.`);built++;}await refreshProductionBatch();goStage('batchProduction');toast(`${built} posts built. Inspect each Final preview; completed posts can download independently.`);}catch(error){toast(error.message,true);}finally{setBatchBusy(false);}
+ if(state.batchBusy||state.busy)return;setBatchBusy(true);try{await refreshProductionBatch();const posts=state.productionBatchResolved.posts.filter(p=>p.readyToBuild);let built=0;const failed=[];for(const post of posts){try{$('productionBatchHint').textContent=`Building P${post.postNumber} · ${post.title}`;await activateBatchPost(post);await buildAssets(true);refreshStale();if(!state.gates?.finalAssetsBuilt)throw Error(`P${post.postNumber} did not build. See its error.`);built++;}catch(error){failed.push(`P${post.postNumber}: ${error.message}`);}}await refreshProductionBatch();goStage('batchProduction');toast(`${built} posts built. ${failed.length?`${failed.length} posts need attention: ${failed.join(" · ")}.`:"Inspect each Final preview; completed posts can download independently."}`,!!failed.length);}catch(error){toast(error.message,true);}finally{setBatchBusy(false);}
 }
 function packageFiles(content,plan,assets,assessment,source,extra={}){
  const entries=exportEntries(content,plan,assets),folder=safeFilename(`${content.contentId}_${content.title}`),prefix=extra.batchPostPrefix?`${extra.batchPostPrefix}_${folder}`:folder;
@@ -1172,13 +1189,13 @@ async function downloadReadyBatchPosts(){
 function bindBatchEvents(){
  const open=()=>{$('batchProduction').hidden=false;refreshProductionBatch().then(()=>goStage('batchProduction')).catch(e=>toast(e.message,true));};$('openBatch').onclick=open;$('quickBatch').onclick=open;
  document.querySelectorAll('[data-batch-size]').forEach(b=>b.onclick=()=>chooseProductionBatch(Number(b.dataset.batchSize)));
- $('refreshProductionBatch').onclick=()=>refreshProductionBatch().catch(e=>toast(e.message,true));$('continueBatch').onclick=()=>{const e=state.productionBatchResolved?.next;return e?openBatchPost(e.postNumber):goStage('batchProduction');};
+ $('refreshProductionBatch').onclick=()=>{if(state.batchBusy||state.busy)return;return loadEditorialQueue().catch(e=>toast(e.message,true));};$('continueBatch').onclick=()=>{const e=state.productionBatchResolved?.next;return e?openBatchPost(e.postNumber):goStage('batchProduction');};
  $('batchImport').onclick=()=>$('batchFiles').click();$('batchFiles').onchange=()=>importBatchImages($('batchFiles').files);
  const zone=$('batchDropzone');for(const event of ['dragenter','dragover'])zone.addEventListener(event,e=>{e.preventDefault();zone.classList.add('dragover');});for(const event of ['dragleave','drop'])zone.addEventListener(event,e=>{e.preventDefault();zone.classList.remove('dragover');});zone.addEventListener('drop',e=>importBatchImages(e.dataTransfer.files));
  $('batchCopyNext').onclick=()=>{const e=state.productionBatchResolved?.next;if(e)copyText(batchImagePrompt(state.productionBatch,state.productionBatchResolved,{entry:e}),'Next batch image prompt copied.');};
  for(const [id,scope] of [['batchCopyPost','post'],['batchCopyAll','all']])$(id).onclick=()=>{try{copyText(batchImagePrompt(state.productionBatch,state.productionBatchResolved,scope==='post'?{postNumber:state.productionBatchResolved.next?.postNumber}:{}),'Batch production prompt copied.');}catch(error){toast(error.message,true);}};
  $('batchBuildReady').onclick=buildReadyBatchPosts;$('batchDownloadReady').onclick=downloadReadyBatchPosts;
- $('startImageProduction').onclick=()=>{goStage('images');$('copyNextPrompt').focus();};$('regenerateVisualPlan').onclick=()=>{if(!state.originalContent||state.busy||state.batchBusy)return;applyContent(state.originalContent);renderVisualPlan();toast('Source-based image plan recalculated. Original information preserved.');};
+ $('startImageProduction').onclick=()=>{if(!state.assessment?.ready)return continueWithGoodContent();goStage('images');$('copyNextPrompt').focus();};$('regenerateVisualPlan').onclick=()=>{if(!state.originalContent||state.busy||state.batchBusy)return;applyContent(state.originalContent);renderVisualPlan();toast('Source-based image plan recalculated. Original information preserved.');};
  if(activeProductionBatch())$('batchProduction').hidden=false;
 }
 
@@ -1190,8 +1207,8 @@ function bindEvents() {
   $('autoImprove').addEventListener('click',autoImprove);
   $('workNext').addEventListener('click',nextEditorialReview);
   document.querySelectorAll('[data-decision]').forEach(button=>button.addEventListener('click',()=>overrideDecision(button.dataset.decision)));
-  $('quickStart').addEventListener('click',async()=>{if(state.quickRow){await openQueueItem(state.quickRow);goStage('images');}else if(state.content)primaryProductionAction();});
-  $('startNext').addEventListener('click',()=>openQueueItem(nextSuggested()));
+  $('quickStart').addEventListener('click',()=>{if(state.images&&Object.keys(state.images).length&&state.assessment?.ready)return primaryProductionAction();return continueWithGoodContent({quick:true});});
+  $('startNext').addEventListener('click',()=>continueWithGoodContent());
   $('confirmClaim').addEventListener('click',()=>{if(!state.originalContent||state.busy)return;const reference=$('claimReference').value.trim();if(reference.length<8)return toast('Identify the checked support for this claim.',true);saveProductionSession({claimConfirmation:{sourceStamp:sourceStamp(state.originalContent),reference,confirmedAt:new Date().toISOString()},override:undefined});applyContent(state.originalContent);renderEditorialQueue();});
   for(const [id,tab] of [['showOriginal','original'],['showOptimised','optimised']])$(id).addEventListener('click',()=>{document.querySelector('.compare-columns').dataset.compare=tab;$('showOriginal').setAttribute('aria-selected',String(tab==='original'));$('showOptimised').setAttribute('aria-selected',String(tab==='optimised'));});
   $('copyNextPrompt').addEventListener('click',()=>{const next=state.manifest.entries.find(e=>!state.images[e.slotId]||state.images[e.slotId].semanticKey!==e.semanticKey||state.images[e.slotId].qc?.status!=='PASS');if(next&&state.assessment.ready)copyText(buildSlotPrompt(state.content,next.slotId),'Next image prompt copied.');});
@@ -1203,8 +1220,9 @@ function bindEvents() {
   $('previewPrev').addEventListener('click',()=>{const n=finalPages().length;state.previewIndex=(state.previewIndex-1+n)%n;renderFinalPreview();});$('previewNext').addEventListener('click',()=>{const n=finalPages().length;state.previewIndex=(state.previewIndex+1)%n;renderFinalPreview();});
   $('downloadPost').addEventListener('click',downloadPackage);$('previewDownload').addEventListener('click',downloadPackage);
   document.addEventListener('keydown',event=>{if(event.altKey&&event.key.toLowerCase()==='n'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){event.preventDefault();nextEditorialReview();}});
-  $("sheetSelect").addEventListener("change", (event) => loadSource(event.target.value));
+  $("sheetSelect").addEventListener("change", (event) => {state.deliberateContentSelection=true;loadSource(event.target.value);});
   $("recipeSelect").addEventListener("change", (event) => {
+    state.deliberateContentSelection=true;
     const content = state.records.find((item) => item.contentId === event.target.value);
     if (content && !state.busy) applyContent(content);
   });

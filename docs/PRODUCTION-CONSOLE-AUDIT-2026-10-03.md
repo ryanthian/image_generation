@@ -142,3 +142,7 @@ Added non-destructive fast photo planning, persisted Auto Select 5/10/20 image b
 Tests **176/176 PASS**, lint PASS, build PASS, local and live browser flows PASS. All three production Sheets loaded **120 / 100 / 70** records. Five-post end-to-end import/resume/build/partial/full ZIP and isolated stale-post blocking passed. Live ZIPs were read back: 2-post partial and 5-post complete, every final image 1440×1800. No application errors or non-GET test requests; no Sheet mutation or Facebook publication. Real ChatGPT image validation remains a content-level human task; synthetic fixtures do not assert real-image quality or editorial approval.
 
 Full change log, blind-spot traceability, Batch 01 selection, deployment identity, evidence and daily-use handoff: [FAST-VISUAL-BATCH-PRODUCTION-2026-10-04.md](FAST-VISUAL-BATCH-PRODUCTION-2026-10-04.md).
+
+### Continuous production repair — 2026-10-04
+
+Continued from deployed v24 and clean checkout `32a1b10d98430e3d40485da6b88e005a4b97864e`. Same-record factual repair, automatic skip/next, screened batch reserves and replacement remove incomplete-source production dead ends without inventing facts, adding reviewer forms or writing Sheets. Actual GS-V4-EXP-047 is genuinely incomplete and is skipped. See [continuous production release evidence](AUTO-REPAIR-CONTINUOUS-PRODUCTION-2026-10-04.md) for tests, Batch 01 cleanup and deployment verification. Platform readiness remains independent of content readiness.

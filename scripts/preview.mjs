@@ -10,6 +10,7 @@ import {sourceFingerprint} from '../src/editorial-pipeline.mjs';
 const port = Number(process.env.PORT || 4173);
 const store = new MemoryIntelligenceStore();
 const files = {
+  "/production-repair.mjs": ["src/production-repair.mjs", "text/javascript; charset=utf-8"],
   "/production-assistant.mjs": ["src/production-assistant.mjs", "text/javascript; charset=utf-8"],
   "/content-model.mjs": ["src/content-model.mjs", "text/javascript; charset=utf-8"],
   "/content-quality.mjs": ["src/content-quality.mjs", "text/javascript; charset=utf-8"],

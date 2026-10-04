@@ -504,7 +504,7 @@ const textValue = (value) => typeof value === "string" ? value.trim() : value ==
 const hasText = (...values) => values.some((value) => Boolean(textValue(value)));
 const INTERNAL_NOTE_PATTERN = /(?:不发布|不要发布|请勿发布|内部(?:备注|指示|审核|使用)|编辑验证|仅供内部|do not publish|internal only|not for readers)/i;
 const UNSUPPORTED_BENEFIT_PATTERN = /(?:解暑|排毒|开胃|提神|治愈|治疗|预防疾病|降血糖|降血脂|增强免疫|减肥|助眠)/;
-const QUANTITY_PATTERN = /(?:\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升|斤|两|勺|茶匙|汤匙|瓣|根|片|碗|杯|颗|个|只|条)|适量|少许|半个|半只)/i;
+const QUANTITY_PATTERN = /(?:(?:\d+(?:\.\d+)?(?:\s*\/\s*\d+)?|半)\s*(?:g|kg|ml|l|克|千克|毫升|升|斤|两|勺|茶匙|汤匙|瓣|根|片|碗|杯|颗|个|只|条|朵|张|棵|粒|块|枚)|适量|少许|半个|半只)/i;
 
 function planText(content) {
   return (content.resolvedAssetPlan || []).flatMap((item) => [
@@ -524,8 +524,8 @@ function recipeApproximation(metadata) {
  * Editorial_Review_JSON (or equivalent mapped fields); it is not inferred from structural PASS.
  */
 export function runEditorialReview(content) {
-  const metadata = content.editorialReview || {};
-  const reviewPresent = content.editorialReviewPresent ?? Object.keys(metadata).length > 0;
+  const metadata = {...(content.productionDerivedFields||{}),...(content.editorialReview||{})};
+  const reviewPresent = content.editorialReviewPresent ?? Object.keys(content.editorialReview||{}).length > 0;
   const issues = [];
   const add = (code, detail, severity = "REVIEW") => issues.push({ code, detail, severity });
   const plan = content.resolvedAssetPlan || [];
@@ -620,7 +620,7 @@ export function runEditorialReview(content) {
     const sourceIngredients = content.sourceIngredients?.length ? content.sourceIngredients : legacyIngredientItems.map((item) => item.name);
     const ingredientItems = ingredientsAsset?.ingredient_items?.length ? ingredientsAsset.ingredient_items : legacyIngredientItems;
     if (!sourceIngredients.length || !ingredientsAsset) add("RECIPE_INGREDIENTS_MISSING", "A source-backed ingredient list is required.");
-    const hasQuantities = sourceIngredients.length > 0 && sourceIngredients.every((name) => ingredientItems.some((item) => {
+    const hasQuantities = sourceIngredients.length > 0 && sourceIngredients.every((name) => (content.productionDerivedFields?.optional_ingredients||[]).includes(name) || ingredientItems.some((item) => {
       const itemText = typeof item === "string" ? item : `${item?.name || ""} ${item?.quantity || ""}`;
       return textValue(itemText).includes(name) && QUANTITY_PATTERN.test(itemText);
     }));
@@ -641,7 +641,7 @@ export function runEditorialReview(content) {
     if (!body || editorialSteps.length < 2 || editorialSteps.some((step) => !hasText(step.method_step_id, step.step_heading, step.step_supporting_text))) {
       add("RECIPE_METHOD_INCOMPLETE", "Provide preparation instructions and ordered method steps with IDs, headings and supporting text.");
     }
-    const hasTiming = hasText(metadata.timing_guidance) || /\d+\s*(?:分钟|min(?:ute)?s?|秒)|(?:至|直到|直至).{0,12}(?:熟透|上色|金黄|冒汽|变软|收汁)|刚熟/i.test(fullText);
+    const hasTiming = hasText(metadata.timing_guidance) || /\d+\s*(?:分钟|min(?:ute)?s?|秒)|(?:至|直到|直至).{0,12}(?:熟透|全熟|断生|凝固|上色|金黄|冒汽|变软|收汁)|熟透|全熟|断生|凝固|刚熟/i.test(fullText);
     if (!hasTiming) add("RECIPE_TIMING_GUIDANCE_MISSING", "Add useful timing or observable doneness guidance.");
     if (metadata.temperature_required === true && !hasText(metadata.temperature_guidance)) {
       add("RECIPE_TEMPERATURE_GUIDANCE_MISSING", "This recipe is marked temperature-sensitive; provide the applicable temperature guidance or remove the requirement with a reason.");
@@ -650,9 +650,10 @@ export function runEditorialReview(content) {
     // Do not treat 鸡蛋 (egg) as poultry; require an explicit meat term.
     // Recognize an already-specified safe internal-temperature cue as well as
     // clear textual doneness cues so valid recipes are not falsely blocked.
-    const needsCookSafetyCue = /(?:鸡(?!蛋)|肉|禽肉|排骨|chicken|pork|beef|lamb|poultry)/i.test(recipeIdentityAndMethod);
-    const hasMeatDonenessCue = /(?:完全熟透|中心熟透|熟透|熟至|fully cooked|cook through|(?:74|75)\s*°?\s*C|165\s*°?\s*F)/i.test(fullText);
-    if (needsCookSafetyCue && !hasMeatDonenessCue) {
+    const needsCookSafetyCue = /(?:(?:鸡|鸭|鹅)(?!蛋)|猪肉|牛肉|羊肉|兔肉|肉末|肉片|肉丁|禽肉|排骨|鱼|虾|chicken|pork|beef|lamb|poultry|fish|shrimp)/i.test(recipeIdentityAndMethod);
+    const hasMeatDonenessCue = /(?:完全熟透|中心熟透|熟透|全熟|蒸熟|煮熟|煎熟|熟至|刚熟|fully cooked|cook through|(?:74|75)\s*°?\s*C|165\s*°?\s*F)/i.test(fullText);
+    const hasFishCue=/(?:鱼|fish)/i.test(recipeIdentityAndMethod) && /(?:中心\s*(?:63\s*°?\s*C|145\s*°?\s*F)|自然分成片层|鱼肉完全不透明)/i.test(fullText);
+    if (needsCookSafetyCue && !hasMeatDonenessCue && !hasFishCue) {
       add("RECIPE_COOKING_SAFETY_CUE_MISSING", "Add an appropriate doneness/safety cue for the meat in this recipe.");
     }
     const closeup = plan.find((item) => item.asset_type === "CLOSEUP" || item.asset_type === "FINAL");

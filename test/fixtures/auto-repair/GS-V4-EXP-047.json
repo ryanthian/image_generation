@@ -1,0 +1,19 @@
+{
+  "Schema_Version": "4",
+  "Content_ID": "GS-V4-EXP-047",
+  "Title": "蜜汁叉烧家常版",
+  "Topic": "PORK",
+  "Content_Type": "RECIPE",
+  "Template_Type": "RECIPE_STANDARD",
+  "Visual_Profile": "REALISTIC_HOME_COOKING",
+  "Hook_Type": "FAMILIAR_FOOD",
+  "Hook_Text": "叉烧不用一堆调料，关键是腌透和最后上色",
+  "Ready_To_Post_Caption": "叉烧不用一堆调料，关键是腌透和最后上色\n\n蜜汁叉烧家常版：用家常材料和清楚步骤完成，涉及肉类或蛋类时确保彻底熟透；不声称官方餐厅配方。\n\n步骤简单，照着做就可以。",
+  "Content_Body": "蜜汁叉烧家常版：用家常材料和清楚步骤完成，涉及肉类或蛋类时确保彻底熟透；不声称官方餐厅配方。",
+  "Source_References": "Top Facebook performance list · 2026-09-22 expansion",
+  "Affiliate_Fit": "MEDIUM",
+  "Monetization_Angle": "",
+  "Asset_Plan_JSON": "{\"coverage_points\":[{\"id\":\"CORE\",\"text\":\"蜜汁叉烧家常版\",\"required\":true}],\"assets\":[{\"sequence\":1,\"asset_id\":\"01-cover\",\"asset_type\":\"COVER\",\"title\":\"Cover\",\"purpose\":\"Primary hook\",\"layout_type\":\"cover_overlay\",\"overlay_text\":\"叉烧不用一堆调料，关键是腌透和最后上色\",\"image_prompt\":\"Photorealistic realistic home cooking visual for 蜜汁叉烧家常版, Cover. Accurate subject only. No text, letters, numbers, logos or watermarks.\",\"required\":true},{\"sequence\":2,\"asset_id\":\"02-ingredients\",\"asset_type\":\"INGREDIENTS\",\"title\":\"Ingredients\",\"purpose\":\"Ingredients\",\"layout_type\":\"information_card\",\"overlay_text\":\"蜜汁叉烧家常版\",\"image_prompt\":\"Photorealistic realistic home cooking visual for 蜜汁叉烧家常版, Ingredients. Accurate subject only. No text, letters, numbers, logos or watermarks.\",\"required\":true,\"coverage_point_ids\":[\"CORE\"]},{\"sequence\":3,\"asset_id\":\"03-method\",\"asset_type\":\"METHOD\",\"title\":\"Method\",\"purpose\":\"Method\",\"layout_type\":\"information_card\",\"overlay_text\":\"蜜汁叉烧家常版\",\"image_prompt\":\"Photorealistic realistic home cooking visual for 蜜汁叉烧家常版, Method. Accurate subject only. No text, letters, numbers, logos or watermarks.\",\"required\":true},{\"sequence\":4,\"asset_id\":\"04-closeup\",\"asset_type\":\"CLOSEUP\",\"title\":\"Closeup\",\"purpose\":\"Closeup\",\"layout_type\":\"information_card\",\"overlay_text\":\"蜜汁叉烧家常版\",\"image_prompt\":\"Photorealistic realistic home cooking visual for 蜜汁叉烧家常版, Closeup. Accurate subject only. No text, letters, numbers, logos or watermarks.\",\"required\":true},{\"sequence\":5,\"asset_id\":\"05-final\",\"asset_type\":\"TIP\",\"title\":\"Final\",\"purpose\":\"Final\",\"layout_type\":\"information_card\",\"overlay_text\":\"蜜汁叉烧家常版\",\"image_prompt\":\"Photorealistic realistic home cooking visual for 蜜汁叉烧家常版, Final. Accurate subject only. No text, letters, numbers, logos or watermarks.\",\"required\":true}]}",
+  "Status": "CONTENT_READY",
+  "Editorial_Review_JSON": "{\"schema_version\":1,\"review_status\":\"REVIEW\",\"reviewer\":\"Codex AI-assisted editorial screening\",\"reviewed_at\":\"2026-09-27T18:35:55.000Z\",\"review_note\":\"AI-assisted triage only. Human review of reader value, publishable copy and Page fit is still required; source evidence remains unverified. This is not editorial approval.\",\"evidence_type\":\"UNVERIFIED\",\"evidence\":{\"type\":\"UNVERIFIED\",\"references\":[],\"notes\":\"\"},\"source_evidence_status\":\"UNVERIFIED\",\"caption_review_status\":\"REVIEW\",\"reader_facing_copy_reviewed\":false,\"page_fit_status\":\"REVIEW\"}"
+}

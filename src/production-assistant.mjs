@@ -3,6 +3,7 @@ import {runContentQc,runEditorialReview,buildGenerationManifest,TEMPLATE_REGISTR
 import {classifyClaimRisk} from './editorial-pipeline.mjs';
 import {auditContent} from './content-quality.mjs';
 import {resolveFastVisualPlan} from './fast-visual-plan.mjs';
+import {repairProductionSource,REPAIR_VERSION} from './production-repair.mjs';
 export const ASSISTANT_VERSION='2026-10-04.1';
 const text=v=>String(v??'').trim();
 const lines=v=>text(v).split(/\n+/).map(text).filter(Boolean);
@@ -39,6 +40,7 @@ export function optimiseContent(source,{iteration=0,compact=true}={}){
   if(hook===title&&/[？?]$/.test(hook))hook=`${hook.replace(/[？?]$/,'')}，先看这几个重点。`;
   const cta=recipe?'煮的时候，可以对照图里的材料和步骤。':'下次用到时，可以对照最后一张的重点。';
   let caption=natural(source.caption);
+  caption=[...new Set(caption.split(/\n{2,}/).map(text).filter(Boolean))].join('\n\n');
   if(!caption||caption.length<30)caption=[hook,caption,body,cta].filter(Boolean).join('\n\n');
   else {
     caption=caption.replace(/^(?:#?)(?:你知道吗[？?]?\s*)/,'');
@@ -69,10 +71,13 @@ const factualCodes=new Set(['RECIPE_INGREDIENTS_MISSING','RECIPE_QUANTITIES_OR_A
 const friendly={RECIPE_INGREDIENTS_MISSING:'NEEDS FACT: ingredient list is missing.',RECIPE_QUANTITIES_OR_APPROXIMATION_MISSING:'NEEDS FACT: ingredient quantities are incomplete.',RECIPE_METHOD_INCOMPLETE:'NEEDS FACT: cooking steps are incomplete.',RECIPE_TIMING_GUIDANCE_MISSING:'NEEDS FACT: cooking time or observable doneness cue is missing.',RECIPE_TEMPERATURE_GUIDANCE_MISSING:'NEEDS FACT: this temperature-sensitive recipe has no temperature.',RECIPE_COOKING_SAFETY_CUE_MISSING:'NEEDS FACT: confirm how to tell when the meat is fully cooked.',MISTAKE_CAUSE_MISSING:'NEEDS FACT: source does not explain why the mistake happens.',MISTAKE_CORRECTION_MISSING:'NEEDS FACT: the corrective method is missing.',MISTAKE_CONSEQUENCE_MISSING:'NEEDS FACT: the practical consequence is missing.',SELECTION_CRITERIA_INCOMPLETE:'NEEDS FACT: selection criteria are incomplete.',INTERNAL_NOTE_IN_SOURCE_BODY:'Source contains internal production instructions.',INTERNAL_NOTE_LEAKAGE_CONFIRMED:'Source was marked as containing internal notes.',CLAIM_SAFETY_FAILED:'Source was marked as unsafe or unsupported.'};
 export function assessProduction(source,{session={},duplicateStatus='UNIQUE',optimised=true,compact=true}={}){
   session=currentSession(source,session);
-  const proposal=optimiseContent(source,{iteration:session.iteration||0,compact});
+  const recovered=repairProductionSource(source);
+  const proposal=optimiseContent(recovered.content,{iteration:session.iteration||0,compact}),repair=recovered.repair;
+  repair.autoFixed.push(...proposal.changes.filter(detail=>!detail.startsWith('Source copy already')).map(detail=>({state:'AUTO_FIXED',code:'PRESENTATION_IMPROVED',detail})));
   const content=optimised?proposal.content:source,risk=classifyClaimRisk(content),qc=runContentQc(content);
   const issues=runEditorialReview(content).issues.filter(i=>factualCodes.has(i.code));
-  const gaps=[...qc.failures.map(i=>`NEEDS FACT: ${i.detail}`),...issues.map(i=>friendly[i.code]||i.detail)];
+  for(const i of [...qc.failures,...issues])if(!repair.critical.some(c=>c.code===i.code))repair.critical.push({...i,state:'CRITICAL_UNRESOLVED',detail:friendly[i.code]?.replace(/^NEEDS FACT: /,'')||i.detail});
+  const gaps=[...new Set(repair.critical.map(i=>i.detail))];
   if(!text(content.contentBody))gaps.push('NEEDS FACT: source body is missing.');
   if(content.editorialReview?.review_status==='BLOCKED')gaps.push('Source is explicitly blocked. Resolve the original reason.');
   if(/(?:待补|待填写|TODO|TBD|待核实)/i.test(content.contentBody))gaps.push('NEEDS FACT: source still contains unresolved placeholders.');
@@ -86,19 +91,22 @@ export function assessProduction(source,{session={},duplicateStatus='UNIQUE',opt
   const dimensions={Hook:audit.dimensions.hook_quality.score,Usefulness:content.resolvedAssetPlan.filter(a=>text(a.overlay_text).length>=8).length>=3&&text(content.contentBody).length>=25?9:audit.dimensions.usefulness.score,'Save Value':audit.dimensions.save_value.score,'Share Potential':audit.dimensions.share_value.score*2,'Visual Potential':audit.dimensions.visual_potential.score*2,'Information Quality':gaps.length?3:9,Originality:duplicate?1:duplicateStatus==='REWORK'?5:8};
   const score=Math.round(Object.values(dimensions).reduce((a,b)=>a+b,0)/70*100);
   const fixable=!optimised&&[content.title,content.hookText,content.caption].some(v=>natural(v)!==text(v))||!optimised&&text(content.caption).length<30;
-  let recommendation=duplicate||gaps.length||risk.tier==='HIGH'&&!verified||score<60?'SKIP':!verified||fixable||score<78?'IMPROVE':'PRODUCE';
+  let recommendation=duplicate||gaps.length||!verified||score<60?'SKIP':!verified||fixable||score<78?'IMPROVE':'PRODUCE';
   if(session.override==='SKIP')recommendation='SKIP';
   if(session.override==='IMPROVE'&&!duplicate&&!gaps.length)recommendation='IMPROVE';
   if(session.override==='PRODUCE'&&!duplicate&&!gaps.length&&verified)recommendation='PRODUCE';
   const blockers=[...new Set(gaps)];if(duplicate)blockers.unshift('Duplicate: use the canonical record.');if(!verified)blockers.push(`VERIFY CLAIM: ${risk.reasons.join('; ')}`);if(recommendation!=='PRODUCE'&&!blockers.length)blockers.push(recommendation==='SKIP'?'Skipped for production.':'Auto Improve before generating images.');
+  const criticalUnresolved=blockers.filter(b=>!b.startsWith('VERIFY CLAIM:'));
+  const skipReason=duplicate||duplicateStatus==='REWORK'?'DUPLICATE':gaps.length?'CRITICAL_INFO_MISSING':!verified?'HIGH_RISK_UNVERIFIED':recommendation==='SKIP'?'LOW_QUALITY':null;
+  const productionOverride={version:REPAIR_VERSION,sourceStamp:sourceStamp(source),inputStamp:changeToken(JSON.stringify(source.raw||{})),title:content.title,hook:content.hookText,caption:content.caption,contentBody:content.contentBody,assetPlan:content.resolvedAssetPlan,imagePrompts:manifest.entries.map(e=>({slotId:e.slotId,prompt:e.imagePrompt})),derivedFields:repair.derivedFields,repairNotes:[...repair.autoFixed,...repair.warnings,...repair.critical],humanApproved:false};
   const findings=[gaps.length?gaps[0]:'✓ Source information is complete',duplicate?'Duplicate copy — use the better version':'✓ Practical source-backed steps',!verified?`VERIFY CLAIM · ${risk.tier} RISK`:'✓ AI check complete',`✓ ${manifest.entries.length} images · ${content.resolvedAssetPlan.length} planned assets`];
-  return {content,proposal,risk,claims,verified,gaps,blockers,recommendation,score,sourceScore:sourceAudit.score,dimensions,findings,duplicateStatus,contract:qc,ready:recommendation==='PRODUCE'&&blockers.length===0,mode:'AI_CHECKED_NOT_HUMAN_APPROVED',humanApproved:false};
+  return {content,proposal,risk,claims,verified,gaps,blockers,recommendation,score,sourceScore:sourceAudit.score,dimensions,findings,duplicateStatus,contract:qc,ready:recommendation==='PRODUCE'&&blockers.length===0,mode:'AI_CHECKED_NOT_HUMAN_APPROVED',humanApproved:false,repair,productionOverride,criticalUnresolved,skipReason};
 }
 export function nextProductionAction(assessment,{manifest={entries:[]},images={},assets={},plan=[],visualReviewed=false}={}){
   if(assessment.duplicateStatus==='HOLD_DUPLICATE')return {kind:'CANONICAL',label:'View Better Version',detail:'Duplicate · use the canonical content'};
-  if(assessment.gaps.length)return {kind:'FACT',label:'View Missing Information',detail:assessment.gaps[0]};
-  if(!assessment.verified)return {kind:'CLAIM',label:'Verify Claim',detail:`${assessment.risk.tier} RISK · check the affected claim`};
-  if(assessment.recommendation==='SKIP')return {kind:'NEXT',label:'Next Content →',detail:'Skipped · choose the next strong item'};
+  if(assessment.gaps.length)return {kind:'NEXT',label:'Skip & Next Good Content →',detail:'SOURCE INCOMPLETE · '+assessment.gaps[0]};
+  if(!assessment.verified)return {kind:'CLAIM',label:'Skip & Next Good Content →',detail:`${assessment.risk.tier} RISK · source support unavailable; continue with another post`};
+  if(assessment.recommendation==='SKIP')return {kind:'NEXT',label:'Next Good Content →',detail:'Skipped · choose the next strong item'};
   if(!assessment.ready)return {kind:'IMPROVE',label:'Auto Improve',detail:'Improve the source presentation'};
   const required=manifest.entries.filter(e=>e.required),missing=required.find(e=>!images[e.slotId]||images[e.slotId].semanticKey!==e.semanticKey||images[e.slotId].qc?.status!=='PASS');
   if(missing){const count=required.filter(e=>images[e.slotId]?.semanticKey===e.semanticKey&&images[e.slotId]?.qc?.status==='PASS').length;return {kind:'IMAGES',label:count?'Continue Images →':'Generate Images →',detail:`${count}/${required.length} ready · next ${String(missing.sequence).padStart(2,'0')} ${missing.label}`,slotId:missing.slotId};}
@@ -112,4 +120,9 @@ export function duplicateAssignments(map){
   const assignments={...(map?.assignments||{})};
   for(const group of map?.groups||[]){const canonicalKey=`${Number(group.canonical.sheetId)}:${group.canonical.contentId}`;assignments[canonicalKey]={status:'CANONICAL',canonicalKey};for(const duplicate of group.duplicates||[])assignments[`${Number(duplicate.sheetId)}:${duplicate.contentId}`]={status:'HOLD_DUPLICATE',canonicalKey};}
   return assignments;
+}
+
+/** Already screened automatic production candidates; no incomplete item can stall Quick Production. */
+export function findNextProductionReadyContent(rows,{excludeKeys=[],allowCompleted=false}={}){
+ const excluded=new Set(excludeKeys);return rows.filter(row=>{const a=row.assessment;return !excluded.has(`${row.sheetId}:${row.contentId}`)&&a?.ready&&a.recommendation==='PRODUCE'&&a.risk.tier==='LOW'&&['UNIQUE','CANONICAL'].includes(row.duplicateStatus)&&!row.publicationRecorded&&![row.lifecycleStatus,row.content?.lifecycleStatus].some(s=>/^(?:posted|published|scheduled_published|results_recorded)$/i.test(s||''))&&(allowCompleted||!row.downloaded);}).sort((a,b)=>b.assessment.score-a.assessment.score||`${a.sheetId}:${a.contentId}`.localeCompare(`${b.sheetId}:${b.contentId}`))[0]||null;
 }
