@@ -72,9 +72,9 @@ test("separate production gates block posting while keeping final-asset preview 
   assert.match(appSource, /markPosted.*!publishing\.ready/s);
   assert.match(appSource, /function buildAssets\(\) \{/);
   assert.match(appSource, /copyPrompt.*generationReadiness/s);
-  assert.match(appSource, /\.disabled = editorial\.status !== "PASS"/);
-  assert.match(appSource, /Caption is not cleared for reader use/);
+  assert.match(appSource, /\.disabled = !state\.assessment\.ready/);
+  assert.match(appSource, /Resolve the specific content blocker first/);
   assert.match(appSource, /isStoredAssetStale\(item, value, state\.images\)/);
-  assert.match(appSource, /stored && !stored\.stale \? "" : "disabled"/);
+  assert.match(appSource, /stored && !stored\.stale && state\.gates\?\.exportReady \? "" : "disabled"/);
   assert.match(appSource, /built\.sourceRevision === assetSourceRevision\(item\)/);
 });

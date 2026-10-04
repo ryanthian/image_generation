@@ -1,5 +1,7 @@
 # Production Console editorial pipeline — 2026-10-03
 
+> The routine production workflow below records the v22 release. The current single-operator requirement supersedes its mandatory human editorial gate for low-risk image production and export. See [Single-operator production](SINGLE-OPERATOR-PRODUCTION-2026-10-04.md). Historical reviews and publishing protections remain compatible.
+
 ## Release model
 
 **Platform status** is an engineering and service decision: `PRODUCTION READY`, `PRODUCTION READY WITH WARNINGS`, or `NOT PRODUCTION READY`. It is not an aggregate of editorial approvals. **Content status** is per record: `READY`, `NEEDS IMPROVEMENT`, `HOLD`, or `INVALID`. The Console shows both independently. A score is a heuristic for ordering work, never human approval.

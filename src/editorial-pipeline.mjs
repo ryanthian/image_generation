@@ -6,13 +6,13 @@ export function classifyClaimRisk(content) {
   const copy = [content.title, content.hookText, content.contentBody, content.caption,
     ...(content.resolvedAssetPlan || []).map(item => item.overlay_text)].join(' ');
   const reasons = [];
-  if (/(?:治疗|治愈|预防.{0,8}疾病|降血糖|降血压|抗癌|排毒|保证瘦|medical treatment|cure|guaranteed returns)/i.test(copy)) reasons.push('Medical, disease, or strong regulated claim');
+  if (/(?:治疗|治愈|预防.{0,8}(?:疾病|感冒|糖尿病|高血压|癌症|感染)|降血糖|降血压|抗癌|排毒|保证瘦|medical treatment|cure|guaranteed returns|保证赚钱|法律保证|法律.{0,10}(?:建议|责任)|投资.{0,8}(?:收益|回报|保证)|生吃鸡肉|生鸡肉.{0,10}(?:安全|直接吃)|漂白水.{0,12}(?:食用|饮用))/i.test(copy)) reasons.push('Medical, disease, or strong regulated claim');
   if (reasons.length) return {tier:'HIGH',reasons};
-  if (/(?:保存|冷藏|冷冻|保鲜).{0,24}(?:\d+\s*(?:天|日|小时|周)|安全|不会坏)|(?:\d+\s*(?:天|日|小时|周)).{0,24}(?:保存|冷藏|冷冻|保鲜)/.test(copy)) reasons.push('Specific storage duration or safety claim');
+  if (/(?:保存|冷藏|冷冻|保鲜).{0,24}(?:(?:\d+|[一二三四五六七八九十半]+)\s*(?:天|日|小时|周|星期)|安全|不会坏)|(?:(?:\d+|[一二三四五六七八九十半]+)\s*(?:天|日|小时|周|星期)).{0,24}(?:保存|冷藏|冷冻|保鲜)/.test(copy)) reasons.push('Specific storage duration or safety claim');
   if (content.contentType === 'STORAGE_GUIDE') reasons.push('Food-storage guidance');
-  if (/(?:营养|蛋白质|维生素|低糖|低脂|卡路里|热量|省下|节省|便宜\s*\d|RM\s*\d|\d+\s*%)/i.test(copy)) reasons.push('Nutrition, cost, savings, or numerical claim');
-  if (content.contentType === 'KITCHEN_KNOWLEDGE' || content.contentType === 'MISTAKE_FIX') reasons.push('Technical or causal explanation');
-  return reasons.length ? {tier:'MEDIUM',reasons} : {tier:'LOW',reasons:['Ordinary cooking or visual guidance; reviewer must still check consistency and safety.']};
+  if (/(?:解暑|开胃|提神|增强免疫|减肥|助眠|营养|蛋白质|维生素|低糖|低脂|卡路里|热量|省下|节省|便宜\s*\d|RM\s*\d|\d+\s*%)/i.test(copy)) reasons.push('Nutrition, cost, savings, or numerical claim');
+  if (content.contentType === 'KITCHEN_KNOWLEDGE') reasons.push('Technical or causal explanation');
+  return reasons.length ? {tier:'MEDIUM',reasons} : {tier:'LOW',reasons:['Ordinary cooking or visual guidance; automatic consistency and completeness checks apply.']};
 }
 
 export async function sourceFingerprint(raw) {

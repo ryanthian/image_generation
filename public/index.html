@@ -18,9 +18,10 @@
         <span id="sideId" class="muted"></span>
         <nav class="workflow-nav" aria-label="Workflow steps">
           <a href="#recipe" class="active" data-production-link><span>01</span>Content</a>
-          <a href="#images"><span>02</span>Images</a>
-          <a href="#assets"><span>03</span>Final Assets</a>
-          <a href="#publish"><span>04</span>Publish</a>
+          <a href="#optimise"><span>02</span>AI Optimise</a>
+          <a href="#images"><span>03</span>Images</a>
+          <a href="#assets"><span>04</span>Final</a>
+          <a href="#download"><span>05</span>Download</a>
         </nav>
         <div class="sidebar-progress">
           <div class="progress-copy"><span>Images ready</span><b id="progressText">0 / 0</b></div>
@@ -52,14 +53,14 @@
 
       <div class="content" id="productionView">
         <div id="persistentError" class="persistent-error" role="alert" hidden></div>
-        <section class="card readiness-strip" aria-label="Independent readiness states"><div><span>PLATFORM STATUS</span><strong id="platformStatus">CHECKING</strong><small id="platformHint">Checking connected production sources and editorial services.</small></div><div><span>SELECTED CONTENT STATUS</span><strong id="selectedContentStatus">NO RECORD</strong><small>Human editorial approval and image QC are recorded per item.</small></div></section>
-        <section class="card production-steps" aria-label="Image production steps"><ol><li>Copy ChatGPT prompt</li><li>Generate images</li><li>Import images</li><li>Build final assets</li><li>Download package</li></ol><p id="nextAction" role="status">Choose a content source to begin.</p></section>
-        <section class="card editorial-queue-card" id="editorialQueue" aria-labelledby="queueTitle">
-          <div class="card-header"><div><p class="eyebrow">DAILY EDITORIAL WORK</p><h2 id="queueTitle">Editorial Queue</h2></div><button class="btn btn-info" id="queueLoad" type="button">Refresh Queue</button></div>
-          <div class="queue-toolbar"><label><span>Queue filter</span><select id="queueFilter"><option value="ALL">All active</option><option value="READY">READY</option><option value="NEEDS IMPROVEMENT">NEEDS IMPROVEMENT</option><option value="HOLD">HOLD</option><option value="INVALID">INVALID</option><option value="DUPLICATE">DUPLICATE</option><option value="EDITORIAL REVIEW REQUIRED">EDITORIAL REVIEW REQUIRED</option><option value="SOURCE REVIEW REQUIRED">SOURCE REVIEW REQUIRED</option><option value="MISSING FACTS">MISSING FACTS</option><option value="IMAGE READY">IMAGE READY in this browser</option><option value="PUBLISHED">PUBLISHED</option><option value="BATCH 01">Production Batch 01</option></select></label><label><span>Find content</span><input id="queueSearch" type="search" placeholder="ID, title, source or type"></label><label class="check-field"><input id="queueShowDuplicates" type="checkbox"><span>Show held duplicates</span></label></div>
+        <section class="card quick-production"><div><p class="eyebrow">QUICK PRODUCTION</p><strong id="quickTitle">Finding the best content…</strong><p id="resumeHint" class="helper"></p></div><button class="btn btn-primary" id="quickStart" type="button">Start Production →</button></section>
+        <nav class="card production-steps" aria-label="Production steps"><a href="#recipe">01 Content</a><a href="#optimise">02 AI Optimise</a><a href="#images">03 Images</a><a href="#assets">04 Final</a><a href="#download">05 Download</a><p id="nextAction" role="status">Choose content to begin.</p></nav>
+        <details class="card editorial-queue-card" id="editorialQueue"><summary>Content list · choose what to produce</summary>
+          <div class="card-header"><div><p class="eyebrow">CONTENT PRODUCTION</p><h2 id="queueTitle">Content list</h2></div><button class="btn btn-info" id="queueLoad" type="button">Refresh Content</button></div>
+          <div class="queue-toolbar"><label><span>Queue filter</span><select id="queueFilter"><option value="ALL">ALL</option><option value="PRODUCE">PRODUCE</option><option value="IMPROVE">IMPROVE</option><option value="SKIP">SKIP</option><option value="IN PROGRESS">IN PROGRESS</option><option value="READY TO DOWNLOAD">READY TO DOWNLOAD</option><option value="PUBLISHED">PUBLISHED</option><option value="BATCH 01">Production Batch 01</option></select></label><label><span>Find content</span><input id="queueSearch" type="search" placeholder="ID, title, source or type"></label><label class="check-field"><input id="queueShowDuplicates" type="checkbox"><span>Show duplicates</span></label></div>
           <p class="helper queue-summary" id="queueSummary" role="status">Loading the production sources…</p><p class="helper" id="batchProgress">Production Batch 01: loading…</p>
-          <div class="table-scroll"><table class="queue-table"><thead><tr><th>Content</th><th>Source / type</th><th>Score</th><th>Issues / duplicate</th><th>Editorial</th><th>Next action</th></tr></thead><tbody id="queueRows"></tbody></table></div>
-        </section>
+          <div class="table-scroll"><table class="queue-table"><thead><tr><th>Content</th><th>Source / type</th><th>Score</th><th>Risk / duplicate</th><th>Progress</th><th>Next action</th></tr></thead><tbody id="queueRows"></tbody></table></div>
+        </details>
         <section class="card" id="rejectedPanel" hidden><div class="card-header"><h2 id="rejectedCount">Rejected records</h2></div><div class="table-scroll"><table><thead><tr><th>Content ID</th><th>Field</th><th>Reason</th><th>Suggested repair</th></tr></thead><tbody id="rejectedRecords"></tbody></table></div></section>
         <section class="card recipe-card" id="recipe">
           <div class="recipe-toolbar">
@@ -91,6 +92,8 @@
             </div>
             <div class="completion-ring" id="completionRing" aria-label="Completion"><strong>0%</strong><span>complete</span></div>
           </div>
+          <section id="contentDecision" class="content-decision"><div class="decision-metrics"><div><span>QUALITY</span><strong id="potentialScore">— / 100</strong></div><div><span>RECOMMENDATION</span><strong id="recommendation">CHECKING</strong></div><div><span>RISK</span><strong id="riskLevel">—</strong></div><div><span>DUPLICATE</span><strong id="duplicateLabel">—</strong></div></div><p class="eyebrow">NEXT BEST ACTION</p><p id="decisionHint"></p><div class="production-actions"><button class="btn btn-primary" id="primaryAction" type="button">Checking…</button><button class="btn btn-info" id="autoImprove" type="button">Auto Improve</button><button class="btn btn-neutral" id="workNext" type="button">Next Content →</button><details class="more-actions"><summary>⋯ More</summary><button data-decision="PRODUCE" type="button">Mark as Produce</button><button data-decision="IMPROVE" type="button">Mark as Improve</button><button data-decision="SKIP" type="button">Skip</button></details></div><section class="potential-card"><h3>CONTENT POTENTIAL</h3><dl id="potentialDimensions"></dl><p class="helper">Internal production score · no guaranteed Facebook earnings</p></section><ul id="qualityFindings" class="quality-findings"></ul></section>
+          <details class="advanced-details"><summary>Advanced Details · source and Page configuration</summary>
           <div class="content-meta-grid" aria-label="Universal content model">
             <div><span>Content Type</span><strong id="contentType">—</strong></div>
             <div><span>Template</span><strong id="templateType">—</strong></div>
@@ -125,17 +128,9 @@
               </details>
             </div>
           </section>
-          <section class="card editorial-workspace" id="editorialWorkspace" aria-labelledby="workspaceReviewTitle">
-            <div class="card-header"><div><p class="eyebrow">SOURCE PRESERVED · D1 REVIEW</p><h2 id="workspaceReviewTitle">Editorial workspace</h2></div><span class="badge" id="workspaceState">AI PREPARED</span></div>
-            <div class="workspace-meta"><span id="workspaceScore">Content score —</span><span id="workspaceRisk">Risk —</span><span id="workspaceSource">Source —</span><span id="duplicateStatus">Duplicate —</span><span id="sourceEvidenceStatus">Evidence —</span></div>
-            <p class="helper">Proposed copy is a draft. Approval records a named human decision in D1 and never replaces the original Google Sheet row. If the source changes, approval becomes stale.</p>
-            <div class="workspace-columns"><section><h3>Original content</h3><strong id="originalTitle"></strong><pre id="originalBody"></pre><h4>Original caption</h4><pre id="originalCaption"></pre></section><section><h3>Proposed improved content</h3><label>Final title<input id="proposalTitle" type="text"></label><label>Hook<input id="proposalHook" type="text"></label><label>Content body<textarea id="proposalBody" rows="7"></textarea></label><label>Caption preview<textarea id="proposalCaption" rows="7"></textarea></label></section></div>
-            <div class="workspace-columns"><section><h3>Changes made</h3><textarea id="proposalChanges" rows="3" placeholder="What changed, based on the source?"></textarea><h3>Unresolved factual questions</h3><textarea id="proposalQuestions" rows="3" placeholder="Leave unsupported facts unresolved."></textarea></section><section><h3>Asset plan preview</h3><div id="workspaceAssetPlan" class="workspace-plan"></div></section></div>
-            <div class="workspace-review-fields"><label>Human reviewer<input id="workReviewer" type="text" autocomplete="name" placeholder="Your name is required for a decision"></label><label>Audience need<input id="workAudienceNeed" type="text"></label><label>Reader value<input id="workReaderValue" type="text"></label><label>Evidence references checked<textarea id="workEvidenceReferences" rows="2" placeholder="Required for medium/high-risk claims"></textarea></label><label>Evidence / limitations note<textarea id="workEvidenceNotes" rows="2"></textarea></label><label>Review note<textarea id="workReviewNote" rows="2"></textarea></label></div>
-            <div class="workspace-checks"><label class="check-field"><input id="workConsistency" type="checkbox">I checked source facts, quantities and internal consistency</label><label class="check-field"><input id="workCaptionApproved" type="checkbox">Caption reads naturally and is ready for readers</label><label class="check-field"><input id="workReaderCopyReviewed" type="checkbox">Title, overlays and CTA are suitable</label><label class="check-field"><input id="workClaimSafety" type="checkbox">Claims are safe and appropriately qualified</label><label class="check-field"><input id="workNoInternal" type="checkbox">No internal note appears in public copy</label><label class="check-field"><input id="workEvidenceVerified" type="checkbox">I checked the supporting reference (medium/high risk)</label><label class="check-field"><input id="workPageFit" type="checkbox">Page-specific fit checked, if a complete Page profile is assigned</label></div>
-            <div class="workspace-actions"><button class="btn btn-success" id="workApprove" type="button">Approve Editorial</button><button class="btn btn-info" id="workNeeds" type="button">Needs Changes</button><button class="btn btn-neutral" id="workHold" type="button">Hold</button><button class="btn btn-neutral" id="workSkip" type="button">Skip</button><button class="btn btn-primary" id="workNext" type="button">Next Review →</button><button class="btn btn-neutral" id="workCopyMaster" type="button">Copy Master Session Prompt</button></div>
-            <p class="helper" id="workspaceActionHint">Choose a record from the queue. Approval is separate from AI preparation.</p>
-          </section>
+          </details>
+          <section class="card" id="optimise"><div class="card-header"><div><p class="eyebrow">AI CHECK COMPLETE · SOURCE PRESERVED</p><h2>AI Optimise</h2></div><span class="badge" id="optimiseState">AI OPTIMISED</span></div><div class="compare-tabs" role="tablist"><button id="showOriginal" role="tab" aria-selected="false" type="button">Original</button><button id="showOptimised" role="tab" aria-selected="true" type="button">AI Optimised</button></div><div class="workspace-columns compare-columns" data-compare="optimised"><section class="original-pane"><h3>ORIGINAL</h3><strong id="originalTitle"></strong><pre id="originalBody"></pre><h4>Caption</h4><pre id="originalCaption"></pre></section><section class="optimised-pane"><h3>AI OPTIMISED</h3><h4 id="optimisedTitle"></h4><p id="optimisedHook"></p><pre id="optimisedCaption"></pre><dl class="optimised-outline"><dt>WHAT</dt><dd id="optimisedWhat"></dd><dt>WHY</dt><dd id="optimisedWhy"></dd><dt>ACTION</dt><dd id="optimisedAction"></dd><dt>Reader value</dt><dd id="optimisedValue"></dd><dt>Save value</dt><dd id="optimisedSave"></dd><dt>CTA</dt><dd id="optimisedCta"></dd></dl></section></div><div id="factQuestions" class="fact-questions" hidden></div><section id="claimVerification" class="fact-questions" hidden><h3>VERIFY CLAIM</h3><p id="claimReason"></p><ul id="claimList"></ul><label>Supporting reference / checked source<input id="claimReference" type="text" placeholder="Reference for this claim only"></label><button id="confirmClaim" type="button" class="btn btn-warning">Confirm claim support</button><p class="helper">Records your claim confirmation for this source version. It does not mark the content human-approved.</p></section><details class="advanced-details"><summary>Advanced Details · changes, plan and history</summary><p id="optimiseEngine" class="helper"></p><pre id="optimiseChanges"></pre><div id="workspaceAssetPlan" class="workspace-plan"></div><pre id="reviewHistory"></pre></details></section>
+          <details class="advanced-details"><summary>Advanced Details · technical checks and publishing gates</summary>
           <section class="qc-summary qc-pass" id="qcSummary" aria-label="Production readiness gates" aria-live="polite">
             <div class="gate-grid">
               <div class="quality-gate pass" id="contractGate"><span>Contract</span><strong id="qcStatus">CHECKING</strong><small>Structural / deterministic QC</small></div>
@@ -151,76 +146,32 @@
             <p><b>MONETISATION READINESS</b> <span id="monetizationScore"></span></p><p class="helper" id="monetizationDetails"></p>
             <p class="editorial-note" id="editorialNote">Separate readiness checks are being calculated…</p>
             <pre id="qcDetails">Checking current plan…</pre>
-            <label class="visual-qc-confirm"><input id="visualQcCheck" type="checkbox" disabled> I reviewed every final asset for realism, continuity, correct objects/stages, crop, text readability, unexpected logos and AI artifacts.</label>
             <small class="helper" id="visualQcHint">Build all final assets before recording a visual review.</small>
           </section>
-          <section class="card editorial-review-card" aria-labelledby="editorialReviewTitle">
-            <div class="card-header"><div><p class="eyebrow">SHEET REVIEW METADATA</p><h2 id="editorialReviewTitle">Existing Sheet review form</h2></div><span class="badge" id="reviewSavedState">Not saved</span></div>
-            <div class="setup-card-body">
-              <p class="helper">A structural pass is not editorial approval. Review audience fit, source support, claims and reader-facing copy before selecting PASS.</p>
-              <div class="editorial-form">
-                <label><span>Reviewer</span><input id="editorReviewer" type="text" autocomplete="name" placeholder="Name"></label>
-                <label><span>Decision</span><select id="editorDecision"><option value="REVIEW">Needs review</option><option value="PASS">Pass</option><option value="BLOCKED">Blocked</option></select></label>
-                <label><span>Audience need</span><textarea id="editorAudienceNeed" rows="2"></textarea></label>
-                <label><span>Specific reader value</span><textarea id="editorReaderValue" rows="2"></textarea></label>
-                <label><span>Evidence classification</span><select id="editorEvidenceType"><option value="UNVERIFIED">Unverified</option><option value="SOURCE_DIRECT">Direct source</option><option value="SOURCE_GENERAL">Established general knowledge</option><option value="HEURISTIC">Qualified rule of thumb</option></select></label>
-                <label class="wide"><span>Specific references checked</span><textarea id="editorEvidenceReferences" rows="2" placeholder="One source URL, title/section, or reference per line"></textarea></label>
-                <label class="wide"><span>Source / evidence notes</span><textarea id="editorSourceNotes" rows="2"></textarea></label>
-                <label><span>Claim evidence / verification</span><textarea id="editorClaimEvidence" rows="2"></textarea></label>
-                <label><span>Limitations / uncertainty</span><textarea id="editorLimitations" rows="2"></textarea></label>
-                <label class="wide"><span>Review note / revision needed</span><textarea id="editorReviewNote" rows="2"></textarea></label>
-                <label class="wide"><span>Internal claim / production notes (never publish)</span><textarea id="editorInternalNotes" rows="2"></textarea></label>
-                <label class="check-field"><input id="editorEvidenceVerified" type="checkbox"><span>I checked the source/evidence cited above</span></label>
-                <label class="check-field"><input id="editorCaptionApproved" type="checkbox"><span>Caption is natural, reader-facing and contains no internal notes</span></label>
-                <label class="check-field"><input id="editorReaderCopyReviewed" type="checkbox"><span>Title, overlays and CTA are publishable reader-facing copy</span></label>
-                <label class="check-field"><input id="editorNoInternalLeakage" type="checkbox"><span>No internal production/review note appears in public copy</span></label>
-                <label class="check-field"><input id="editorClaimSafetyOk" type="checkbox"><span>Claims are supported, safe and appropriately qualified</span></label>
-                <label class="check-field"><input id="editorPageFitApproved" type="checkbox"><span>Page-specific copy fit checked for publishing</span></label>
-                <small class="helper wide" id="pageFitReviewHint">Page-specific fit is deferred until a complete, real Page profile is assigned. Publishing remains blocked until then.</small>
-              </div>
-              <details class="editorial-type-review">
-                <summary>Content-type completeness checks</summary>
-                <div class="editorial-form">
-                  <label><span>Recipe timing / doneness cue</span><input id="editorTiming" type="text"></label>
-                  <label><span>Temperature guidance (if applicable)</span><input id="editorTemperature" type="text"></label>
-                  <label class="check-field"><input id="editorTemperatureRequired" type="checkbox"><span>Temperature guidance is required for this recipe</span></label>
-                  <label><span>Serving / result expectation</span><input id="editorServing" type="text"></label>
-                  <label class="check-field"><input id="editorRecipeApproximate" type="checkbox"><span>Recipe is explicitly approximate</span></label>
-                  <label><span>Mistake / problem</span><input id="editorMistakeProblem" type="text"></label>
-                  <label><span>Why the mistake occurs</span><input id="editorCause" type="text"></label>
-                  <label><span>Practical consequence</span><input id="editorConsequence" type="text"></label>
-                  <label><span>Expected corrected result</span><input id="editorExpectedResult" type="text"></label>
-                  <label><span>Option suitability</span><input id="editorSuitability" type="text"></label>
-                  <label><span>Trade-offs / limitations</span><input id="editorTradeoffs" type="text"></label>
-                  <label><span>Decision logic</span><input id="editorDecisionLogic" type="text"></label>
-                </div>
-              </details>
-              <button class="btn btn-primary" id="saveEditorialReview" type="button">Save Editorial Review</button>
-            </div>
-          </section>
-          <div class="action-grid">
+          </details>
+          <details class="advanced-details"><summary>Advanced image tools</summary><div class="action-grid">
             <button id="copyPrompt" class="btn btn-primary" type="button"><span>01</span>Copy ChatGPT Image Prompt</button>
             <button id="importAll" class="btn btn-info" type="button"><span>02</span>Import Generated Images</button>
             <button id="buildAssets" class="btn btn-warning" type="button"><span>03</span>Build Final Assets</button>
             <button id="copyCaption" class="btn btn-success" type="button"><span>04</span>Copy Facebook Caption</button>
           </div>
-          <input id="allFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+          </details><input id="allFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
         </section>
 
-        <section class="card manifest-card" aria-labelledby="manifestTitle">
+        <details class="card manifest-card advanced-details"><summary>Advanced Details · image order</summary>
           <div class="card-header">
             <div><p class="eyebrow">GENERATION MANIFEST</p><h2 id="manifestTitle">Canonical asset order</h2></div>
             <p class="helper" id="manifestCount">—</p>
           </div>
           <ol id="manifestList" class="manifest-list"></ol>
-        </section>
+        </details>
 
         <section class="card" id="images">
           <div class="card-header">
-            <div><p class="eyebrow">SOURCE IMAGES</p><h2 id="slotHeading">Generation slots</h2></div>
-            <p class="helper" id="slotHelper">Slots follow the resolved Generation Manifest.</p>
+            <div><p class="eyebrow">SOURCE IMAGES</p><h2 id="slotHeading">Images</h2></div>
+            <p class="helper" id="slotHelper">Copy the next prompt, then import your downloaded images.</p>
           </div>
-          <div id="slots" class="slot-grid"></div>
+          <div class="image-queue"><strong id="imageQueueProgress">0 / 0 READY</strong><span id="imageQueueNext"></span><button class="btn btn-primary" id="copyNextPrompt" type="button">Copy Next Prompt</button><button class="btn btn-info" id="imageImport" type="button">Import Images</button><button class="btn btn-neutral" id="copyMaster" type="button">Copy Master Session Prompt</button><button class="btn btn-warning" id="imageBuild" type="button">Build Final Assets →</button></div><div id="slots" class="slot-grid"></div>
           <section id="unmatchedPanel" class="setup-card-body" hidden><h3>Unmatched images</h3><p>Choose each destination explicitly. No image is assigned by upload order.</p><div id="unmatchedList"></div></section>
         </section>
 
@@ -229,10 +180,13 @@
             <div><p class="eyebrow">1440 × 1800</p><h2 id="assetHeading">Final Facebook assets</h2></div>
             <button id="downloadAll" class="btn btn-neutral" type="button" disabled>Download All ZIP</button>
           </div>
+          <div id="finalPreview" class="final-preview"><div class="preview-nav"><button id="previewPrev" type="button" class="btn btn-neutral" aria-label="Previous final image">←</button><strong id="previewPosition">0 / 0</strong><button id="previewNext" type="button" class="btn btn-neutral" aria-label="Next final image">→</button></div><img id="finalImage" alt="Final Facebook post preview" hidden><p id="finalEmpty">Build the final assets to preview your post.</p><pre id="finalCaption"></pre><div class="production-actions"><button id="looksGood" class="btn btn-success" type="button">Looks Good</button><button id="fixFinal" class="btn btn-info" type="button">Fix Image</button><button id="regenerateFinal" class="btn btn-neutral" type="button">Regenerate Image</button><button id="rebuildFinal" class="btn btn-warning" type="button">Rebuild</button><button id="previewDownload" class="btn btn-primary" type="button">Download</button></div><p id="previewReviewHint" class="helper"></p></div>
           <p id="exportHint" class="helper setup-card-body">Build and review the complete ordered set before export.</p>
           <div id="assetGrid" class="asset-grid"></div>
         </section>
 
+        <section class="card" id="download"><div class="card-header"><h2 id="downloadHeading">Download</h2></div><div class="setup-card-body"><p id="downloadState">Build your post first.</p><button id="downloadPost" class="btn btn-primary" type="button" disabled>Download Post Package</button><p class="helper">Ordered PNGs + caption.txt + manifest.json</p><div id="nextContentCard" hidden><p class="eyebrow">NEXT CONTENT</p><strong id="nextContentTitle"></strong><button id="startNext" class="btn btn-info" type="button">Start Next →</button></div></div></section>
+        <details class="advanced-details"><summary>Advanced Details · publication and results</summary>
         <section class="card publish-card" id="publish">
           <div>
             <p class="eyebrow">FACEBOOK CAPTION</p>
@@ -286,6 +240,8 @@
             <div class="results-summary" id="resultsSummary" aria-live="polite"></div>
           </div>
         </section>
+        </details>
+        <details class="advanced-details"><summary>Advanced Details · platform status</summary><strong id="platformStatus">CHECKING</strong><p id="platformHint"></p><strong id="selectedContentStatus">NO RECORD</strong></details>
         <section class="card add-sheet-panel" id="addSheetPanel" hidden aria-labelledby="addSheetTitle">
           <div class="card-header">
             <div><p class="eyebrow">SAME GOOGLE WORKBOOK</p><h2 id="addSheetTitle">Create a content worksheet</h2></div>

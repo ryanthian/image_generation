@@ -866,7 +866,8 @@ export function matchGenerationSlot(filename, manifest) {
   const base = String(filename || "").replace(/\.[^.]+$/, "").toLowerCase();
   const candidates = new Set();
   const sequence = base.match(/^(?:image[ _-]*|img[ _-]*|asset[ _-]*)?(\d{1,2})(?=[ _-]|$)/);
-  if (sequence) { const entry=manifest.entries[Number(sequence[1])-1]; if(!entry)return null; candidates.add(entry.slotId); }
+  const namedSequences=[...base.matchAll(/(?:^|[ _-])(?:image|img|asset)[ _-]*(\d{1,2})(?=[ _-]|$)/g)];
+  for(const match of [sequence,...namedSequences].filter(Boolean)){const entry=manifest.entries[Number(match[1])-1];if(!entry)return null;candidates.add(entry.slotId);}
   const tokens = base.split(/[^a-z0-9]+/).filter(Boolean);
   for(const entry of manifest.entries) {
     const slot = entry.slotId.toLowerCase();

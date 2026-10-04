@@ -1,3 +1,4 @@
+import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken} from '/production-assistant.mjs';
 import {
   buildAssetFilename,
   buildSlotPrompt,
@@ -6,7 +7,6 @@ import {
   buildSessionPrompt,
   calculateAdaptivePanel,
   calculateMethodGrid,
-  deriveGenerationReadiness,
   derivePublishingReadiness,
   isStoredAssetStale,
   matchGenerationSlot,
@@ -18,7 +18,7 @@ import {
 
 import { assetSemanticKey, sourceLabel, imageQc, verifyImageSignature, hashBlob, planImports, fitText, wrapText, sessionSignature, productionGates, exportEntries, createZip, safeFilename, BATCH_LIMIT } from "/production-core.js";
 import { auditContent } from "/content-quality.js";
-import {applyEditorialWork,classifyClaimRisk,prepareEditorialProposal,queuePriority,recordKey,sourceFingerprint} from "/editorial-pipeline.mjs";
+import {applyEditorialWork,recordKey} from "/editorial-pipeline.mjs";
 
 const state = {
   unmatched: [],
@@ -86,10 +86,9 @@ function reportRejectedRecords(rejected) {
 const previewUrls = new Map();
 function clearPreviewUrls(group) { for (const url of previewUrls.get(group) || []) URL.revokeObjectURL(url); previewUrls.set(group, []); }
 function previewUrl(blob, group) { const url = URL.createObjectURL(blob); previewUrls.get(group)?.push(url); return url; }
-function reviewSignature() { return sessionSignature(state.content, state.manifest, state.images, state.assets); }
-const IMAGE_REVIEW_CHECKS=['REALISM','CORRECT SUBJECT','CORRECT INGREDIENT / OBJECT','CORRECT STAGE','CONTINUITY','NO RANDOM TEXT','NO LOGO/WATERMARK','NO OBVIOUS AI ARTIFACT','CROP ACCEPTABLE','FACTUALLY MATCHES SOURCE'];
+function reviewSignature() { return changeToken(sessionSignature(state.content, state.manifest, state.images, state.assets)); }
 function slotReviewKey(slotId){return `capc:image-review:${keyFor('image-review',slotId)}`;}
-function slotReviewPassed(entry){const image=state.images[entry.slotId],review=state.imageReviews[entry.slotId];return Boolean(image&&review?.status==='PASS'&&review.imageRevision===image.revision&&review.semanticKey===entry.semanticKey&&IMAGE_REVIEW_CHECKS.every(check=>review.checks?.includes(check)));}
+function slotReviewPassed(entry){const image=state.images[entry.slotId],review=state.imageReviews[entry.slotId];return Boolean(image&&review?.status==='PASS'&&review.imageRevision===image.revision&&review.semanticKey===entry.semanticKey);}
 function invalidateReview() { state.visualQcConfirmedFor = ""; }
 function refreshStale() {
   for (const item of state.plan) if (state.assets[item.asset_id]) {
@@ -178,10 +177,6 @@ async function copyText(value, message) {
   }
 }
 
-function imageUrl(value) {
-  return value?.blob ? URL.createObjectURL(value.blob) : "";
-}
-
 function renderManifest() {
   $("manifestCount").textContent = `Generation Images: ${state.manifest.expectedAssets} · Planned assets: ${state.plan.length} (long method/text may span more pages)`;
   $("manifestList").innerHTML = state.manifest.entries.map((entry) =>
@@ -195,7 +190,7 @@ function renderSlots() {
   container.innerHTML = "";
   for (const entry of state.manifest.entries) {
     const stored = state.images[entry.slotId];
-    const generationBlocked = !state.generationReadiness?.ready;
+    const generationBlocked = !state.assessment || !canImport(state.assessment);
     const node = document.createElement("article");
     const stale = Boolean(stored && stored.semanticKey !== entry.semanticKey);
     node.className = `slot${stored ? " ready" : ""}${stale ? " stale" : ""}`;
@@ -203,21 +198,20 @@ function renderSlots() {
     node.innerHTML = `
       <div class="slot-preview">${stored ? `<img alt="${escapeHtml(entry.label)} imported image">` : `<div class="slot-empty"><b>${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</b><span>${escapeHtml(entry.assetType)} · Drop PNG, JPG or WebP</span></div>`}</div>
       <div class="slot-footer">
-        <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stale ? `REGEN REQUIRED · source definition changed` : stored ? "Complete" : entry.required ? "Required" : "Optional"}</div></div>
+        <div><div class="slot-name">${String(entry.sequence).padStart(2, "0")} · ${escapeHtml(entry.label)}</div><div class="slot-state">${stale ? `REGEN REQUIRED · source definition changed` : stored ? "READY" : entry.required ? "Missing" : "Optional"}</div></div>
         <small class="image-facts">${escapeHtml(entry.expectedFilename)}${stored?.qc ? `<br>${stored.qc.width} × ${stored.qc.height} · ${stored.qc.orientation}${stored.qc.cropFraction > .03 ? " · Crop required" : ""}<br>${escapeHtml(stored.qc.warnings.join(" "))}` : ""}</small>
-        <div class="slot-actions"><button type="button" data-copy-slot ${generationBlocked ? "disabled" : ""}>Copy slot prompt</button><button type="button" data-choose ${generationBlocked ? "disabled" : ""}>${stored ? "Replace" : "Choose"}</button>${stored ? `<button type="button" data-remove ${generationBlocked ? "disabled" : ""}>Remove</button>` : ""}</div>
-        ${stored?`<details class="slot-review"><summary>Real-image review · ${slotReviewPassed(entry)?'PASS':state.imageReviews[entry.slotId]?.status||'NOT REVIEWED'}</summary><div class="slot-review-checks">${IMAGE_REVIEW_CHECKS.map((check,index)=>`<label><input type="checkbox" data-review-check="${index}" ${state.imageReviews[entry.slotId]?.checks?.includes(check)?'checked':''}> ${escapeHtml(check)}</label>`).join('')}</div><label>Decision<select data-slot-decision><option value="">Not reviewed</option><option value="PASS">PASS</option><option value="FIX IMAGE">FIX IMAGE</option><option value="REGENERATE">REGENERATE</option></select></label><button type="button" data-save-slot-review>Save image review</button><button type="button" data-copy-repair>Copy this slot prompt</button></details>`:''}
+        <p class="slot-purpose">Purpose: ${escapeHtml(entry.imagePrompt.slice(0,130))}</p><div class="slot-actions"><button type="button" data-copy-slot ${!state.assessment?.ready ? "disabled" : ""}>Copy Prompt</button><button type="button" data-choose ${generationBlocked ? "disabled" : ""}>${stored ? "Replace" : "Upload"}</button>${stored ? `<button type="button" data-view>View</button><button type="button" data-remove ${generationBlocked ? "disabled" : ""}>Remove</button>` : ""}</div>
+        ${stored?`<div class="slot-review"><span>${slotReviewPassed(entry)?'LOOKS GOOD':state.imageReviews[entry.slotId]?.status||'Inspect in Final preview'}</span><button type="button" data-image-good>Looks Good</button><button type="button" data-image-fix>Fix Image</button><button type="button" data-image-regen>Regenerate</button><button type="button" data-copy-repair>Copy FIX Prompt</button></div>`:''}
         <input type="file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>`;
     if (stored) node.querySelector("img").src = previewUrl(stored.blob, "slots");
-    node.querySelector("[data-copy-slot]").addEventListener("click", () => copyText(buildSlotPrompt(state.content, entry.slotId), "Slot prompt copied."));
-    const input = node.querySelector("input");
+    node.querySelector("[data-copy-slot]").addEventListener("click", () => state.assessment?.ready && copyText(buildSlotPrompt(state.content, entry.slotId), "Slot prompt copied."));
+    const input = node.querySelector("input[type=file]");
     node.querySelector("[data-choose]").addEventListener("click", () => input.click());
     input.addEventListener("change", () => input.files[0] && saveImage(entry.slotId, input.files[0]));
+    node.querySelector("[data-view]")?.addEventListener("click",()=>{const dialog=document.createElement("dialog");dialog.className="image-dialog";const image=document.createElement("img");image.src=previewUrl(stored.blob,"slots");image.alt=entry.label;const close=document.createElement("button");close.textContent="Close";close.className="btn btn-neutral";close.onclick=()=>dialog.close();dialog.append(image,close);document.body.append(dialog);dialog.addEventListener("close",()=>dialog.remove());dialog.showModal();});
     node.querySelector("[data-remove]")?.addEventListener("click", () => removeImage(entry.slotId));
-    if(stored){node.querySelector('[data-slot-decision]').value=state.imageReviews[entry.slotId]?.status||'';
-      node.querySelector('[data-copy-repair]').addEventListener('click',()=>copyText(buildSlotPrompt(state.content,entry.slotId),'Affected slot prompt copied.'));
-      node.querySelector('[data-save-slot-review]').addEventListener('click',()=>{const status=node.querySelector('[data-slot-decision]').value,checks=[...node.querySelectorAll('[data-review-check]:checked')].map(input=>IMAGE_REVIEW_CHECKS[Number(input.dataset.reviewCheck)]);if(status==='PASS'&&checks.length!==IMAGE_REVIEW_CHECKS.length)return toast('Check all ten real-image criteria before PASS.',true);if(!status)return toast('Choose PASS, FIX IMAGE, or REGENERATE.',true);const review={status,checks,imageRevision:stored.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[entry.slotId]=review;localStorage.setItem(slotReviewKey(entry.slotId),JSON.stringify(review));invalidateReview();renderSlots();renderQc();if(status!=='PASS')copyText(buildSlotPrompt(state.content,entry.slotId),'Affected slot prompt copied for repair.');else toast('Real-image review PASS recorded for this slot.');});}
+    if(stored){for(const [selector,status] of [['[data-image-good]','PASS'],['[data-image-fix]','FIX IMAGE'],['[data-image-regen]','REGENERATE']])node.querySelector(selector).addEventListener('click',()=>saveSimpleImageReview(entry.slotId,status));node.querySelector('[data-copy-repair]').addEventListener('click',()=>copyText(buildSlotPrompt(state.content,entry.slotId),'Image prompt copied.'));}
     for (const event of ["dragenter", "dragover"]) node.addEventListener(event, (e) => { e.preventDefault(); if (!generationBlocked) node.classList.add("dragover"); });
     for (const event of ["dragleave", "drop"]) node.addEventListener(event, (e) => { e.preventDefault(); node.classList.remove("dragover"); });
     node.addEventListener("drop", (e) => { if (!generationBlocked && e.dataTransfer.files[0]) saveImage(entry.slotId, e.dataTransfer.files[0]); });
@@ -237,12 +231,12 @@ function renderAssets() {
       const order=++sequence,node=document.createElement("article");
       node.className=`asset${stored?.stale ? " stale" : ""}`;node.dataset.asset=item.asset_id;
       const filename=`${String(order).padStart(2,"0")}_${safeFilename(item.asset_type)}.png`;
-      node.innerHTML=`<div class="asset-preview">${page ? `<img alt="${escapeHtml(item.title)} page ${order}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(order).padStart(2,"0")} · ${escapeHtml(item.title)}</strong><small>${stored?.stale ? "STALE — REBUILD REQUIRED" : stored ? "CURRENT · 1440 × 1800" : "Build required"}</small></div><button type="button" ${stored && !stored.stale ? "" : "disabled"}>Download</button></div>`;
+      node.innerHTML=`<div class="asset-preview">${page ? `<img alt="${escapeHtml(item.title)} page ${order}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(order).padStart(2,"0")} · ${escapeHtml(item.title)}</strong><small>${stored?.stale ? "STALE — REBUILD REQUIRED" : stored ? "CURRENT · 1440 × 1800" : "Build required"}</small></div><button type="button" ${stored && !stored.stale && state.gates?.exportReady ? "" : "disabled"}>Download</button></div>`;
       if(page)node.querySelector("img").src=previewUrl(page.blob,"assets");
-      node.querySelector("button").addEventListener("click",()=>{refreshStale();if(!stored.stale)downloadBlob(page.blob,filename);});container.appendChild(node);
+      node.querySelector("button").addEventListener("click",()=>{refreshStale();if(!stored.stale&&state.gates?.exportReady)downloadBlob(page.blob,filename);});node.querySelector(".asset-preview").addEventListener("click",()=>{state.previewIndex=order-1;renderFinalPreview();});container.appendChild(node);
     }
   }
-  updateProgress();
+  updateProgress();renderFinalPreview();
 }
 
 function updateProgress() {
@@ -259,7 +253,7 @@ function updateProgress() {
 
 async function saveImage(slotId, file) {
   if(state.busy) { toast("Wait for the current build or export to finish.",true); return false; }
-  if (!state.generationReadiness?.ready) { toast("Resolve the editorial and specification gate before importing images.",true); return false; }
+  if (!state.assessment || !canImport(state.assessment)) { toast("Load a valid image specification before importing.",true); return false; }
   const token=state.contentLoadToken,entry=state.manifest.entries.find(item=>item.slotId===slotId),key=keyFor("image",slotId);
   if(!entry)return false;
   try {
@@ -286,7 +280,7 @@ async function removeImage(slotId) {
   delete state.images[slotId];delete state.imageReviews[slotId];localStorage.removeItem(slotReviewKey(slotId));invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();
 }
 async function importMany(files) {
-  if(state.busy || !state.generationReadiness?.ready)return toast("Complete the generation gate before importing.",true);
+  if(state.busy || !state.assessment || !canImport(state.assessment))return toast("Load a valid image specification before importing.",true);
   const list=Array.from(files);
   if(list.length>60 || list.reduce((sum,file)=>sum+file.size,0)>BATCH_LIMIT)return toast("Import at most 60 files / 160 MB in one batch.",true);
   const token=state.contentLoadToken,{matched,unmatched}=planImports(list,state.manifest,matchGenerationSlot);
@@ -339,9 +333,13 @@ function applyContent(content) {
   $("persistentError").hidden = true;
   state.originalContent=content;
   const savedWork=state.workById[content.contentId];
-  const applied=applyEditorialWork(content,savedWork,savedWork?.review?.sourceFingerprint);
+  const applied=applyEditorialWork(content,savedWork?.stale?null:savedWork,savedWork?.review?.sourceFingerprint);
   state.appliedWork=applied.content!==content&&!savedWork?.stale;
-  state.content = { ...applied.content, pageProfile: state.pageProfile || content.pageProfile || null };
+  state.originalContent={...applied.content,pageProfile:state.pageProfile||content.pageProfile||null};
+  state.productionSession=readProductionSession(state.originalContent);
+  state.assessment=assessSelected();
+  state.content=state.assessment.content;
+  state.previewIndex=0;
   state.images = {};
   state.imageReviews = {};
   state.assets = {};
@@ -356,8 +354,8 @@ function applyContent(content) {
   $("sideId").textContent = state.content.contentId;
   $("contentId").textContent = state.content.contentId;
   $("category").textContent = state.content.topic;
-  const queueStatus=currentQueueRow()?.contentStatus||((runEditorialReview(state.content).status==='PASS')?'READY':'NEEDS IMPROVEMENT');
-  $("status").textContent = `${queueStatus} · SOURCE ${state.content.lifecycleStatus}`;
+  const queueStatus=state.assessment.recommendation;
+  $("status").textContent = queueStatus;
   $("selectedContentStatus").textContent=queueStatus;
   $("status").classList.toggle("posted", state.content.lifecycleStatus === "PUBLISHED" || state.content.lifecycleStatus === "Posted");
   $("title").textContent = state.content.title;
@@ -384,7 +382,8 @@ function applyContent(content) {
 function renderQc() {
   const qc = runContentQc(state.content);
   const editorial = runEditorialReview(state.content);
-  const generation = deriveGenerationReadiness(state.content, { structuralQc: qc, editorialReview: editorial });
+  state.assessment=assessSelected();
+  const generation={status:state.assessment.ready?'GENERATION_READY':'GENERATION_BLOCKED',ready:state.assessment.ready,blockers:state.assessment.blockers};
   refreshStale();
   const stale = state.manifest.entries.filter((entry) => state.images[entry.slotId] && state.images[entry.slotId].semanticKey !== entry.semanticKey);
   const contractStatus = qc.failures.length ? "FAIL" : stale.length || qc.warnings.length ? "WARNING" : "PASS";
@@ -393,7 +392,8 @@ function renderQc() {
     return built?.qc_status === "PASS" && !built.stale && built.sourceRevision === assetSourceRevision(item);
   });
   const requiredImagesPresent = state.manifest.entries.filter((entry) => entry.required).every((entry) => Boolean(state.images[entry.slotId]));
-  const allSlotsReviewed=state.manifest.entries.filter(entry=>entry.required).every(slotReviewPassed);
+  const noImageRepairPending=!state.manifest.entries.some(entry=>['FIX IMAGE','REGENERATE'].includes(state.imageReviews[entry.slotId]?.status));
+  const allSlotsReviewed=noImageRepairPending;
   const visualQcStatus = !allFinalAssetsBuilt ? "NOT RUN" : allSlotsReviewed&&state.visualQcConfirmedFor === reviewSignature() ? "PASS" : "REVIEW REQUIRED";
   const publishing = derivePublishingReadiness(state.content, {
     generationReadiness: generation,
@@ -403,7 +403,8 @@ function renderQc() {
     pageProfileReady: state.pageProfileComplete
   });
   const quality = auditContent(state.content);
-  const gates = productionGates({contract:qc,editorial,generation,manifest:state.manifest,images:state.images,plan:state.plan,assets:state.assets,visualReviewed:visualQcStatus === "PASS",monetization:quality});
+  const gates = productionGates({contract:qc,editorial,generation,manifest:state.manifest,images:state.images,plan:state.plan,assets:state.assets,visualReviewed:visualQcStatus === "PASS",monetization:quality,productionDecision:state.assessment});
+  if(editorial.status!=='PASS'){publishing.ready=false;publishing.blockers.push('Historical publishing approval is not supplied by an AI check.');}
   if(!gates.technicalImageQc || stale.length) { publishing.ready=false; if(publishing.status!=="PUBLISHED")publishing.status="NOT_READY"; publishing.blockers.push("Technical image QC and current source definitions must pass."); }
   state.gates=gates;
   $("monetizationScore").textContent=`${quality.score}/100 heuristic score · human editorial approval is separate`;
@@ -413,7 +414,7 @@ function renderQc() {
   setGate("finalAssetsGate","finalAssetsStatus",gates.finalAssetsBuilt?"BUILT":"REBUILD REQUIRED");
   setGate("exportGate","exportStatus",gates.exportReady?"READY":"NOT READY");
   $("downloadAll").disabled=!gates.exportReady || state.busy;
-  $("exportHint").textContent=gates.exportReady?"Review the numbered thumbnails, then download one ZIP with images, caption and manifest.":"ZIP requires editorial approval, current images and final assets, technical QC and manual visual review of every required slot and final asset.";
+  $("exportHint").textContent=gates.exportReady?"Review the numbered thumbnails, then download one ZIP with images, caption and manifest.":"Download needs current images, built final assets, automatic QC and Looks Good for this post.";
   $("nextAction").textContent=!generation.ready?"Next: resolve editorial and generation blockers below.":!gates.sourceImagesComplete?"Next: copy the prompt, generate images, and import the named files.":!gates.finalAssetsBuilt?"Next: build or rebuild the final assets.":visualQcStatus!=="PASS"?"Next: inspect every preview and confirm the visual review checklist.":"Next: download your ordered production ZIP.";
   const combinedStatus = contractStatus === "FAIL" ? "fail" : editorial.status === "BLOCKED" ? "blocked" : editorial.status === "REVIEW" || generation.status === "GENERATION_BLOCKED" ? "review" : "pass";
   const details = [
@@ -431,28 +432,26 @@ function renderQc() {
   setGate("visualGate", "visualStatus", visualQcStatus);
   setGate("publishingGate", "publishingStatus", publishing.status);
   $("qcDetails").textContent = details.length ? details.join("\n") : "Contract checks pass. No editorial or production blockers are recorded.";
-  $("editorialNote").textContent = "Editorial PASS requires complete review metadata, a named reviewer and timestamp. Rule checks do not independently prove factual accuracy.";
+  $("editorialNote").textContent = "AI production check and historical human approval are separate. Page settings apply only to publishing.";
   $("publishHeading").textContent = publishing.status === "PUBLISHED" ? "Already published" : publishing.ready ? "Ready to post" : "NOT READY TO POST";
   const publicationRecorded = (state.resultsSummary?.rows || []).some((row) => row.contentId === state.content.contentId && row.pageProfileId === state.pageProfile?.profileId && row.postUrl && Number.isFinite(Date.parse(row.publishedAt)));
   const workflowPublished = ["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(state.workflow?.stage);
   $("markPosted").disabled = !state.writable || !publishing.ready || !publicationRecorded || !workflowPublished;
-  $("visualQcCheck").disabled = !allFinalAssetsBuilt||!allSlotsReviewed;
-  $("visualQcCheck").checked = allSlotsReviewed&&state.visualQcConfirmedFor === reviewSignature();
   $("visualQcHint").textContent = allFinalAssetsBuilt
     ? "Review realism, continuity, correct objects and stages, comparison accuracy, safe crop, readable text, logos and AI artifacts. Confirmation survives reload and resets when dependencies change."
-    : "Review each imported image against ten criteria and build all final assets before confirming final visual QC.";
+    : "Build current final assets and choose Looks Good in the post preview.";
   $("copyPrompt").disabled = !generation.ready;
-  $("importAll").disabled = !generation.ready;
+  $("importAll").disabled = !canImport(state.assessment);
   $("buildAssets").disabled = !generation.ready || !gates.technicalImageQc || stale.length > 0 || state.busy;
-  $("copyCaption").disabled = editorial.status !== "PASS";
-  $("copyCaptionBottom").disabled = editorial.status !== "PASS";
+  $("copyCaption").disabled = !state.assessment.ready;
+  $("copyCaptionBottom").disabled = !state.assessment.ready;
   $("writeHint").textContent = state.writable
     ? (publishing.ready && publicationRecorded && workflowPublished ? "Production gates and publication record pass. Mark Posted writes only the Status field." : `Sheet status write is blocked: ${publishing.blockers[0] || (!publicationRecorded ? "save the matching post URL and publish date" : "advance the workflow to Scheduled / Published")}`)
     : "This source is read-only; production data will not be changed.";
   state.editorialReview = editorial;
   state.generationReadiness = generation;
   state.publishingReadiness = publishing;
-  $("workCopyMaster").disabled=!generation.ready;
+  renderProductionSummary();
 }
 
 function setGate(containerId, statusId, value) {
@@ -466,41 +465,7 @@ function setFormValue(id, value) {
   if (node) node.value = value ?? "";
 }
 
-function renderEditorialForm(review = {}) {
-  const fields = {
-    editorReviewer: review.reviewer, editorDecision: review.review_status || "REVIEW",
-    editorEvidenceReferences: (review.evidence?.references || []).join("\n"),
-    editorAudienceNeed: review.audience_need, editorReaderValue: review.reader_value,
-    editorSourceNotes: review.source_notes, editorClaimEvidence: review.claim_evidence,
-    editorLimitations: review.limitations, editorReviewNote: review.review_note,
-    editorInternalNotes: [review.internal_claim_notes, review.editorial_notes].filter(Boolean).join("\n"),
-    editorTiming: review.timing_guidance, editorTemperature: review.temperature_guidance,
-    editorServing: review.serving_expectation, editorMistakeProblem: review.mistake_problem,
-    editorCause: review.cause_explanation, editorConsequence: review.consequence,
-    editorExpectedResult: review.expected_result, editorSuitability: review.option_suitability,
-    editorTradeoffs: review.tradeoffs, editorDecisionLogic: review.decision_logic
-  };
-  for (const [id, value] of Object.entries(fields)) setFormValue(id, value);
-  $("editorEvidenceType").value = review.evidence?.type || review.evidence_type || "UNVERIFIED";
-  $("editorEvidenceVerified").checked = review.source_evidence_status === "VERIFIED";
-  $("editorCaptionApproved").checked = review.caption_review_status === "PASS";
-  $("editorReaderCopyReviewed").checked = review.reader_facing_copy_reviewed === true;
-  $("editorNoInternalLeakage").checked = review.internal_note_leakage === false;
-  $("editorClaimSafetyOk").checked = review.claim_safety_ok === true;
-  $("editorPageFitApproved").checked = review.page_fit_status === "PASS";
-  $("editorRecipeApproximate").checked = review.approximate_recipe === true || review.recipe_precision === "APPROXIMATE";
-  $("editorTemperatureRequired").checked = review.temperature_required === true;
-  $("reviewSavedState").textContent = review.reviewed_at ? `Sheet verified · ${review.review_status || "REVIEW"}` : "Not saved";
-  const disabled = !state.content || !state.sourceId || state.source === "approved-opportunities";
-  $("saveEditorialReview").disabled = disabled;
-  for (const id of ["editorReviewer", "editorDecision", "editorEvidenceType", ...Object.keys(fields).filter((field) => field !== "editorReviewer" && field !== "editorDecision"), "editorEvidenceVerified", "editorCaptionApproved", "editorReaderCopyReviewed", "editorNoInternalLeakage", "editorClaimSafetyOk", "editorPageFitApproved", "editorRecipeApproximate", "editorTemperatureRequired"]) {
-    if ($(id)) $(id).disabled = disabled;
-  }
-  $("editorPageFitApproved").disabled = disabled || !state.pageProfileComplete;
-  $("pageFitReviewHint").textContent = state.pageProfileComplete
-    ? "Page-specific fit is a publishing check; generation can proceed independently."
-    : "Deferred: no complete Page profile is assigned. Content can still be reviewed and generated; publishing stays blocked.";
-}
+function renderEditorialForm(review = {}) { $('reviewHistory').textContent=JSON.stringify(review,null,2); }
 
 function renderPageProfiles() {
   const profiles = state.profiles || [];
@@ -587,48 +552,6 @@ async function loadContentOperations(token = state.contentLoadToken) {
   renderSlots();
 }
 
-function editorialReviewPayload() {
-  return {
-    sheetId: state.sourceId, contentId: state.content.contentId,
-    reviewer: $("editorReviewer").value, reviewStatus: $("editorDecision").value,
-    evidenceType: $("editorEvidenceType").value,
-    evidenceReferences: $("editorEvidenceReferences").value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
-    audienceNeed: $("editorAudienceNeed").value, readerValue: $("editorReaderValue").value,
-    sourceNotes: $("editorSourceNotes").value, claimEvidence: $("editorClaimEvidence").value,
-    limitations: $("editorLimitations").value, reviewNote: $("editorReviewNote").value,
-    internalClaimNotes: $("editorInternalNotes").value, editorialNotes: "",
-    evidenceVerified: $("editorEvidenceVerified").checked, captionApproved: $("editorCaptionApproved").checked,
-    readerFacingCopyReviewed: $("editorReaderCopyReviewed").checked,
-    internalNoteLeakage: !$("editorNoInternalLeakage").checked,
-    claimSafetyOk: $("editorClaimSafetyOk").checked,
-    pageFitApproved: $("editorPageFitApproved").checked, approximateRecipe: $("editorRecipeApproximate").checked,
-    recipePrecision: $("editorRecipeApproximate").checked ? "APPROXIMATE" : "EXACT",
-    timingGuidance: $("editorTiming").value, temperatureRequired: $("editorTemperatureRequired").checked,
-    temperatureGuidance: $("editorTemperature").value, servingExpectation: $("editorServing").value,
-    mistakeProblem: $("editorMistakeProblem").value, causeExplanation: $("editorCause").value,
-    consequence: $("editorConsequence").value, expectedResult: $("editorExpectedResult").value,
-    optionSuitability: $("editorSuitability").value, tradeoffs: $("editorTradeoffs").value,
-    decisionLogic: $("editorDecisionLogic").value
-  };
-}
-
-async function saveEditorialReview() {
-  if (!state.content || !state.sourceId) return;
-  try {
-    const result = await apiJson("/api/production/editorial-review", { method: "POST", headers: writeHeaders(), body: JSON.stringify(editorialReviewPayload()) });
-    if (result.recomputedFrom !== "sheet-readback" || result.review?.source !== "sheet") throw new Error("Review save was not verified from the Google Sheet readback.");
-    state.editorialReviewRecord = result.review;
-    state.content = { ...state.content, editorialReview: result.review.review };
-    renderEditorialForm(result.review.review);
-    renderQc();
-    renderSlots();
-    toast(`Google Sheet readback verified · Editorial ${result.evaluated.status}.`);
-  } catch (error) {
-    if (error.message) toast(error.message, true);
-    if (error.issues) toast(`${error.reviewStatus || "Review"}: ${error.issues.map((item) => item.code).join(", ")}`, true);
-  }
-}
-
 async function advanceWorkflow() {
   if (!state.content || !state.sourceId) return;
   const index = WORKFLOW_STAGES.indexOf(state.workflow?.stage || "COPY_DRAFT");
@@ -704,6 +627,7 @@ function clearContentView(message) {
   state.editorialReviewRecord = null;
   state.workflow = null;
   state.resultsSummary = null;
+  state.assessment=null;
   state.gates = null;
   state.generationReadiness = null;
   state.publishingReadiness = null;
@@ -722,8 +646,6 @@ function clearContentView(message) {
   $("exportHint").textContent = "Choose a valid content record before exporting.";
   $("writeHint").textContent = "No content record is selected; status writes are blocked.";
   for (const [container, status] of [["contractGate", "qcStatus"], ["editorialGate", "editorialStatus"], ["generationGate", "generationStatus"], ["sourceImagesGate", "sourceImagesStatus"], ["technicalGate", "technicalStatus"], ["finalAssetsGate", "finalAssetsStatus"], ["exportGate", "exportStatus"], ["visualGate", "visualStatus"], ["publishingGate", "publishingStatus"]]) setGate(container, status, "NOT RUN");
-  $("visualQcCheck").checked = false;
-  $("visualQcCheck").disabled = true;
   $("sideRecipe").textContent = message;
   $("sideId").textContent = "";
   clearPreviewUrls("slots"); clearPreviewUrls("assets");
@@ -741,7 +663,7 @@ function clearContentView(message) {
   $("copyCaption").disabled = true;
   $("copyCaptionBottom").disabled = true;
   $("markPosted").disabled = true;
-  $("saveEditorialReview").disabled = true;
+
   $("advanceWorkflow").disabled = true;
   $("saveManualResults").disabled = true;
   $("qcDetails").textContent = message;
@@ -760,92 +682,135 @@ function renderOptions(records) {
 function queueKey(row) { return recordKey(row.sheetId, row.contentId); }
 function currentQueueRow() { return state.editorialRows.find(row => Number(row.sheetId)===Number(state.sourceId) && row.contentId===state.content?.contentId); }
 function batchItem(row) { return state.editorialBatch?.items?.find(item=>Number(item.sheetId)===Number(row.sheetId)&&item.contentId===row.contentId); }
-function renderEditorialQueue() {
+function renderEditorialQueue(){
   const filter=$('queueFilter').value,search=$('queueSearch').value.trim().toLowerCase(),showDup=$('queueShowDuplicates').checked;
-  const selected=state.editorialRows.filter(row=>{
-    if(!showDup&&filter!=='DUPLICATE'&&row.duplicateStatus==='HOLD_DUPLICATE')return false;
-    if(search&&![row.contentId,row.title,row.source,row.contentType].some(value=>String(value||'').toLowerCase().includes(search)))return false;
-    if(filter==='ALL')return true;
-    if(filter==='BATCH 01')return Boolean(batchItem(row));
-    if(filter==='DUPLICATE')return row.duplicateStatus==='HOLD_DUPLICATE'||row.duplicateStatus==='REWORK';
-    if(filter==='EDITORIAL REVIEW REQUIRED')return row.editorialStatus!=='HUMAN APPROVED';
-    if(filter==='SOURCE REVIEW REQUIRED')return row.issueCodes.includes('SOURCE_REVIEW_REQUIRED');
-    if(filter==='MISSING FACTS')return row.issueCodes.some(code=>/MISSING|QUANTIT|WHY_NOT_EXPLICIT/.test(code));
-    if(filter==='IMAGE READY')return row.imageReady;
-    if(filter==='PUBLISHED')return ['PUBLISHED','Posted'].includes(row.lifecycleStatus);
-    return row.contentStatus===filter;
-  });
-  $('queueSummary').textContent=`${selected.length} shown · ${state.editorialRows.length} source records · ${state.editorialRows.filter(row=>row.duplicateStatus==='HOLD_DUPLICATE').length} held duplicate copies · ranked by editorial priority`;
-  const batch=state.editorialBatch?.items||[],inBatch=key=>state.editorialRows.find(row=>queueKey(row)===key),approved=batch.filter(item=>inBatch(recordKey(item.sheetId,item.contentId))?.editorialStatus==='HUMAN APPROVED').length,needs=batch.filter(item=>inBatch(recordKey(item.sheetId,item.contentId))?.editorialStatus==='NEEDS CHANGES').length;
-  $('batchProgress').textContent=`Production Batch 01 · Approved ${approved} / ${batch.length} · Needs Fix ${needs} · Remaining ${batch.length-approved-needs} · AI prepared ${batch.length}`;
-  $('queueRows').innerHTML=selected.map(row=>`<tr><td><button type="button" class="queue-open" data-queue-key="${escapeHtml(queueKey(row))}">${escapeHtml(row.contentId)}</button><br>${escapeHtml(row.title)}</td><td>${escapeHtml(row.source)}<br><small>${escapeHtml(row.contentType)}</small></td><td>${row.score}/100<br><small>${escapeHtml(row.contentStatus)}</small></td><td>${escapeHtml(row.issueCodes.slice(0,3).join(', ')||'No heuristic issue')}<br><small>${escapeHtml(row.duplicateStatus)}${row.canonicalKey&&row.duplicateStatus==='HOLD_DUPLICATE'?` → ${escapeHtml(row.canonicalKey)}`:''}</small></td><td>${escapeHtml(row.editorialStatus)}</td><td>${escapeHtml(row.nextAction)}</td></tr>`).join('')||'<tr><td colspan="6">No records match this filter.</td></tr>';
+  for(const row of state.editorialRows){const a=assessProduction(row.content,{session:readProductionSession(row.content,row.sheetId),duplicateStatus:row.duplicateStatus});row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.riskTier=a.risk.tier;}
+  const selected=state.editorialRows.filter(row=>{if(!showDup&&row.duplicateStatus==='HOLD_DUPLICATE')return false;if(search&&![row.contentId,row.title,row.source,row.contentType].some(v=>String(v||'').toLowerCase().includes(search)))return false;if(filter==='ALL')return true;if(filter==='BATCH 01')return Boolean(batchItem(row));if(filter==='PUBLISHED')return ['PUBLISHED','Posted'].includes(row.lifecycleStatus);if(filter==='IN PROGRESS')return row.imageCount>0&&!row.downloaded;if(filter==='READY TO DOWNLOAD')return row.readyToDownload;return row.recommendation===filter;});
+  $('queueSummary').textContent=`${selected.length} shown · ${state.editorialRows.length} source records · ${state.editorialRows.filter(r=>r.duplicateStatus==='HOLD_DUPLICATE').length} duplicates hidden by default`;
+  const batch=state.editorialRows.filter(row=>batchItem(row));$('batchProgress').textContent=`Production Batch 01 · ${batch.length} prepared · ${batch.filter(r=>r.recommendation==='PRODUCE').length} PRODUCE · ${batch.filter(r=>r.recommendation==='IMPROVE').length} IMPROVE · ${batch.filter(r=>r.recommendation==='SKIP').length} SKIP`;
+  $('queueRows').innerHTML=selected.map(row=>`<tr><td><button type="button" class="queue-open" data-queue-key="${escapeHtml(queueKey(row))}">${escapeHtml(row.title)}</button><br><small>${escapeHtml(row.contentId)}</small></td><td>${escapeHtml(row.contentType)}<br><small>${escapeHtml(row.source)}</small></td><td><strong>${row.score}</strong><br><span class="badge">${row.recommendation}</span></td><td>${row.riskTier}<br><small>${row.duplicateStatus==='HOLD_DUPLICATE'?'Duplicate':row.duplicateStatus==='REWORK'?'Possible duplicate':'No duplicate'}</small></td><td>${row.imageCount||0}/${row.imageTotal||0} images${row.readyToDownload?' · Ready to download':row.downloaded?' · Downloaded':''}</td><td><button type="button" data-queue-key="${escapeHtml(queueKey(row))}">${row.imageCount?'Continue →':row.recommendation==='PRODUCE'?'Start →':row.recommendation==='IMPROVE'?'Improve →':'View →'}</button></td></tr>`).join('')||'<tr><td colspan="6">No content matches.</td></tr>';
   $('queueRows').querySelectorAll('[data-queue-key]').forEach(button=>button.addEventListener('click',()=>openQueueItem(state.editorialRows.find(row=>queueKey(row)===button.dataset.queueKey))));
-  if(state.content){const current=currentQueueRow();if(current)$('status').textContent=`${current.contentStatus} · SOURCE ${state.content.lifecycleStatus}`;}
-  if(state.content){const current=currentQueueRow();if(current)$('selectedContentStatus').textContent=current.contentStatus;}
 }
-async function loadEditorialQueue() {
-  $('queueLoad').disabled=true;$('queueSummary').textContent='Loading all three production worksheets…';
-  try {
-    const [batchResult,mapResult,...sourceResults]=await Promise.all([
-      apiJson('/api/editorial/batch'),apiJson('/api/editorial/canonical-map'),
-      ...state.sources.filter(source=>['2026091901','812541719','433728120'].includes(String(source.sheetId))).map(source=>apiJson(`/api/recipes?sheetId=${source.sheetId}`))
-    ]);
+async function loadEditorialQueue(){
+  $('queueLoad').disabled=true;$('queueSummary').textContent='Loading production content…';
+  try{
+    const [batchResult,mapResult,...sourceResults]=await Promise.all([apiJson('/api/editorial/batch'),apiJson('/api/editorial/canonical-map'),...state.sources.filter(s=>['2026091901','812541719','433728120'].includes(String(s.sheetId))).map(s=>apiJson(`/api/recipes?sheetId=${s.sheetId}`))]);
     state.editorialBatch=batchResult.batch;state.canonicalMap=mapResult.map;
-    const dup=new Map();for(const group of state.canonicalMap.groups||[]){const canonical=recordKey(group.canonical.sheetId,group.canonical.contentId);dup.set(canonical,{status:'CANONICAL',canonical});for(const item of group.duplicates)dup.set(recordKey(item.sheetId,item.contentId),{status:'HOLD_DUPLICATE',canonical});}
-    const rework=new Set((state.canonicalMap.reviewPairs||[]).flatMap(pair=>[pair.left,pair.right].map(item=>`${item.source}:${item.contentId}`)));
-    const rows=[];
-    for(const data of sourceResults){const sheetId=Number(data.sheetId||data.sourceState?.sheetId||data.sheet?.sheetId||data.records?.[0]?.Sheet_ID||0),source=state.sources.find(item=>Number(item.sheetId)===sheetId)||state.sources.find(item=>item.title===data.sourceName);
-      const resolvedId=sheetId||Number(source?.sheetId);if(!resolvedId)throw Error('Worksheet identity missing from queue source response.');
-      for(const content of normalizeContentRecordsSafely(data.records||data.recipes||[]).records){const quality=auditContent(content),key=recordKey(resolvedId,content.contentId),assignment=dup.get(key),work=data.editorialWork?.[content.contentId],decision=work?.stale?'STALE':work?.review?.decision||'',editorialStatus=decision==='APPROVED'?'HUMAN APPROVED':decision==='NEEDS_CHANGES'?'NEEDS CHANGES':decision==='HOLD'?'HOLD':decision==='SKIP'?'SKIPPED':decision==='STALE'?'STALE REVIEW':'EDITORIAL REVIEW REQUIRED';
-        const editorial=runEditorialReview(content),contract=runContentQc(content);const issues=[...new Set([...quality.issues.map(issue=>issue.code),...editorial.issues.map(issue=>issue.code)])];const contentStatus=contract.failures.length?"INVALID":decision==="HOLD"||assignment?.status==="HOLD_DUPLICATE"?"HOLD":(decision==="APPROVED"&&!work?.stale)||(!work&&editorial.status==="PASS")?"READY":quality.status==="HOLD"?"HOLD":"NEEDS IMPROVEMENT";const row={sheetId:resolvedId,source:source?.title||source?.name||String(resolvedId),contentId:content.contentId,title:content.title,contentType:content.contentType,lifecycleStatus:content.lifecycleStatus,score:quality.score,contentStatus,issueCodes:issues,dimensions:quality.dimensions,riskTier:classifyClaimRisk(content).tier,duplicateStatus:assignment?.status||(rework.has(`${source?.title||source?.name}:${content.contentId}`)?'REWORK':'UNIQUE'),canonicalKey:assignment?.canonical,editorialStatus,work,content,imageReady:false};
-        row.nextAction=row.duplicateStatus==='HOLD_DUPLICATE'?'Use canonical record or rework':decision==='STALE'?'Re-review changed source':editorialStatus==='HUMAN APPROVED'?'Generate or review images':editorialStatus==='NEEDS CHANGES'?'Fix proposed content':editorialStatus==='HOLD'?'Resolve hold':quality.issues[0]?.repair||'Review and approve editorial';row.priority=queuePriority(row);rows.push(row);
+    state.duplicateAssignments=duplicateAssignments(state.canonicalMap);
+    const dup=state.duplicateAssignments,rework=new Set((state.canonicalMap.reviewPairs||[]).flatMap(p=>[p.left,p.right].map(i=>`${i.source}:${i.contentId}`))),rows=[];
+    for(const data of sourceResults){const sheetId=Number(data.sheetId||data.sourceState?.sheetId),source=state.sources.find(s=>Number(s.sheetId)===sheetId);if(!sheetId)throw Error('Source identity missing.');
+      for(const original of normalizeContentRecordsSafely(data.records||data.recipes||[]).records){const work=data.editorialWork?.[original.contentId],content=applyEditorialWork(original,work?.stale?null:work,work?.review?.sourceFingerprint).content,key=recordKey(sheetId,content.contentId),assignment=dup[key];const row={sheetId,source:source?.title||source?.name,contentId:content.contentId,title:content.title,contentType:content.contentType,lifecycleStatus:content.lifecycleStatus,duplicateStatus:assignment?.status||(rework.has(`${source?.title||source?.name}:${content.contentId}`)?'REWORK':'UNIQUE'),canonicalKey:assignment?.canonicalKey,content,work};
+        const a=assessProduction(content,{session:readProductionSession(content,sheetId),duplicateStatus:row.duplicateStatus});Object.assign(row,{assessment:a,recommendation:a.recommendation,score:a.score,riskTier:a.risk.tier});rows.push(row);
       }
     }
-    await Promise.all(rows.map(async row=>{if(row.editorialStatus!=='HUMAN APPROVED')return;const manifest=buildGenerationManifest(row.content);row.imageReady=manifest.entries.filter(entry=>entry.required).every(entry=>false);const images=await Promise.all(manifest.entries.filter(entry=>entry.required).map(entry=>getStored('images',`${row.sheetId}:${row.contentId}:image:${entry.slotId}`).catch(()=>null)));row.imageReady=images.length>0&&images.every(Boolean);}));
-    state.editorialRows=rows.sort((a,b)=>b.priority-a.priority||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();renderEditorialWorkspace();
-    const loadedSources=new Set(rows.map(row=>row.sheetId));
-    $('platformStatus').textContent=loadedSources.size===3?'PRODUCTION READY':loadedSources.size>0?'PRODUCTION READY WITH WARNINGS':'NOT PRODUCTION READY';
-    $('platformHint').textContent=`${loadedSources.size}/3 production Sheets loaded · ${rows.length} records · content approval remains per item.`;
-  } catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('platformHint').textContent='A production source or editorial service failed to load.';$('queueSummary').textContent=`Editorial Queue unavailable: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
+    // One cursor per store replaces hundreds of per-slot IndexedDB connections.
+    const [imageKeys,assetKeys]=await Promise.all(['images','assets'].map(store=>idb(store,'readonly',objectStore=>objectStore.getAllKeys())));
+    const imageRecords=await idb('images','readonly',o=>o.getAll()),assetRecords=await idb('assets','readonly',o=>o.getAll());
+    const imagesByKey=new Map(imageKeys.map((key,i)=>[key,imageRecords[i]])),assetsByKey=new Map(assetKeys.map((key,i)=>[key,assetRecords[i]]));
+    for(const row of rows){const a=row.assessment,manifest=buildGenerationManifest(a.content),images=Object.fromEntries(manifest.entries.map(e=>[e.slotId,imagesByKey.get(`${row.sheetId}:${row.contentId}:image:${e.slotId}`)])),plan=a.content.resolvedAssetPlan,assets=Object.fromEntries(plan.map(p=>[p.asset_id,assetsByKey.get(`${row.sheetId}:${row.contentId}:asset:${p.asset_id}`)]));
+      row.imageTotal=manifest.entries.length;row.imageCount=manifest.entries.filter(e=>images[e.slotId]?.semanticKey===e.semanticKey&&images[e.slotId]?.qc?.status==='PASS').length;row.downloaded=!!readProductionSession(row.content,row.sheetId).downloadedAt;
+      const currentAssets=plan.length&&plan.every(p=>assets[p.asset_id]?.semanticKey===assetSemanticKey(p)&&!isStoredAssetStale(p,assets[p.asset_id],images));
+      const visual=localStorage.getItem(`capc:visual:${row.sheetId}:${row.contentId}:review:visual`);
+      row.readyToDownload=a.ready&&row.imageCount===row.imageTotal&&currentAssets&&visual===changeToken(sessionSignature(a.content,manifest,images,assets));
+    }
+    state.editorialRows=rows.sort((a,b)=>(b.recommendation==='PRODUCE')-(a.recommendation==='PRODUCE')||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();
+    if(state.originalContent){state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderSlots();}
+    $('platformStatus').textContent=new Set(rows.map(r=>r.sheetId)).size===3?'PRODUCTION READY':'PRODUCTION READY WITH WARNINGS';$('platformHint').textContent=`${sourceResults.length}/3 sources · ${rows.length} records · per-content gates`;
+  }catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
 }
+
 async function openQueueItem(row) {
   if(!row)return;
   if(Number(state.sourceId)===Number(row.sheetId)&&state.records.some(item=>item.contentId===row.contentId))applyContent(state.records.find(item=>item.contentId===row.contentId));
   else await loadSource(String(row.sheetId),row.contentId);
   $('recipe').scrollIntoView({behavior:'smooth',block:'start'});
 }
-function nextEditorialReview(){const rows=$('queueFilter').value==='BATCH 01'?state.editorialRows.filter(row=>batchItem(row)).sort((a,b)=>batchItem(a).batchOrder-batchItem(b).batchOrder):state.editorialRows.filter(row=>row.duplicateStatus!=='HOLD_DUPLICATE');if(!rows.length)return;const index=rows.findIndex(row=>Number(row.sheetId)===Number(state.sourceId)&&row.contentId===state.content?.contentId);openQueueItem(rows[(index+1)%rows.length]);}
-
+function productionSessionKey(sheetId=state.sourceId,contentId=state.originalContent?.contentId){return `capc:production:${sheetId||state.sourceName}:${contentId}`;}
+function readProductionSession(content,sheetId=state.sourceId){try{return currentSession(content,JSON.parse(localStorage.getItem(productionSessionKey(sheetId,content.contentId))||'{}'));}catch{return currentSession(content);}}
+function saveProductionSession(patch){state.productionSession={...state.productionSession,...patch,sourceStamp:sourceStamp(state.originalContent),updatedAt:new Date().toISOString()};localStorage.setItem(productionSessionKey(),JSON.stringify(state.productionSession));}
+function assessSelected(){const row=currentQueueRow();return assessProduction(state.originalContent,{session:state.productionSession,duplicateStatus:row?.duplicateStatus||state.duplicateAssignments?.[recordKey(state.sourceId,state.originalContent.contentId)]?.status||(state.canonicalMap?'UNIQUE':'UNASSESSED')});}
 function renderEditorialWorkspace(){
-  const source=state.originalContent,row=currentQueueRow();if(!source)return;
-  const item=row&&batchItem(row),work=state.workById[source.contentId],draft=work?.review?.proposal||item?.proposed||prepareEditorialProposal(source),prepared=prepareEditorialProposal(source),review=work?.review?.editorial||{};
-  $('workspaceState').textContent=work?.stale?'SOURCE CHANGED · RE-REVIEW':work?.review?.decision==='APPROVED'?'HUMAN APPROVED':work?.review?.decision||'AI PREPARED';
-  $('workspaceScore').textContent=`Heuristic score ${row?.score??auditContent(source).score}/100`;
-  $('workspaceRisk').textContent=`${classifyClaimRisk(source).tier} RISK`;
-  $('workspaceSource').textContent=`${state.sourceName} · ${source.contentId}`;
-  $('duplicateStatus').textContent=`Duplicate ${row?.duplicateStatus||'UNASSESSED'}`;
-  $('sourceEvidenceStatus').textContent=`Evidence ${review.source_evidence_status||source.editorialReview?.source_evidence_status||'UNVERIFIED'}`;
+  if(!state.originalContent)return;
+  const a=state.assessment||assessSelected(),p=a.proposal,source=state.originalContent;
   $('originalTitle').textContent=source.title;$('originalBody').textContent=source.contentBody;$('originalCaption').textContent=source.caption;
-  for(const [id,value] of Object.entries({proposalTitle:draft.title,proposalHook:draft.hook,proposalBody:draft.body,proposalCaption:draft.caption,proposalChanges:(work?.review?.changes||item?.changesMade||prepared.changes).join('\n'),proposalQuestions:(work?.review?.questions||item?.remainingFactualQuestions||prepared.questions).join('\n'),workReviewer:work?.reviewer||localStorage.getItem('capc:reviewer')||'',workAudienceNeed:review.audience_need||'',workReaderValue:review.reader_value||item?.readerValue||'',workEvidenceReferences:(review.evidence?.references||[]).join('\n'),workEvidenceNotes:review.evidence?.notes||'',workReviewNote:review.review_note||''}))setFormValue(id,value);
-  const checkMap={workConsistency:'internal_consistency_checked',workCaptionApproved:'caption_review_status',workReaderCopyReviewed:'reader_facing_copy_reviewed',workClaimSafety:'claim_safety_ok',workNoInternal:'internal_note_leakage',workEvidenceVerified:'source_evidence_status',workPageFit:'page_fit_status'};
-  for(const [id,key] of Object.entries(checkMap))$(id).checked=key==='caption_review_status'?review[key]==='PASS':key==='internal_note_leakage'?review[key]===false:key==='source_evidence_status'?review[key]==='VERIFIED':key==='page_fit_status'?review[key]==='PASS':review[key]===true;
-  $('workspaceAssetPlan').innerHTML=(item?.assetPlan||prepared.assetPlan).map(asset=>`<p><strong>${escapeHtml(String(asset.sequence||'').padStart(2,'0'))} · ${escapeHtml(asset.type)}</strong> ${escapeHtml(asset.title)}<br><small>${escapeHtml(asset.overlayText)}</small></p>`).join('');
-  $('workspaceActionHint').textContent=work?.stale?'Source row changed after the saved decision. Review current facts and save a fresh decision.':item?'Production Batch 01 · AI prepared. Human approval remains separate.': 'Source text is preserved. Edit the proposed copy, review the facts, and record a named decision.';
-  $('workCopyMaster').disabled=!state.generationReadiness?.ready;
+  for(const [id,value] of Object.entries({optimisedTitle:p.title,optimisedHook:p.hook,optimisedCaption:p.caption,optimisedWhat:p.what,optimisedWhy:p.why||'来源没有说明原因；保留现有做法，不补写推测。',optimisedAction:p.action,optimisedValue:p.readerValue,optimisedSave:p.saveValue,optimisedCta:p.cta,optimiseChanges:p.changes.join('\n'),reviewHistory:JSON.stringify({sheet:source.editorialReview,stored:state.workById[source.contentId]||null},null,2)}))$(id).textContent=value;
+  $('optimiseEngine').textContent=`Source-based automatic compiler · ${p.structure}. Facts and quantities remain source-backed. No human approval is inferred.`;
+  $('workspaceAssetPlan').innerHTML=state.plan.map(asset=>`<p><strong>${asset.sequence} · ${escapeHtml(asset.title)}</strong><br><small>${escapeHtml(asset.overlay_text)}</small></p>`).join('');
+  $('optimiseState').textContent=`AI OPTIMISED · ${a.recommendation}`;
+  $('factQuestions').hidden=!a.gaps.length;$('factQuestions').innerHTML=a.gaps.length?`<h3>Missing information</h3>${a.gaps.map(g=>`<p>${escapeHtml(g)}</p>`).join('')}<p class="helper">Correct only these facts in the source, then Refresh Sheets. No reviewer form is required.</p>`:'';
+  $('claimVerification').hidden=a.verified;$('claimReason').textContent=a.risk.reasons.join(' · ');$('claimList').innerHTML=a.claims.map(c=>`<li>${escapeHtml(c)}</li>`).join('');
 }
-async function saveEditorialWork(decision){
-  if(!state.originalContent||!state.sourceId)return toast('Choose a connected content record first.',true);
-  const reviewer=$('workReviewer').value.trim();if(!reviewer)return toast('Enter the human reviewer name.',true);
-  const body={sheetId:state.sourceId,contentId:state.originalContent.contentId,sourceFingerprint:await sourceFingerprint(state.originalContent.raw),decision,reviewer,
-    proposal:{title:$('proposalTitle').value,hook:$('proposalHook').value,body:$('proposalBody').value,caption:$('proposalCaption').value},
-    changes:splitLines($('proposalChanges').value),questions:splitLines($('proposalQuestions').value),audienceNeed:$('workAudienceNeed').value,readerValue:$('workReaderValue').value,
-    evidenceReferences:splitLines($('workEvidenceReferences').value),evidenceNotes:$('workEvidenceNotes').value,reviewNote:$('workReviewNote').value,
-    consistencyChecked:$('workConsistency').checked,captionApproved:$('workCaptionApproved').checked,readerFacingCopyReviewed:$('workReaderCopyReviewed').checked,claimSafetyOk:$('workClaimSafety').checked,noInternalNotes:$('workNoInternal').checked,evidenceVerified:$('workEvidenceVerified').checked,pageFitApproved:$('workPageFit').checked};
-  try{const saved=await apiJson('/api/production/editorial-work',{method:'POST',headers:writeHeaders(),body:JSON.stringify(body)});if(saved.item?.review?.decision!==decision)throw Error('Editorial review readback did not match.');
-    localStorage.setItem('capc:reviewer',reviewer);state.workById[state.originalContent.contentId]={...saved.item,stale:false};const row=currentQueueRow();if(row){row.work=state.workById[state.originalContent.contentId];row.editorialStatus=decision==='APPROVED'?'HUMAN APPROVED':decision==='NEEDS_CHANGES'?'NEEDS CHANGES':decision==='HOLD'?'HOLD':'SKIPPED';row.contentStatus=decision==='APPROVED'?'READY':decision==='HOLD'?'HOLD':'NEEDS IMPROVEMENT';row.nextAction=decision==='APPROVED'?'Generate or review images':decision==='NEEDS_CHANGES'?'Fix proposed content':decision==='HOLD'?'Resolve hold':'Next review';}
-    applyContent(state.originalContent);renderEditorialQueue();toast(`Editorial ${decision.replace('_',' ')} saved and read back; original Sheet row preserved.`);
-  }catch(error){toast(`${error.message}${error.issues?.length?` ${error.issues.map(issue=>issue.code).join(', ')}`:''}`,true);}
+function renderProductionSummary(){
+  if(!state.assessment)return;
+  const a=state.assessment,action=nextProductionAction(a,{manifest:state.manifest,images:state.images,assets:state.assets,plan:state.plan,visualReviewed:state.visualQcConfirmedFor===reviewSignature()});
+  state.nextBestAction=action;$('potentialScore').textContent=`${a.score} / 100`;$('recommendation').textContent=a.recommendation;$('riskLevel').textContent=a.risk.tier;$('duplicateLabel').textContent=a.duplicateStatus==='HOLD_DUPLICATE'?'YES':a.duplicateStatus==='REWORK'?'POSSIBLE':'NO';
+  $('decisionHint').textContent=action.detail;$('primaryAction').textContent=action.label;$('primaryAction').disabled=state.busy;$('nextAction').textContent=action.detail;$('selectedContentStatus').textContent=a.recommendation;
+  $('potentialDimensions').innerHTML=Object.entries(a.dimensions).map(([name,value])=>`<div><dt>${escapeHtml(name)}</dt><dd>${value}/10</dd></div>`).join('');
+  $('qualityFindings').innerHTML=a.findings.slice(0,5).map(f=>`<li>${escapeHtml(f)}</li>`).join('');
+  $('monetizationScore').textContent=`CONTENT POTENTIAL ${a.score}/100`;$('monetizationDetails').textContent=Object.entries(a.dimensions).map(([k,v])=>`${k} ${v}/10`).join(' · ')+' · Internal production score; no guaranteed Facebook earnings.';
+  $('autoImprove').textContent=state.productionSession?.iteration?'Improve Again':'Auto Improve';
+  $('imageQueueProgress').textContent=`${state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length} / ${state.manifest.entries.length} READY`;
+  const next=state.manifest.entries.find(e=>!state.images[e.slotId]||state.images[e.slotId].semanticKey!==e.semanticKey||state.images[e.slotId].qc?.status!=='PASS');
+  $('imageQueueNext').textContent=next?`NEXT IMAGE · ${String(next.sequence).padStart(2,'0')} — ${next.label}`:'Images complete · Build Final Assets';
+  $('copyNextPrompt').disabled=!a.ready||!next;$('copyMaster').disabled=!a.ready;$('imageImport').disabled=!canImport(a);$('imageBuild').disabled=$('buildAssets').disabled;
+  for(const id of ['downloadPost','previewDownload'])$(id).disabled=!state.gates?.exportReady||state.busy;
+  $('downloadState').textContent=state.gates?.exportReady?'READY TO DOWNLOAD':'Build current assets and choose Looks Good in the final preview.';
+  $('downloadHeading').textContent=state.gates?.exportReady?'Ready to Download':'Download';
+  const row=currentQueueRow();if(row){row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.progress=action.detail;row.nextAction=action.label;}
+  const imageCount=state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length;
+  const suggested=state.editorialRows.find(row=>row.recommendation==='PRODUCE'&&row.duplicateStatus!=='HOLD_DUPLICATE'&&!['PUBLISHED','Posted'].includes(row.lifecycleStatus)&&!readProductionSession(row.content,row.sheetId).downloadedAt);
+  state.quickRow=imageCount?null:suggested;
+  $('resumeHint').textContent=imageCount?`CONTINUE PRODUCTION · ${state.content.contentId} · Images ${imageCount}/${state.manifest.entries.length} · ${action.detail}`:suggested?`NEXT BEST CONTENT · ${suggested.score} · PRODUCE`:`CONTINUE PRODUCTION · ${state.content.contentId} · ${action.detail}`;
+  $('quickTitle').textContent=state.quickRow?.title||state.content.title;
+  localStorage.setItem('capc:lastProduction',JSON.stringify({sheetId:state.sourceId,contentId:state.content.contentId}));
+  renderFinalPreview();
 }
+function goStage(id){location.hash=id;$(id)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.workflow-nav a').forEach(a=>a.classList.toggle('active',a.hash===`#${id}`));}
+async function primaryProductionAction(){
+  if(state.busy||!state.nextBestAction)return;
+  const {kind}=state.nextBestAction;
+  if(kind==='CANONICAL'){const row=currentQueueRow(),better=state.editorialRows.find(r=>queueKey(r)===row?.canonicalKey);return openQueueItem(better);}
+  if(kind==='NEXT')return nextEditorialReview();
+  if(kind==='FACT'||kind==='CLAIM')return goStage('optimise');
+  if(kind==='IMPROVE')return autoImprove();
+  if(kind==='IMAGES')return goStage('images');
+  if(kind==='BUILD'){await buildAssets();return goStage('assets');}
+  if(kind==='FINAL')return goStage('assets');
+  if(kind==='DOWNLOAD'){goStage('download');return downloadPackage();}
+}
+function autoImprove(){
+  if(state.busy||!state.originalContent)return;
+  const before=state.assessment.score;
+  saveProductionSession({iteration:(state.productionSession.iteration||0)+1,override:undefined});
+  const selected=state.originalContent;applyContent(selected);renderEditorialQueue();goStage('optimise');
+  toast(`Auto Improve complete · ${before} → ${state.assessment.score} · ${state.assessment.recommendation}. Facts preserved.`);
+}
+function overrideDecision(decision){
+  if(state.busy||!state.originalContent)return;
+  if(decision==='PRODUCE'&&(state.assessment.gaps.length||!state.assessment.verified||state.assessment.duplicateStatus==='HOLD_DUPLICATE'))return toast('Resolve the specific fact, claim or duplicate first.',true);
+  saveProductionSession({override:decision});state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderEditorialQueue();
+}
+function nextSuggested(){return state.editorialRows.find(row=>row.recommendation==='PRODUCE'&&row.duplicateStatus!=='HOLD_DUPLICATE'&&!['PUBLISHED','Posted'].includes(row.lifecycleStatus)&&!(Number(row.sheetId)===Number(state.sourceId)&&row.contentId===state.content?.contentId)&&!readProductionSession(row.content,row.sheetId).downloadedAt);}
+function nextEditorialReview(){const rows=$('queueFilter').value==='BATCH 01'?state.editorialRows.filter(row=>batchItem(row)).sort((a,b)=>batchItem(a).batchOrder-batchItem(b).batchOrder):state.editorialRows.filter(row=>row.duplicateStatus!=='HOLD_DUPLICATE'&&!['PUBLISHED','Posted'].includes(row.lifecycleStatus));const best=nextSuggested();if(best&&$('queueFilter').value!=='BATCH 01')return openQueueItem(best);if(!rows.length)return;const index=rows.findIndex(row=>Number(row.sheetId)===Number(state.sourceId)&&row.contentId===state.content?.contentId);return openQueueItem(rows[(index+1)%rows.length]);}
+function finalPages(){return state.plan.flatMap(item=>{const asset=state.assets[item.asset_id];return asset?(asset.pages?.length?asset.pages:[asset]).map(page=>({page,item,asset})):[];});}
+function renderFinalPreview(){
+  clearPreviewUrls('final');const pages=finalPages();state.previewIndex=Math.max(0,Math.min(state.previewIndex||0,pages.length-1));const current=pages[state.previewIndex];
+  $('finalImage').hidden=!current;$('finalEmpty').hidden=!!current;$('previewPosition').textContent=`${current?state.previewIndex+1:0} / ${pages.length}`;
+  if(current)$('finalImage').src=previewUrl(current.page.blob,'final');else $('finalImage').removeAttribute('src');
+  $('finalCaption').textContent=state.content?.caption||'';
+  $('looksGood').disabled=!state.gates?.finalAssetsBuilt||!state.gates?.technicalImageQc||!state.assessment?.ready;
+  for(const id of ['fixFinal','regenerateFinal'])$(id).disabled=!current;
+  $('previewReviewHint').textContent=current?.asset.stale?'This preview is stale. Rebuild before download.':state.visualQcConfirmedFor===reviewSignature()?'LOOKS GOOD · current post reviewed':'Inspect the image sequence and caption. Looks Good confirms the current complete post.';
+  $('previewPrev').disabled=!pages.length;$('previewNext').disabled=!pages.length;
+}
+function confirmLooksGood(){
+  renderQc();if(!state.gates?.finalAssetsBuilt||!state.gates?.technicalImageQc||!state.assessment.ready)return toast('Build all current final assets before Looks Good.',true);
+  if(state.manifest.entries.some(e=>['FIX IMAGE','REGENERATE'].includes(state.imageReviews[e.slotId]?.status)))return toast('Replace the images marked Fix or Regenerate first.',true);
+  for(const entry of state.manifest.entries){const image=state.images[entry.slotId];if(!image)continue;const review={status:'PASS',method:'SIMPLE_FINAL_POST_REVIEW',imageRevision:image.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[entry.slotId]=review;localStorage.setItem(slotReviewKey(entry.slotId),JSON.stringify(review));}
+  state.visualQcConfirmedFor=reviewSignature();localStorage.setItem(`capc:visual:${keyFor('review','visual')}`,state.visualQcConfirmedFor);renderQc();renderSlots();goStage('download');toast('Looks Good saved for this current post.');
+}
+function repairFinal(status){const current=finalPages()[state.previewIndex||0];if(!current)return;const ids=[...(current.item.generation_inputs||[]).map(i=>i.slot_id),...(current.item.source_input_ids||[])];state.repairSlotIds=ids;goStage('images');$('imageQueueNext').textContent=`Choose the affected image below · ${ids.join(', ')}`;if(ids.length===1)saveSimpleImageReview(ids[0],status);else{for(const id of ids)document.querySelector(`[data-slot="${CSS.escape(id)}"]`)?.classList.add('repair-target');toast('Choose Fix Image or Regenerate on the affected slot. Unaffected images remain.');}}
+function saveSimpleImageReview(slotId,status){const image=state.images[slotId],entry=state.manifest.entries.find(e=>e.slotId===slotId);if(!image||!entry)return;const review={status,method:'SIMPLE_IMAGE_REVIEW',imageRevision:image.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[slotId]=review;localStorage.setItem(slotReviewKey(slotId),JSON.stringify(review));invalidateReview();renderSlots();renderQc();if(status!=='PASS')copyText(`FIX / REGENERATE THIS IMAGE ONLY. Preserve other images.\n\n${buildSlotPrompt(state.content,slotId)}`,'Affected image prompt copied.');}
 
 function moveContent(direction) {
   const index = state.records.findIndex((item) => item.contentId === state.content.contentId);
@@ -1011,7 +976,7 @@ function canvasBlob(canvas) {
 }
 
 async function buildAssets() {
-  if (!state.generationReadiness?.ready) return toast("Build is blocked until editorial and generation readiness pass.", true);
+  if (!state.generationReadiness?.ready) return toast("Build is blocked until the content is ready to produce.", true);
   const missing = state.manifest.entries.filter((entry) => entry.required && !state.images[entry.slotId]).map((entry) => entry.label);
   if (missing.length) return toast(`Missing required images: ${missing.join(", ")}.`, true);
   if(state.busy)return;
@@ -1117,9 +1082,22 @@ async function markPosted() {
 function bindEvents() {
   $('queueLoad').addEventListener('click',loadEditorialQueue);
   for(const id of ['queueFilter','queueSearch','queueShowDuplicates'])$(id).addEventListener(id==='queueSearch'?'input':'change',renderEditorialQueue);
-  for(const [id,decision] of [['workApprove','APPROVED'],['workNeeds','NEEDS_CHANGES'],['workHold','HOLD'],['workSkip','SKIP']])$(id).addEventListener('click',()=>saveEditorialWork(decision));
+  $('primaryAction').addEventListener('click',primaryProductionAction);
+  $('autoImprove').addEventListener('click',autoImprove);
   $('workNext').addEventListener('click',nextEditorialReview);
-  $('workCopyMaster').addEventListener('click',()=>state.generationReadiness?.ready?copyText(buildSessionPrompt(state.content),'Master ChatGPT session prompt copied.'):toast('Human editorial approval and generation specification are required before image production.',true));
+  document.querySelectorAll('[data-decision]').forEach(button=>button.addEventListener('click',()=>overrideDecision(button.dataset.decision)));
+  $('quickStart').addEventListener('click',async()=>{if(state.quickRow){await openQueueItem(state.quickRow);goStage('images');}else if(state.content)primaryProductionAction();});
+  $('startNext').addEventListener('click',()=>openQueueItem(nextSuggested()));
+  $('confirmClaim').addEventListener('click',()=>{if(!state.originalContent||state.busy)return;const reference=$('claimReference').value.trim();if(reference.length<8)return toast('Identify the checked support for this claim.',true);saveProductionSession({claimConfirmation:{sourceStamp:sourceStamp(state.originalContent),reference,confirmedAt:new Date().toISOString()},override:undefined});applyContent(state.originalContent);renderEditorialQueue();});
+  for(const [id,tab] of [['showOriginal','original'],['showOptimised','optimised']])$(id).addEventListener('click',()=>{document.querySelector('.compare-columns').dataset.compare=tab;$('showOriginal').setAttribute('aria-selected',String(tab==='original'));$('showOptimised').setAttribute('aria-selected',String(tab==='optimised'));});
+  $('copyNextPrompt').addEventListener('click',()=>{const next=state.manifest.entries.find(e=>!state.images[e.slotId]||state.images[e.slotId].semanticKey!==e.semanticKey||state.images[e.slotId].qc?.status!=='PASS');if(next&&state.assessment.ready)copyText(buildSlotPrompt(state.content,next.slotId),'Next image prompt copied.');});
+  $('copyMaster').addEventListener('click',()=>state.assessment?.ready&&copyText(buildSessionPrompt(state.content),'Master Session Prompt copied.'));
+  $('imageImport').addEventListener('click',()=>$('allFiles').click());$('imageBuild').addEventListener('click',async()=>{await buildAssets();goStage('assets');});
+  $('looksGood').addEventListener('click',confirmLooksGood);
+  $('fixFinal').addEventListener('click',()=>repairFinal('FIX IMAGE'));$('regenerateFinal').addEventListener('click',()=>repairFinal('REGENERATE'));
+  $('rebuildFinal').addEventListener('click',buildAssets);
+  $('previewPrev').addEventListener('click',()=>{const n=finalPages().length;state.previewIndex=(state.previewIndex-1+n)%n;renderFinalPreview();});$('previewNext').addEventListener('click',()=>{const n=finalPages().length;state.previewIndex=(state.previewIndex+1)%n;renderFinalPreview();});
+  $('downloadPost').addEventListener('click',downloadPackage);$('previewDownload').addEventListener('click',downloadPackage);
   document.addEventListener('keydown',event=>{if(event.altKey&&event.key.toLowerCase()==='n'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){event.preventDefault();nextEditorialReview();}});
   $("sheetSelect").addEventListener("change", (event) => loadSource(event.target.value));
   $("recipeSelect").addEventListener("change", (event) => {
@@ -1134,25 +1112,24 @@ function bindEvents() {
   $("prev").addEventListener("click", () => { if(!state.busy)moveContent(-1); });
   $("next").addEventListener("click", () => { if(!state.busy)moveContent(1); });
   $("copyPrompt").addEventListener("click", () => {
-    if (!state.generationReadiness?.ready) return toast("Generation is blocked. Resolve the editorial and specification blockers first.", true);
+    if (!state.generationReadiness?.ready) return toast("Generation is blocked. Resolve the specific fact or claim blockers first.", true);
     return copyText(buildSessionPrompt(state.content), "One deterministic ChatGPT image session prompt copied.");
   });
   $("importAll").addEventListener("click", () => {
-    if (!state.generationReadiness?.ready) return toast("Image import is blocked until the generation specification passes.", true);
+    if (!state.assessment || !canImport(state.assessment)) return toast("Load a valid image specification first.", true);
     return $("allFiles").click();
   });
   $("allFiles").addEventListener("change", (event) => importMany(event.target.files));
   $("buildAssets").addEventListener("click", buildAssets);
   $("copyCaption").addEventListener("click", () => {
-    if (state.editorialReview?.status !== "PASS") return toast("Caption is not cleared for reader use. Complete editorial review first.", true);
+    if (!state.assessment?.ready) return toast("Resolve the specific content blocker first.", true);
     return copyText(state.content.caption, "Facebook caption copied.");
   });
   $("copyCaptionBottom").addEventListener("click", () => {
-    if (state.editorialReview?.status !== "PASS") return toast("Caption is not cleared for reader use. Complete editorial review first.", true);
+    if (!state.assessment?.ready) return toast("Resolve the specific content blocker first.", true);
     return copyText(state.content.caption, "Facebook caption copied.");
   });
   $("markPosted").addEventListener("click", markPosted);
-  $("saveEditorialReview").addEventListener("click", saveEditorialReview);
   $("advanceWorkflow").addEventListener("click", advanceWorkflow);
   $("saveManualResults").addEventListener("click", saveManualResults);
   $("refreshResults").addEventListener("click", () => loadContentOperations().catch((error) => toast(error.message, true)));
@@ -1168,11 +1145,6 @@ function bindEvents() {
   $("closeAddSheet").addEventListener("click", () => { $("addSheetPanel").hidden = true; });
   $("newSheetTemplate").addEventListener("change", renderSheetTemplatePreview);
   $("createSheet").addEventListener("click", createSheet);
-  $("visualQcCheck").addEventListener("change", (event) => {
-    state.visualQcConfirmedFor = event.target.checked ? reviewSignature() : "";
-    localStorage.setItem(`capc:visual:${keyFor("review", "visual")}`, state.visualQcConfirmedFor);
-    renderQc();
-  });
   $("downloadAll").addEventListener("click", downloadPackage);
   for(const event of ["dragover","drop"]) $("images").addEventListener(event,e=>e.preventDefault());
   $("images").addEventListener("drop",e=>{if(!e.target.closest(".slot"))importMany(e.dataTransfer.files);});
@@ -1385,9 +1357,9 @@ async function downloadPackage() {
   try {
     const entries=exportEntries(state.content,state.plan,state.assets);
     const folder=safeFilename(`${state.content.contentId}_${state.content.title}`);
-    const metadata={Content_ID:state.content.contentId,Title:state.content.title,source:{name:state.sourceName,sheetId:state.sourceId,kind:state.source},template:state.content.templateType,builtAt:new Date(Math.max(...Object.values(state.assets).map(a=>a.updatedAt))).toISOString(),exportedAt:new Date().toISOString(),qc:state.gates,heuristicContentScore:auditContent(state.content).score,editorialStatus:state.editorialReview.status,assetOrder:entries.map(({blob,...entry})=>entry)};
+    const metadata={Content_ID:state.content.contentId,Title:state.content.title,source:{name:state.sourceName,sheetId:state.sourceId,kind:state.source},template:state.content.templateType,builtAt:new Date(Math.max(...Object.values(state.assets).map(a=>a.updatedAt))).toISOString(),exportedAt:new Date().toISOString(),qc:state.gates,heuristicContentScore:state.assessment.score,productionDecision:state.assessment.recommendation,productionCheck:state.assessment.mode,editorialStatus:state.editorialReview.status,assetOrder:entries.map(({blob,...entry})=>entry)};
     const files=entries.map(e=>({name:`${folder}/${e.filename}`,blob:e.blob}));
     files.push({name:`${folder}/caption.txt`,blob:new Blob([state.content.caption],{type:"text/plain;charset=utf-8"})},{name:`${folder}/manifest.json`,blob:new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"})});
-    downloadBlob(await createZip(files),`${folder}.zip`);toast("One ordered production ZIP downloaded.");
+    downloadBlob(await createZip(files),`${folder}.zip`);toast("One ordered production ZIP downloaded.");saveProductionSession({downloadedAt:new Date().toISOString()});const next=nextSuggested();$("nextContentCard").hidden=!next;$("nextContentTitle").textContent=next?`${next.title} · ${next.score} · PRODUCE`:"No further produce-ready content in this queue.";
   }catch(error){toast(error.message,true);}finally{state.busy=false;renderQc();}
 }

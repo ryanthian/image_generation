@@ -14,6 +14,7 @@ const [template, data, canary, performanceHistory, index, css, app, contentModel
 ]);
 const productionCore = await readFile("src/production-core.mjs", "utf8");
 const contentQuality = await readFile("src/content-quality.mjs", "utf8");
+const productionAssistant = await readFile('src/production-assistant.mjs','utf8');
 const editorialPipeline = await readFile('src/editorial-pipeline.mjs','utf8');
 const batch01 = await readFile('output/production-batch-01.json','utf8');
 const canonicalMap = await readFile('output/canonical-content-map.json','utf8');
@@ -22,6 +23,7 @@ const output = template
   .replace("__BUILD_INFO_JSON__", () => JSON.stringify(buildInfo))
   .replace("__PRODUCTION_CORE_JS__", () => JSON.stringify(productionCore))
   .replace("__CONTENT_QUALITY_JS__", () => JSON.stringify(contentQuality))
+  .replace('__PRODUCTION_ASSISTANT_JS__',()=>JSON.stringify(productionAssistant))
   .replace('__EDITORIAL_PIPELINE_JS__',()=>JSON.stringify(editorialPipeline))
   .replace('__BATCH_01_JSON__',()=>batch01.trim())
   .replace('__CANONICAL_MAP_JSON__',()=>canonicalMap.trim())

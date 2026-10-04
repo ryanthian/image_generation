@@ -66,12 +66,12 @@ export function fitText(text, {width,height,maxSize=58,minSize=30,lineRatio=1.4,
   const lines=wrapText(text,width,t=>measure(t,minSize));const lineHeight=minSize*lineRatio;const capacity=Math.max(1,Math.floor(height/lineHeight));
   return {size:minSize,lineHeight,lines:lines.slice(0,capacity),overflow:lines.slice(capacity)};
 }
-export function productionGates({contract,editorial,generation,manifest,images,plan,assets,visualReviewed,monetization}) {
+export function productionGates({contract,editorial,generation,manifest,images,plan,assets,visualReviewed,monetization,productionDecision}) {
   const required=manifest.entries.filter(e=>e.required);
   const sourceImagesComplete=required.length>0 && required.every(e=>images[e.slotId] && images[e.slotId].semanticKey===e.semanticKey);
   const technicalImageQc=sourceImagesComplete && required.every(e=>images[e.slotId]?.qc?.status==='PASS');
   const finalAssetsBuilt=plan.length>0 && plan.every(a=>assets[a.asset_id]?.qc_status==='PASS' && !assets[a.asset_id].stale);
-  const exportReady=contract.failures.length===0 && editorial.status==='PASS' && generation.ready && technicalImageQc && finalAssetsBuilt && visualReviewed;
+  const exportReady=contract.failures.length===0 && (productionDecision ? productionDecision.ready && productionDecision.recommendation==='PRODUCE' : editorial.status==='PASS') && generation.ready && technicalImageQc && finalAssetsBuilt && visualReviewed;
   return {contractValid:contract.failures.length===0,editorialReview:editorial.status,generationReady:generation.ready,sourceImagesComplete,technicalImageQc,visualReview:visualReviewed,finalAssetsBuilt,exportReady};
 }
 export function exportEntries(content, plan, assets) {
