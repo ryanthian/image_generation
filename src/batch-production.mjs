@@ -16,6 +16,18 @@ function rankedCandidates(rows,count){
  return selected;
 }
 export function selectBatchCandidates(rows,count){if(![5,10,20].includes(count))throw Error('Choose 5, 10 or 20 posts.');return rankedCandidates(rows,count);}
+export function createProductionBatchFromSelection(rows,selectedKeys,number=1){
+ const screened=screenProductionRows(rows),requested=[...new Set((selectedKeys||[]).map(String))];
+ if(!requested.length)throw Error('Select at least one production-ready title.');
+ if(requested.length>20)throw Error('Select at most 20 titles per batch.');
+ const byKey=new Map(screened.map(row=>[key(row),row])),missing=requested.filter(id=>!byKey.has(id));
+ if(missing.length)throw Error(`${missing.length} selected title${missing.length===1?' is':'s are'} no longer available. Refresh the batch list.`);
+ const selected=requested.map(id=>byKey.get(id)),blocked=selected.filter(row=>!eligibleForBatch(row));
+ if(blocked.length)throw Error(`${blocked.length} selected title${blocked.length===1?' is':'s are'} not production-ready: ${blocked.slice(0,3).map(row=>row.title||row.contentId).join(', ')}${blocked.length>3?'…':''}`);
+ const used=new Set(selected.map(key)),reserve=rankedCandidates(screened.filter(row=>!used.has(key(row))),Math.max(5,Math.ceil(selected.length/2))).map(row=>savedCandidate(row));
+ const batch={version:BATCH_VERSION,id:`B${String(number).padStart(2,'0')}`,number,requestedCount:selected.length,selectionMode:'MANUAL',selectedKeys:requested,createdAt:new Date().toISOString(),posts:selected.map((row,i)=>savedCandidate(row,i+1)),reserve,replacements:[]};
+ batch.summary=batchSummary(screened,selected,reserve,batch);return batch;
+}
 export function screenProductionRows(rows){return rows.map(row=>{const a=row.assessment,stamp=a?.productionOverride;return stamp?.version===COMPLETION_VERSION&&stamp?.sourceStamp===sourceStamp(row.content)&&stamp.inputStamp===changeToken(JSON.stringify(row.content.raw||{}))?row:{...row,assessment:assessProduction(row.content,{session:row.session||{},duplicateStatus:row.duplicateStatus})};});}
 const savedCandidate=(row,postNumber)=>({sheetId:row.sheetId,contentId:row.contentId,postNumber,title:row.assessment.content.title,contentType:row.contentType,stamp:batchPostStamp(row),productionContent:row.assessment.productionOverride});
 function batchSummary(rows,selected,reserve,batch={}){const skipped={};for(const row of rows.filter(r=>!eligibleForBatch(r))){const reason=productionSkipReason(row);skipped[reason]=(skipped[reason]||0)+1;}return {requested:batch.requestedCount||selected.length,evaluated:rows.length,selected:selected.length,autoRepaired:selected.filter(r=>r.assessment.repair?.autoFixed.length).length,skippedIncomplete:skipped.CRITICAL_INFO_MISSING||0,skippedDuplicate:skipped.DUPLICATE||0,skippedLowQuality:skipped.LOW_QUALITY||0,skippedPublished:skipped.ALREADY_PUBLISHED||0,skippedUnverified:skipped.HIGH_RISK_UNVERIFIED||0,reserve:reserve.length,replaced:(batch.replacements||[]).filter(r=>!r.restoredAfterSourceRecovery).length,skippedReasons:skipped};}
@@ -48,8 +60,8 @@ export function reconcileProductionBatch(batch,rows,{imagesByKey=new Map(),asset
   const reserveKeys=new Set((next.reserve||[]).map(key)),pool=rankedCandidates(screened.filter(r=>!used.has(key(r))&&!excluded.has(key(r))),screened.length),similar=pool.filter(r=>r.contentType===(row?.contentType||post.contentType)),candidate=similar.find(r=>reserveKeys.has(key(r)))||similar[0]||pool.find(r=>reserveKeys.has(key(r)))||pool[0];if(!candidate)continue;
   const replacement={postNumber:post.postNumber,previousKey:key(post),contentId:post.contentId,replacementKey:key(candidate),replacementContentId:candidate.contentId,reason:row?productionSkipReason(row):'CRITICAL_INFO_MISSING'};replacements.push(replacement);excluded.add(key(post));used.delete(key(post));used.add(key(candidate));next.posts[i]={...savedCandidate(candidate,post.postNumber),replacementGeneration:(post.replacementGeneration||0)+1};changed=true;
  }
- // Refill an under-sized batch only from the same screened pool, never with weak padding.
- const fill=rankedCandidates(screened.filter(r=>!used.has(key(r))&&!excluded.has(key(r))),Math.max(0,next.requestedCount-next.posts.length));for(const row of fill){next.posts.push(savedCandidate(row,next.posts.length+1));used.add(key(row));changed=true;}
+ // Refill auto-selected batches only. Manual title selections are never silently substituted.
+ if(next.selectionMode!=='MANUAL'){const fill=rankedCandidates(screened.filter(r=>!used.has(key(r))&&!excluded.has(key(r))),Math.max(0,next.requestedCount-next.posts.length));for(const row of fill){next.posts.push(savedCandidate(row,next.posts.length+1));used.add(key(row));changed=true;}}
  next.replacements=[...(next.replacements||[]),...replacements];next.reserve=rankedCandidates(screened.filter(r=>!used.has(key(r))&&!excluded.has(key(r))),Math.max(5,Math.ceil(next.requestedCount/2))).map(r=>savedCandidate(r));next.summary=batchSummary(screened,next.posts.map(p=>byKey.get(key(p))).filter(Boolean),next.reserve,next);if(JSON.stringify(next.reserve)!==JSON.stringify(batch.reserve)||JSON.stringify(next.summary)!==JSON.stringify(batch.summary))changed=true;return {batch:next,changed,replacements};
 }
 export function resolveProductionBatch(batch,rows,{imagesByKey=new Map(),assetsByKey=new Map(),visualByKey=new Map(),reviewsByKey=new Map()}={}){
