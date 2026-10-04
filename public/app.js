@@ -718,7 +718,14 @@ async function loadEditorialQueue(){
       row.readyToDownload=a.ready&&row.imageCount===row.imageTotal&&currentAssets&&visual===changeToken(sessionSignature(a.content,manifest,images,assets));
     }
     state.editorialRows=rows.sort((a,b)=>(b.recommendation==='PRODUCE')-(a.recommendation==='PRODUCE')||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();await refreshProductionBatch();
-    if(state.originalContent){state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderSlots();}
+    if(state.originalContent){
+      // Duplicate/source discovery can change the completed object after initial hydration.
+      // Restore media against that object's slots, never leave the initial raw plan active.
+      const selected=currentQueueRow()?.content||state.originalContent;
+      const completed=assessProduction(selected,{session:readProductionSession(selected),duplicateStatus:currentQueueRow()?.duplicateStatus||'UNIQUE'});
+      if(sourceStamp(state.content)!==sourceStamp(completed.content)||changeToken(JSON.stringify(state.originalContent.raw))!==changeToken(JSON.stringify(selected.raw))){applyContent(selected);await state.contentReady;}
+      else{state.assessment=completed;renderQc();renderEditorialWorkspace();renderSlots();}
+    }
     if(state.assessment?.gaps.length&&!state.deliberateContentSelection&&!state.batchBusy)queueMicrotask(()=>continueWithGoodContent());
     $('platformStatus').textContent=new Set(rows.map(r=>r.sheetId)).size===3?'PRODUCTION READY':'PRODUCTION READY WITH WARNINGS';$('platformHint').textContent=`${sourceResults.length}/3 sources · ${rows.length} records · per-content gates`;
   }catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
@@ -740,11 +747,11 @@ function renderEditorialWorkspace(){
   const a=state.assessment||assessSelected(),p=a.proposal,source=state.originalContent;
   $('originalTitle').textContent=source.title;$('originalBody').textContent=source.contentBody;$('originalCaption').textContent=source.caption;
   for(const [id,value] of Object.entries({optimisedTitle:p.title,optimisedHook:p.hook,optimisedCaption:p.caption,optimisedWhat:p.what,optimisedWhy:p.why||'来源没有说明原因；保留现有做法，不补写推测。',optimisedAction:p.action,optimisedValue:p.readerValue,optimisedSave:p.saveValue,optimisedCta:p.cta,optimiseChanges:p.changes.join('\n'),reviewHistory:JSON.stringify({sheet:source.editorialReview,stored:state.workById[source.contentId]||null},null,2)}))$(id).textContent=value;
-  $('optimiseEngine').textContent=`Source-based automatic compiler · ${p.structure}. Facts and quantities remain source-backed. No human approval is inferred.`;
+  $('optimiseEngine').textContent=`Content Completion Engine · ${p.structure}. A production version prepared from your source material.`;
   $('workspaceAssetPlan').innerHTML=state.plan.map(asset=>`<p><strong>${asset.sequence} · ${escapeHtml(asset.title)}</strong><br><small>${escapeHtml(asset.overlay_text)}</small></p>`).join('');
   $('optimiseState').textContent=`AI OPTIMISED · ${a.recommendation}`;
   const repair=a.repair,details=[...repair.autoFixed,...repair.warnings,...repair.critical];
-  $('factQuestions').hidden=false;$('factQuestions').classList.toggle('repair-ready',a.ready);$('factQuestions').innerHTML=`<p class="eyebrow">CONTENT CHECK</p><strong>${a.gaps.length?'SOURCE INCOMPLETE · SKIP':a.ready?'✓ AI FIXED · READY TO PRODUCE':a.recommendation==='IMPROVE'?'AI PREPARED · IMPROVE':'SKIP · source support or quality insufficient'}</strong><p>AI repaired ${repair.autoFixed.length} content issues · ${repair.warnings.length} warnings · ${repair.critical.length} critical unresolved</p>${a.gaps.length?`<p>${escapeHtml(a.gaps[0])}</p>`:''}${a.recommendation==='SKIP'?'<button id="repairNext" class="btn btn-primary" type="button">Skip &amp; Next Good Content →</button>':''}<details id="repairDetails"><summary>View Details</summary>${details.map(i=>`<p>${escapeHtml(i.detail)}</p>`).join('')}${a.verified?'':`<p>${escapeHtml(a.risk.reasons.join(' · '))}</p>`}</details>`;
+  $('factQuestions').hidden=false;$('factQuestions').classList.toggle('repair-ready',a.ready);$('factQuestions').innerHTML=`<p class="eyebrow">AI CONTENT PREPARATION</p><strong>${a.gaps.length?'SOURCE INCOMPLETE · SKIP':a.ready?'✓ AI FIXED · READY TO PRODUCE':a.recommendation==='IMPROVE'?'AI PREPARED · IMPROVE':'SKIP · source support or quality insufficient'}</strong><p>${a.preparation.stages.map(s=>`✓ ${escapeHtml(s)}`).join(' · ')}</p><p>Quality ${a.score} / 100 · ${a.ready?`${a.manifest.entries.length} images`:`${repair.critical.length} unresolved source gaps`} · AI repaired ${repair.autoFixed.length} content issues${repair.warnings.length?` · ${repair.warnings.length} warnings`:""}</p>${a.gaps.length?`<p>${escapeHtml(a.gaps[0])}</p>`:''}${a.recommendation==='SKIP'?'<button id="repairNext" class="btn btn-primary" type="button">Skip &amp; Next Good Content →</button>':''}<details id="repairDetails"><summary>View AI Changes</summary>${details.map(i=>`<p>${escapeHtml(i.detail)}</p>`).join('')}${a.verified?'':`<p>${escapeHtml(a.risk.reasons.join(' · '))}</p>`}</details>`;
   if($('repairNext'))$('repairNext').onclick=()=>continueWithGoodContent();
   $('claimVerification').hidden=a.verified;$('claimReason').textContent=a.risk.reasons.join(' · ');$('claimList').innerHTML=a.claims.map(c=>`<li>${escapeHtml(c)}</li>`).join('');
 }

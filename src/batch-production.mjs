@@ -1,6 +1,7 @@
 /** Deterministic, browser-independent batch selection, identity, progress and import matching. */
 import {buildGenerationManifest,isStoredAssetStale} from './content-model.mjs';
 import {assetSemanticKey,sessionSignature} from './production-core.mjs';
+import {COMPLETION_VERSION} from './content-completion.mjs';
 import {changeToken,sourceStamp,assessProduction} from './production-assistant.mjs';
 export const BATCH_VERSION='BATCH_IMAGE_2026-10-04.1';
 const slotLabel=id=>id.toUpperCase().replace(/^(?:\d+|fast)[_-]/i,'');
@@ -15,8 +16,8 @@ function rankedCandidates(rows,count){
  return selected;
 }
 export function selectBatchCandidates(rows,count){if(![5,10,20].includes(count))throw Error('Choose 5, 10 or 20 posts.');return rankedCandidates(rows,count);}
-export function screenProductionRows(rows){return rows.map(row=>{const a=row.assessment,stamp=a?.productionOverride;return stamp?.sourceStamp===sourceStamp(row.content)&&stamp.inputStamp===changeToken(JSON.stringify(row.content.raw||{}))?row:{...row,assessment:assessProduction(row.content,{session:row.session||{},duplicateStatus:row.duplicateStatus})};});}
-const savedCandidate=(row,postNumber)=>({sheetId:row.sheetId,contentId:row.contentId,postNumber,title:row.title,contentType:row.contentType,stamp:batchPostStamp(row)});
+export function screenProductionRows(rows){return rows.map(row=>{const a=row.assessment,stamp=a?.productionOverride;return stamp?.version===COMPLETION_VERSION&&stamp?.sourceStamp===sourceStamp(row.content)&&stamp.inputStamp===changeToken(JSON.stringify(row.content.raw||{}))?row:{...row,assessment:assessProduction(row.content,{session:row.session||{},duplicateStatus:row.duplicateStatus})};});}
+const savedCandidate=(row,postNumber)=>({sheetId:row.sheetId,contentId:row.contentId,postNumber,title:row.assessment.content.title,contentType:row.contentType,stamp:batchPostStamp(row),productionContent:row.assessment.productionOverride});
 function batchSummary(rows,selected,reserve,batch={}){const skipped={};for(const row of rows.filter(r=>!eligibleForBatch(r))){const reason=productionSkipReason(row);skipped[reason]=(skipped[reason]||0)+1;}return {requested:batch.requestedCount||selected.length,evaluated:rows.length,selected:selected.length,autoRepaired:selected.filter(r=>r.assessment.repair?.autoFixed.length).length,skippedIncomplete:skipped.CRITICAL_INFO_MISSING||0,skippedDuplicate:skipped.DUPLICATE||0,skippedLowQuality:skipped.LOW_QUALITY||0,skippedPublished:skipped.ALREADY_PUBLISHED||0,skippedUnverified:skipped.HIGH_RISK_UNVERIFIED||0,reserve:reserve.length,replaced:(batch.replacements||[]).length,skippedReasons:skipped};}
 export function batchPostStamp(row){return changeToken(JSON.stringify([sourceStamp(row.content),row.assessment.content.caption,row.assessment.content.resolvedAssetPlan]));}
 export function createProductionBatch(rows,count,number=1){
@@ -29,7 +30,7 @@ export function reconcileProductionBatch(batch,rows,{imagesByKey=new Map(),asset
  if(!batch||batch.version!==BATCH_VERSION||!rows.length)return {batch,changed:false,replacements:[]};
  const next=structuredClone(batch),screened=screenProductionRows(rows),byKey=new Map(screened.map(r=>[key(r),r])),used=new Set(next.posts.map(key)),excluded=new Set((next.replacements||[]).map(r=>r.previousKey)),replacements=[];let changed=false;
  const started=post=>[...imagesByKey.keys()].some(k=>k.startsWith(`${key(post)}:image:`))||[...assetsByKey.keys()].some(k=>k.startsWith(`${key(post)}:asset:`));
- for(let i=0;i<next.posts.length;i++){const post=next.posts[i],row=byKey.get(key(post));if(row&&eligibleForBatch({...row,downloaded:false})){if(!started(post)&&post.stamp!==batchPostStamp(row)){next.posts[i]={...post,stamp:batchPostStamp(row)};changed=true;}continue;}if(started(post))continue;
+ for(let i=0;i<next.posts.length;i++){const post=next.posts[i],row=byKey.get(key(post));if(row&&eligibleForBatch({...row,downloaded:false})){if(!started(post)&&(post.stamp!==batchPostStamp(row)||post.productionContent?.version!==COMPLETION_VERSION)){next.posts[i]={...post,stamp:batchPostStamp(row),productionContent:row.assessment.productionOverride};changed=true;}continue;}if(started(post))continue;
   const reserveKeys=new Set((next.reserve||[]).map(key)),pool=rankedCandidates(screened.filter(r=>!used.has(key(r))&&!excluded.has(key(r))),screened.length),similar=pool.filter(r=>r.contentType===(row?.contentType||post.contentType)),candidate=similar.find(r=>reserveKeys.has(key(r)))||similar[0]||pool.find(r=>reserveKeys.has(key(r)))||pool[0];if(!candidate)continue;
   const replacement={postNumber:post.postNumber,previousKey:key(post),contentId:post.contentId,replacementKey:key(candidate),replacementContentId:candidate.contentId,reason:row?productionSkipReason(row):'CRITICAL_INFO_MISSING'};replacements.push(replacement);excluded.add(key(post));used.delete(key(post));used.add(key(candidate));next.posts[i]={...savedCandidate(candidate,post.postNumber),replacementGeneration:(post.replacementGeneration||0)+1};changed=true;
  }
