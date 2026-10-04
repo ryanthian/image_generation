@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {rea
 import {normalizeContentRecord,buildGenerationManifest,runContentQc,buildAssetSourceRevision} from '../src/content-model.mjs';
 import {assessProduction,changeToken} from '../src/production-assistant.mjs';
 import {resolveFastVisualPlan,informationSnapshot} from '../src/fast-visual-plan.mjs';
-import {createProductionBatch,selectBatchCandidates,resolveProductionBatch,planBatchImports,matchBatchFilename,batchImagePrompt,batchPostStamp} from '../src/batch-production.mjs';
+import {createProductionBatch,createProductionBatchFromSelection,selectBatchCandidates,resolveProductionBatch,planBatchImports,matchBatchFilename,batchImagePrompt,batchPostStamp,reconcileProductionBatch} from '../src/batch-production.mjs';
 import {assetSemanticKey,sessionSignature} from '../src/production-core.mjs';
 const recipes=JSON.parse(await readFile(new URL('../data/recipes.json',import.meta.url))),v4=JSON.parse(await readFile(new URL('../data/v4-production-batch-01.json',import.meta.url)));
 const recipe=normalizeContentRecord(recipes.recipes.find(r=>r.Content_ID==='EN-NEW-009'));
@@ -39,4 +39,21 @@ test('legacy partial-source replacement is recovered only if original is eligibl
  b.posts[0]=replacement;b.replacements=[trace];b.summary.evaluated=rows.length-1;
  const before=JSON.stringify(b),recovered=reconcileProductionBatch(b,rows);assert.equal(recovered.batch.posts[0].contentId,original.contentId);assert.equal(recovered.batch.posts[0].replacementGeneration,0);assert.equal(recovered.batch.replacements[0].restoredAfterSourceRecovery,true);assert.equal(JSON.stringify(b),before);
  const started=reconcileProductionBatch(b,rows,{imagesByKey:new Map([[`${trace.replacementKey}:image:cover`,{}]])});assert.equal(started.batch.posts[0].contentId,replacement.contentId);assert.equal(started.batch.replacements[0].restoredAfterSourceRecovery,undefined);
+});
+
+test('manual title batch preserves exact requested order and never pads unrelated content',()=>{
+ const available=readyRows.slice(0,3),keys=[`${available[2].sheetId}:${available[2].contentId}`,`${available[0].sheetId}:${available[0].contentId}`],b=createProductionBatchFromSelection(readyRows,keys,7);
+ assert.equal(b.selectionMode,'MANUAL');
+ assert.equal(b.requestedCount,2);
+ assert.equal(b.posts.length,2);
+ assert.deepEqual(b.posts.map(p=>`${p.sheetId}:${p.contentId}`),keys);
+});
+test('manual title batch does not silently replace an explicitly selected post',()=>{
+ const available=readyRows.slice(0,3),keys=available.slice(0,2).map(r=>`${r.sheetId}:${r.contentId}`),b=createProductionBatchFromSelection(readyRows,keys,8),first=b.posts[0],changedRows=readyRows.map(r=>r.contentId===first.contentId?{...r,assessment:{...r.assessment,ready:false,recommendation:'SKIP'}}:r),result=reconcileProductionBatch(b,changedRows);
+ assert.equal(result.batch.posts[0].contentId,first.contentId);
+ assert.deepEqual(result.replacements,[]);
+});
+test('manual title batch enforces the 20-title interaction limit',()=>{
+ const source=readyRows[0],rows=Array.from({length:21},(_,i)=>{const content={...source.content,contentId:`MANUAL-${i}`,title:`Manual ${i}`};return row(content,i);}),keys=rows.map(r=>`${r.sheetId}:${r.contentId}`);
+ assert.throws(()=>createProductionBatchFromSelection(rows,keys,9),/at most 20/i);
 });
