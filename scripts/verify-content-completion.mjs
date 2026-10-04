@@ -8,11 +8,11 @@ import {assessProduction,duplicateAssignments,findNextProductionReadyContent} fr
 import {createProductionBatch,resolveProductionBatch} from '../src/batch-production.mjs';
 import {buildProductionContent,MAX_IMPROVEMENT_PASSES} from '../src/content-completion.mjs';
 const directory=process.env.COMPLETION_SNAPSHOT_DIR||'output/content-completion';
-const canonical=duplicateAssignments(JSON.parse(await readFile('output/canonical-content-map.json'))),rows=[],sources=[],details=[];
+const map=JSON.parse(await readFile('output/canonical-content-map.json')),canonical=duplicateAssignments(map),rework=new Set((map.reviewPairs||[]).flatMap(p=>[p.left,p.right].map(i=>`${i.source}:${i.contentId}`))),rows=[],sources=[],details=[];
 for(const sheetId of [2026091901,812541719,433728120]){
  const data=JSON.parse(await readFile(`${directory}/source-${sheetId}.json`)),raw=data.records||data.recipes,before=JSON.stringify(raw),normalized=normalizeContentRecordsSafely(raw);assert.equal(normalized.rejected.length,0);
  for(const source of normalized.records){
-  const work=data.editorialWork?.[source.contentId],content=applyEditorialWork(source,work?.stale?null:work,work?.review?.sourceFingerprint).content,duplicateStatus=canonical[`${sheetId}:${content.contentId}`]?.status||'UNIQUE',assessment=assessProduction(content,{duplicateStatus});
+  const work=data.editorialWork?.[source.contentId],content=applyEditorialWork(source,work?.stale?null:work,work?.review?.sourceFingerprint).content,duplicateStatus=canonical[`${sheetId}:${content.contentId}`]?.status||(rework.has(`${data.sourceState?.title||data.sheetName}:${content.contentId}`)?'REWORK':'UNIQUE'),assessment=assessProduction(content,{duplicateStatus});
   assert.equal(assessment.preparation.originalPreserved,true);assert.ok(assessment.preparation.iterations<=MAX_IMPROVEMENT_PASSES);assert.equal(assessment.humanApproved,false);
   if(assessment.ready){assert.equal(assessment.recommendation,'PRODUCE');assert.equal(assessment.gaps.length,0);assert.ok(assessment.quality.substance);assert.ok(buildGenerationManifest(assessment.content).entries.length);assert.ok(assessment.manifest.entries.every(e=>e.imagePrompt));}
   else{assert.equal(assessment.recommendation,'SKIP');assert.equal(assessment.preparation.continuation,'NEXT_GOOD_CONTENT');assert.equal(assessment.productionOverride.imagePrompts.length,0);}

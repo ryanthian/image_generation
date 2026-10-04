@@ -42,3 +42,14 @@ Remaining human work is per content: inspect Batch 01 copy and evidence, approve
 ### v23 single-operator release — 2026-10-04
 
 Deployed source `2d034c59af4fa33f896aa8cf5516035f70102388`, Sites v23, deployment `appgdep_6ac1a2e0558481919eb25b52c9da7704` succeeded. Full release matrix, local/live workflow evidence and the non-blocking Cloudflare CSP warning are in [Single-operator release log](SINGLE-OPERATOR-PRODUCTION-2026-10-04.md). Three live Sheets load 120 / 100 / 70 records. Tests 160/160; lint/build pass. Routine low-risk production uses automatic source-based checks; human editorial approval is not invented. Real generated-image validation remains pending user media.
+
+
+## Content Completion Engine release — 2026-10-04 (v27)
+
+The current source-material pipeline is now `buildProductionContent()`: normalize → prioritized same-record recovery → complete useful content → maximum two automatic improvement passes → factual/editorial quality gate → visual plan/prompts. Low-risk items need no new reviewer fields. Original Sheets and human approval remain separate from AI production overrides. Weak/unrecoverable content skips automatically; batches admit completed production objects and keep screened reserves. Existing media, per-asset stale blocking and ordered ZIPs remain intact.
+
+PLATFORM STATUS: **PRODUCTION READY WITH WARNINGS** (existing hosting-injected CSP challenge warning only). DEPLOYED VERSION: **v27**. DEPLOYMENT COMMIT: **`29db1e726f4304d31d419aa81a5d8b7dc87cb98d`**. Deployment ID: `appgdep_6ac1ce4dbe188191a21e4a7b67d91b19`; native status succeeded. All three Sheets loaded **120/100/70** records and their raw hashes remained unchanged. Real-corpus replay: **290 evaluated / 131 PRODUCE / 159 individual skips / zero dead ends**. Near-duplicate REWORK exclusions match the actual Console.
+
+Actual operator Batch 01: **20 AI prepared PRODUCE posts / 89 image jobs / 4.45 average / ten reserves**. Four further weak posts replaced, eight cumulative replacements; no new approval inferred. Actual EXP-047 remains safely skipped, while quantified EXP-002 drink facts recover correctly. Tests **221/221**, lint/build and final live completion/batch/ZIP/mobile smoke PASS. Synthetic image fixtures only; no real-image verification fabricated. No Sheet writes or Facebook publication in the tested flows. Rollback versions retained.
+
+Complete architecture, blind spots, regression corrections, deployment provenance and evidence: [Content Completion Engine report](CONTENT-COMPLETION-ENGINE-2026-10-04.md).
