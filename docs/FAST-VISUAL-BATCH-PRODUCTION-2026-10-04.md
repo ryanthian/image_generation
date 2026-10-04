@@ -49,3 +49,47 @@ Batch selection/progress, source images and final assets persist in this browser
 ## Deployment and handoff
 
 Final native deployment identity and live verification are recorded below after publication. v23/v20 remain rollback versions. Daily workflow: Batch → Auto Select → Copy Batch → generate one photo per response → drag all downloads into Batch → resolve exceptions → Build Ready Posts → inspect each Final → Looks Good → Download Ready Posts. Refresh affected plans only when source content changes.
+
+### Operator Batch 01 prepared on deployed v24
+
+The existing operator browser now holds **BATCH 01: 20 eligible posts, 78 pending photos, average 3.9 per post**. This differs from the automated test's later twenty-post selection because the test excludes its five already downloaded posts. Actual operator images imported: **0/78**; final posts built: **0/20**; real-image visual approvals: **0/20**. This is a production plan, not a claim of completed photography or human approval.
+
+| Post | Content ID | Photos |
+| --- | --- | ---: |
+| P01 | EN-NEW-009 | 5 |
+| P02 | GS-V4-EXP-002 | 4 |
+| P03 | GS-V4-EXP-038 | 4 |
+| P04 | GS-V4-SG-002 | 6 |
+| P05 | GS-V4-EXP-027 | 3 |
+| P06 | GS-V4-EXP-054 | 3 |
+| P07 | EN-NEW-052 | 5 |
+| P08 | GS-V4-EXP-003 | 4 |
+| P09 | GS-V4-EXP-029 | 3 |
+| P10 | GS-V4-EXP-056 | 3 |
+| P11 | EN-NEW-070 | 5 |
+| P12 | GS-V4-EXP-016 | 3 |
+| P13 | GS-V4-EXP-043 | 3 |
+| P14 | GS-V4-EXP-004 | 4 |
+| P15 | EN-NEW-105 | 5 |
+| P16 | GS-V4-EXP-017 | 3 |
+| P17 | GS-V4-EXP-028 | 3 |
+| P18 | GS-V4-EXP-045 | 3 |
+| P19 | GS-V4-EXP-005 | 4 |
+| P20 | EN-NEW-020 | 5 |
+
+Operator screenshot: `output/playwright/batch-live/operator-batch-01.jpg`. The existing Console tab was reloaded to v24 and left open on Batch 01.
+
+### Verified release and live smoke test
+
+- PLATFORM STATUS: **PRODUCTION READY WITH WARNINGS**. All application checks pass. The non-blocking warning is the existing hosting-injected Cloudflare challenge inline script being refused by the unchanged strict CSP. Every observed inline script was attributable to `/cdn-cgi/challenge-platform/`; no application console or page errors occurred. No security policy was weakened.
+- Deployed version: **Sites v24**, status **succeeded**. Audience remains owner-private.
+- Deployment commit / live `/api/build` commit: **75039cb8b4f025ef185096ba6e3602735d2137ba**. Build time: `2026-10-04T01:55:12.618Z`.
+- Deployment ID: `appgdep_6ac1b237f3588191a80c5b333a7545e0`.
+- Saved version ID: `appgprj_6aae8cef935081919aead96f8cd34f7a~appgver_708e24985ff081918b0754a2f56545ae`.
+- Live sources: **120 / 100 / 70**, total **290**; dropdown loading passed on all three.
+- Live five-post end-to-end and twenty-post planning: **PASS**. Bulk import, exception resolution, reload/resume, per-post build, visual-decision invalidation, two-post/all-five ZIPs, and stale-post isolation passed. Mobile 390×844: PASS.
+- Live ZIP binary readback: all final PNGs **1440×1800**, expected captions and batch/post manifests present. Partial: 2 posts / 9 PNGs / 2 captions. Complete: 5 posts / 25 PNGs / 5 captions.
+- Live test non-GET requests: **0**. No Sheet status/content update and no Facebook publication. Editorial approval was not fabricated; synthetic final decisions exist only in the disposable test browser.
+- Evidence: `output/playwright/batch-live/report.json`, `zip-readback.json`, saved ZIPs and screenshots.
+
+Gate C: acceptance criteria, tests, source-information preservation, UI consistency, exact deployment identity and live readback verified. Gate D: update log, operator Batch 01 and resumable handoff recorded. Remaining work is actual ChatGPT photo generation and the operator's image judgment; no critical engineering blocker remains.

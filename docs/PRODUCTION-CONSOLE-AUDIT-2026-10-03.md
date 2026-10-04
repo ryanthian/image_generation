@@ -131,3 +131,14 @@ Continued from clean current v22 documentation commit `8356334444681c2961c82e0ec
 ### v23 single-operator release — 2026-10-04
 
 Deployed source `2d034c59af4fa33f896aa8cf5516035f70102388`, Sites v23, deployment `appgdep_6ac1a2e0558481919eb25b52c9da7704` succeeded. Full release matrix, local/live workflow evidence and the non-blocking Cloudflare CSP warning are in [Single-operator release log](SINGLE-OPERATOR-PRODUCTION-2026-10-04.md). Three live Sheets load 120 / 100 / 70 records. Tests 160/160; lint/build pass. Routine low-risk production uses automatic source-based checks; human editorial approval is not invented. Real generated-image validation remains pending user media.
+
+
+## Phase 2 continuation — v24 fast visual plans and batch production (2026-10-04)
+
+PLATFORM STATUS: **PRODUCTION READY WITH WARNINGS** (non-blocking hosting challenge CSP warning only). Deployed **Sites v24**, commit **75039cb8b4f025ef185096ba6e3602735d2137ba**, deployment `appgdep_6ac1b237f3588191a80c5b333a7545e0`; native status succeeded and live `/api/build` identity matched. v23 and v20 remain rollback versions.
+
+Added non-destructive fast photo planning, persisted Auto Select 5/10/20 image batches, deterministic batch/post/slot prompts/imports, explicit exception assignment, existing-renderer Build Ready Posts and ordered partial batch ZIPs. The approved Content → AI Optimise screen remains intact. Representative six-step legacy recipe: **9 → 5 photos, information lost NONE**. Operator **Batch 01: 20 posts / 78 pending photos / 3.9 per post**, no actual images or visual approvals yet.
+
+Tests **176/176 PASS**, lint PASS, build PASS, local and live browser flows PASS. All three production Sheets loaded **120 / 100 / 70** records. Five-post end-to-end import/resume/build/partial/full ZIP and isolated stale-post blocking passed. Live ZIPs were read back: 2-post partial and 5-post complete, every final image 1440×1800. No application errors or non-GET test requests; no Sheet mutation or Facebook publication. Real ChatGPT image validation remains a content-level human task; synthetic fixtures do not assert real-image quality or editorial approval.
+
+Full change log, blind-spot traceability, Batch 01 selection, deployment identity, evidence and daily-use handoff: [FAST-VISUAL-BATCH-PRODUCTION-2026-10-04.md](FAST-VISUAL-BATCH-PRODUCTION-2026-10-04.md).
