@@ -3,7 +3,7 @@ import {normalizeContentRecord,runContentQc,runEditorialReview,buildGenerationMa
 import {classifyClaimRisk} from './editorial-pipeline.mjs';
 import {resolveFastVisualPlan} from './fast-visual-plan.mjs';
 import {repairProductionSource,recoverySources} from './production-repair.mjs';
-export const COMPLETION_VERSION='CONTENT_COMPLETION_2026-10-04.1';
+export const COMPLETION_VERSION='CONTENT_COMPLETION_2026-10-04.2';
 export const MAX_IMPROVEMENT_PASSES=2;
 const text=v=>String(v??'').trim();
 const generic=/(?:你知道吗[？?！!]?|原来如此[！!]?|一定要收藏[！!]?|赶快分享[！!]?|太实用了[！!]?|学起来[！!]?|记得收藏[！!]?|不容错过[！!]?|解锁美味[！!]?)/g;
@@ -136,22 +136,28 @@ function prepareVisuals(content){
    else if(/INGREDIENTS/.test(asset.asset_type))asset.overlay_text=facts.ingredients.join('\n');
    else if(/CHECKLIST|SUMMARY|TIP/.test(asset.asset_type))asset.overlay_text=facts.points.slice(-3).join('\n');
   }
-  for(const input of asset.generation_inputs||[]){if(!text(input.image_prompt))input.image_prompt=`Photorealistic ${content.title}. Depict only this production content: ${input.overlay_text||asset.overlay_text||content.title}. Accurate ingredients, objects and stage. No random text, logo or watermark. Do not invent quantities or stages.`;}
+  for(const input of asset.generation_inputs||[]){if(!text(input.image_prompt))input.image_prompt=`Photorealistic ${content.title}. Depict only this production content: ${input.overlay_text||asset.overlay_text||content.title}. Accurate ingredients, objects and stage. No random text, logo or watermark. Do not invent quantities or stages.`;if(content.productionDerivedFields?.production_completion){const context='PRODUCTION CONTENT CONTEXT:\n';input.image_prompt=input.image_prompt.split(context)[0].trim()+'\n\n'+context+content.contentBody;}}
  }
  return resolveFastVisualPlan(prepared);
 }
 /** Accept a normalized record or raw Sheet row. The original raw object is never mutated. */
-export function buildProductionContent(record,{duplicateStatus='UNIQUE',claimVerified=false,compact=true,complete=true,iteration=0,maxIterations=MAX_IMPROVEMENT_PASSES}={}){
+export function buildProductionContent(record,{duplicateStatus='UNIQUE',claimVerified=false,compact=true,complete=true,iteration=0,maxIterations=MAX_IMPROVEMENT_PASSES,completionText=''}={}){
  let source;
  try{source=record.resolvedAssetPlan?record:normalizeContentRecord(record);}catch(error){
   const detail=`Source could not be normalized safely: ${error.message}`,content={contentId:record.Content_ID||record.content_id||'',title:record.Title||record.Draft_Title||'',contentBody:record.Content_Body||record.Full_Recipe||'',caption:record.Ready_To_Post_Caption||'',resolvedAssetPlan:[],raw:record};
   const repair={autoFixed:[],warnings:[],critical:[{state:'CRITICAL_UNRESOLVED',code:'SOURCE_INVALID',detail}],evidence:[],derivedFields:{},originalPreserved:true};
   return {content,proposal:{content,changes:[]},repair,risk:{tier:'LOW',reasons:[]},claims:[],verified:false,gaps:[detail],blockers:[detail],recommendation:'SKIP',score:0,dimensions:{},quality:{score:0,substance:false,weaknesses:[detail]},contract:{failures:[{code:'SOURCE_INVALID',detail}],warnings:[]},manifest:{entries:[]},ready:false,preparation:{version:COMPLETION_VERSION,stages:['Source analysed'],iterations:0,maxIterations:MAX_IMPROVEMENT_PASSES,history:[],continuation:'NEXT_GOOD_CONTENT',originalPreserved:true},factConfidence:[],findings:[detail],skipReason:'CRITICAL_INFO_MISSING',humanApproved:false};
  }
- const original=JSON.stringify(source.raw),recovered=repairProductionSource(source,{prepareImages:false}),repair=recovered.repair;
+ const original=JSON.stringify(source.raw),draft=text(completionText);
+ // Explicit production additions are independent of the original Sheet and never called recovered Sheet facts.
+ const recoveryInput=draft?{...source,contentBody:[source.contentBody,draft].filter(Boolean).join('\n\n'),raw:{...source.raw,Production_Completion:draft}}:source;
+ const recovered=repairProductionSource(recoveryInput,{prepareImages:false}),repair=recovered.repair;
+ recovered.content.raw=source.raw;
+ if(draft){repair.autoFixed.push({state:'AUTO_FIXED',code:'PRODUCTION_COMPLETION_APPLIED',detail:'Applied your production additions to this content; original Sheet preserved.'});repair.derivedFields.production_completion=draft;}
+
  recovered.content.productionFacts=contentFacts(recovered.content);
  let proposal=optimiseContent(recovered.content,{compact,prepareVisual:false}),quality=evaluateProductionQuality(source,{duplicateStatus,critical:repair.critical});
- const history=[{stage:'SOURCE',score:quality.score,weaknesses:quality.weaknesses}],confidence=[...recoverySources(source).map(e=>({field:e.path,confidence:'SOURCE FACT',text:e.text})),...repair.evidence.map(e=>({field:e.path,confidence:'DERIVED',text:e.text}))];
+ const history=[{stage:'SOURCE',score:quality.score,weaknesses:quality.weaknesses}],confidence=[...recoverySources(source).map(e=>({field:e.path,confidence:'SOURCE FACT',text:e.text})),...repair.evidence.map(e=>({field:e.path,confidence:draft&&/Production_Completion|body/.test(e.path)?'USER PROVIDED':'DERIVED',text:e.text})),...(draft?[{field:'productionCompletion',confidence:'USER PROVIDED',text:draft}]:[])];
  const limit=Math.max(1,Math.min(MAX_IMPROVEMENT_PASSES,Number(maxIterations)||MAX_IMPROVEMENT_PASSES));
  if(complete)for(let pass=1;pass<=limit;pass++){
   proposal=completePresentation(proposal,{pass});quality=evaluateProductionQuality(proposal.content,{duplicateStatus,critical:repair.critical});confidence.push(...proposal.completionConfidence);history.push({stage:'IMPROVEMENT',iteration:pass,score:quality.score,weaknesses:quality.weaknesses});if(quality.score>=85&&quality.substance)break;
@@ -168,16 +174,16 @@ export function buildProductionContent(record,{duplicateStatus='UNIQUE',claimVer
  const claims=risk.tier==='LOW'?[]:unique([content.hookText,...text(content.contentBody).split('\n'),...text(content.caption).split('\n'),...content.resolvedAssetPlan.map(a=>a.overlay_text)]).filter(s=>/(?:保存|冷藏|营养|维生素|热量|低脂|RM|治疗|疾病|血糖|血压|抗癌|排毒|保证|导致)/.test(s)).slice(0,8);
  confidence.push(...claims.map(claim=>({field:'claim',confidence:verified?'SOURCE FACT':'UNVERIFIED CLAIM',text:claim})));
  const gaps=[...new Set(repair.critical.map(i=>i.detail))];
- let recommendation=duplicate||gaps.length||!verified?'SKIP':quality.substance&&quality.score>=78?'PRODUCE':complete?'SKIP':'IMPROVE';
+ let recommendation=duplicate?'SKIP':gaps.length?'IMPROVE':!verified?'SKIP':quality.substance&&quality.score>=78?'PRODUCE':'IMPROVE';
  let manifest={entries:[]},contract={failures:[],warnings:[]};
  // No newly generated scene prompts for weak or incomplete production content.
  if(recommendation==='PRODUCE'){
-  try{content=prepareVisuals(content);contract=runContentQc(content);manifest=buildGenerationManifest(content);const missing=manifest.entries.filter(e=>e.required&&!text(e.imagePrompt));if(!manifest.entries.length||missing.length||contract.failures.length){gaps.push(...contract.failures.map(i=>i.detail),...missing.map(e=>`Scene for ${e.label} could not be prepared.`));if(!manifest.entries.length)gaps.push('No feasible image slots.');recommendation='SKIP';manifest={entries:[]};}}
-  catch(error){gaps.push(`Visual plan unavailable: ${error.message}`);recommendation='SKIP';manifest={entries:[]};}
+  try{content=prepareVisuals(content);contract=runContentQc(content);manifest=buildGenerationManifest(content);const missing=manifest.entries.filter(e=>e.required&&!text(e.imagePrompt));if(!manifest.entries.length||missing.length||contract.failures.length){gaps.push(...contract.failures.map(i=>i.detail),...missing.map(e=>`Scene for ${e.label} could not be prepared.`));if(!manifest.entries.length)gaps.push('No feasible image slots.');recommendation='IMPROVE';manifest={entries:[]};}}
+  catch(error){gaps.push(`Visual plan unavailable: ${error.message}`);recommendation='IMPROVE';manifest={entries:[]};}
  }
  if(!complete&&[source.title,source.hookText,source.caption].some(v=>natural(v)!==text(v))&&!gaps.length&&verified&&!duplicate)recommendation='IMPROVE';
  repair.autoFixed.push(...unique(proposal.changes.filter(detail=>!detail.startsWith('Source copy already'))).map(detail=>({state:'AUTO_FIXED',code:'CONTENT_COMPLETED',detail})));
- const blockers=[...gaps];if(duplicate)blockers.unshift('Duplicate: use the canonical record.');if(!verified)blockers.push(`VERIFY CLAIM: ${risk.reasons.join('; ')}`);if(recommendation==='SKIP'&&!blockers.length)blockers.push(...quality.weaknesses,'Content remained below production quality after automatic improvement.');
- const ready=recommendation==='PRODUCE'&&!blockers.length,preparation={version:COMPLETION_VERSION,stages:['Source analysed','Missing information recovered','Content improved','Quality checked',...(ready?['Visual plan prepared']:[])],iterations:history.filter(h=>h.stage==='IMPROVEMENT').length,maxIterations:limit,history,qualityMode:quality.mode,continuation:ready?'GENERATE_IMAGES':recommendation==='IMPROVE'?'AUTO_IMPROVE':'NEXT_GOOD_CONTENT',originalPreserved:original===JSON.stringify(source.raw)};
- return {content,proposal:{...proposal,content},repair,risk,claims,verified,gaps,blockers,recommendation,score:quality.score,dimensions:quality.dimensions,quality,contract,manifest,ready,preparation,factConfidence:confidence,findings:[ready?'✓ Production content prepared':blockers[0],`✓ Quality ${quality.score}/100`,ready?`✓ ${manifest.entries.length} images · ${content.resolvedAssetPlan.length} planned assets`:'Continue with the next suitable item'],skipReason:duplicate?'DUPLICATE':gaps.length?'CRITICAL_INFO_MISSING':!verified?'HIGH_RISK_UNVERIFIED':recommendation==='SKIP'?'LOW_QUALITY':null,humanApproved:false};
+ const blockers=[...gaps];if(duplicate)blockers.unshift('Duplicate: use the canonical record.');if(!verified)blockers.push(`VERIFY CLAIM: ${risk.reasons.join('; ')}`);if(recommendation!=='PRODUCE'&&!blockers.length)blockers.push(...quality.weaknesses,'Content remained below production quality after automatic improvement.');
+ const ready=recommendation==='PRODUCE'&&!blockers.length,preparation={version:COMPLETION_VERSION,stages:['Source analysed','Missing information recovered','Content improved','Quality checked',...(ready?['Visual plan prepared']:[])],iterations:history.filter(h=>h.stage==='IMPROVEMENT').length,maxIterations:limit,history,qualityMode:quality.mode,continuation:ready?'GENERATE_IMAGES':recommendation==='IMPROVE'?'COMPLETE_THIS_CONTENT':'NEXT_GOOD_CONTENT',originalPreserved:original===JSON.stringify(source.raw)};
+ return {content,proposal:{...proposal,content},repair,risk,claims,verified,gaps,blockers,recommendation,score:quality.score,dimensions:quality.dimensions,quality,contract,manifest,ready,preparation,factConfidence:confidence,findings:[ready?'✓ Production content prepared':blockers[0],`✓ Quality ${quality.score}/100`,ready?`✓ ${manifest.entries.length} images · ${content.resolvedAssetPlan.length} planned assets`:recommendation==='IMPROVE'?'Complete this content and continue':'Choose the canonical or supported version'],skipReason:duplicate?'DUPLICATE':gaps.length?'CRITICAL_INFO_MISSING':!verified?'HIGH_RISK_UNVERIFIED':recommendation!=='PRODUCE'?'LOW_QUALITY':null,humanApproved:false};
 }

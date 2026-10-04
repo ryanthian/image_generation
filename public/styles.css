@@ -352,3 +352,6 @@ code { color: var(--primary); font-weight: 700; font-size: .86rem; }
 
 /* Compact source-repair status using the existing Paper Dashboard notification palette. */
 .fact-questions.repair-ready{background:#eef8f2}.fact-questions>p{margin:8px 0}.fact-questions>details{margin-top:10px}.fact-questions>details summary{cursor:pointer;font-size:13px;color:#66615b}
+
+/* Same-content completion uses the existing Paper Dashboard text input and button pattern. */
+#contentCompletion label{display:block;color:#66615b;font-size:13px;margin:14px 0 8px}#completionText{display:block;width:100%;max-width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#66615b;font:inherit;resize:vertical;margin-bottom:14px}#completionNeeded{white-space:pre-wrap;overflow-wrap:anywhere}#contentCompletion .btn{margin:6px 6px 6px 0}

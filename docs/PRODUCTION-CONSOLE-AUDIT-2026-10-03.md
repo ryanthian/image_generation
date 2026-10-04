@@ -159,3 +159,8 @@ PLATFORM STATUS: **PRODUCTION READY WITH WARNINGS** (existing hosting-injected C
 Actual operator Batch 01: **20 AI prepared PRODUCE posts / 89 image jobs / 4.45 average / ten reserves**. Four further weak posts replaced, eight cumulative replacements; no new approval inferred. Actual EXP-047 remains safely skipped, while quantified EXP-002 drink facts recover correctly. Tests **221/221**, lint/build and final live completion/batch/ZIP/mobile smoke PASS. Synthetic image fixtures only; no real-image verification fabricated. No Sheet writes or Facebook publication in the tested flows. Rollback versions retained.
 
 Complete architecture, blind spots, regression corrections, deployment provenance and evidence: [Content Completion Engine report](CONTENT-COMPLETION-ENGINE-2026-10-04.md).
+
+
+## Same-content completion policy — 2026-10-04
+
+The latest instruction supersedes automatic skipping/replacement for missing facts. Keep the selected Content_ID and existing batch position; recover and improve automatically, then use a separate local completion draft for unavailable facts. No source-Sheet edit, reviewer form or fabricated approval. The central engine returns COMPLETE_THIS_CONTENT for incomplete production content. See [Same-content completion](SAME-CONTENT-COMPLETION-2026-10-04.md) for implementation, test evidence, known text-generation limitation and release readback.

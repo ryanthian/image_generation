@@ -1,4 +1,4 @@
-import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken,findNextProductionReadyContent} from '/production-assistant.mjs';
+import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken,findNextProductionReadyContent,buildContentCompletionPrompt} from '/production-assistant.mjs';
 import {
   buildAssetFilename,
   buildSlotPrompt,
@@ -348,8 +348,8 @@ function applyContent(content) {
   state.workflow = {stage:initialWorkflowStage(content),actor:'',note:'',updatedAt:null};
   state.currentPublicationId = "";
   state.visualQcConfirmedFor = "";
-  state.plan = state.content.resolvedAssetPlan;
-  state.manifest = buildGenerationManifest(state.content);
+  state.plan = state.assessment.ready?state.content.resolvedAssetPlan:[];
+  state.manifest = state.assessment.ready?state.assessment.manifest:{entries:[],expectedAssets:0};
   localStorage.setItem(`capc:selectedContent:${sourceKey()}`, state.content.contentId);
   $("sideRecipe").textContent = state.content.title;
   $("sideId").textContent = state.content.contentId;
@@ -711,7 +711,7 @@ async function loadEditorialQueue(){
     const [imageKeys,assetKeys]=await Promise.all(['images','assets'].map(store=>idb(store,'readonly',objectStore=>objectStore.getAllKeys())));
     const imageRecords=await idb('images','readonly',o=>o.getAll()),assetRecords=await idb('assets','readonly',o=>o.getAll());
     const imagesByKey=new Map(imageKeys.map((key,i)=>[key,imageRecords[i]])),assetsByKey=new Map(assetKeys.map((key,i)=>[key,assetRecords[i]]));
-    for(const row of rows){const a=row.assessment,manifest=buildGenerationManifest(a.content),images=Object.fromEntries(manifest.entries.map(e=>[e.slotId,imagesByKey.get(`${row.sheetId}:${row.contentId}:image:${e.slotId}`)])),plan=a.content.resolvedAssetPlan,assets=Object.fromEntries(plan.map(p=>[p.asset_id,assetsByKey.get(`${row.sheetId}:${row.contentId}:asset:${p.asset_id}`)]));
+    for(const row of rows){const a=row.assessment,manifest=a.manifest,images=Object.fromEntries(manifest.entries.map(e=>[e.slotId,imagesByKey.get(`${row.sheetId}:${row.contentId}:image:${e.slotId}`)])),plan=a.content.resolvedAssetPlan,assets=Object.fromEntries(plan.map(p=>[p.asset_id,assetsByKey.get(`${row.sheetId}:${row.contentId}:asset:${p.asset_id}`)]));
       row.imageTotal=manifest.entries.length;row.imageCount=manifest.entries.filter(e=>images[e.slotId]?.semanticKey===e.semanticKey&&images[e.slotId]?.qc?.status==='PASS').length;row.downloaded=!!readProductionSession(row.content,row.sheetId).downloadedAt;
       const currentAssets=plan.length&&plan.every(p=>assets[p.asset_id]?.semanticKey===assetSemanticKey(p)&&!isStoredAssetStale(p,assets[p.asset_id],images));
       const visual=localStorage.getItem(`capc:visual:${row.sheetId}:${row.contentId}:review:visual`);
@@ -726,7 +726,7 @@ async function loadEditorialQueue(){
       if(sourceStamp(state.content)!==sourceStamp(completed.content)||changeToken(JSON.stringify(state.originalContent.raw))!==changeToken(JSON.stringify(selected.raw))){applyContent(selected);await state.contentReady;}
       else{state.assessment=completed;renderQc();renderEditorialWorkspace();renderSlots();}
     }
-    if(state.assessment?.gaps.length&&!state.deliberateContentSelection&&!state.batchBusy)queueMicrotask(()=>continueWithGoodContent());
+    // Missing content stays selected until its production version is completed.
     $('platformStatus').textContent=new Set(rows.map(r=>r.sheetId)).size===3?'PRODUCTION READY':'PRODUCTION READY WITH WARNINGS';$('platformHint').textContent=`${sourceResults.length}/3 sources · ${rows.length} records · per-content gates`;
   }catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
 }
@@ -734,7 +734,7 @@ async function loadEditorialQueue(){
 async function openQueueItem(row) {
   state.deliberateContentSelection=true;
   if(!row||state.batchBusy&&!state.batchInternal)return;
-  if(Number(state.sourceId)===Number(row.sheetId)&&state.records.some(item=>item.contentId===row.contentId))applyContent(state.records.find(item=>item.contentId===row.contentId));
+  if(Number(state.sourceId)===Number(row.sheetId)&&state.records.some(item=>item.contentId===row.contentId))applyContent(row.content);
   else await loadSource(String(row.sheetId),row.contentId);
   $('recipe').scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -751,8 +751,11 @@ function renderEditorialWorkspace(){
   $('workspaceAssetPlan').innerHTML=state.plan.map(asset=>`<p><strong>${asset.sequence} · ${escapeHtml(asset.title)}</strong><br><small>${escapeHtml(asset.overlay_text)}</small></p>`).join('');
   $('optimiseState').textContent=`AI OPTIMISED · ${a.recommendation}`;
   const repair=a.repair,details=[...repair.autoFixed,...repair.warnings,...repair.critical];
-  $('factQuestions').hidden=false;$('factQuestions').classList.toggle('repair-ready',a.ready);$('factQuestions').innerHTML=`<p class="eyebrow">AI CONTENT PREPARATION</p><strong>${a.gaps.length?'SOURCE INCOMPLETE · SKIP':a.ready?'✓ AI FIXED · READY TO PRODUCE':a.recommendation==='IMPROVE'?'AI PREPARED · IMPROVE':'SKIP · source support or quality insufficient'}</strong><p>${a.preparation.stages.map(s=>`✓ ${escapeHtml(s)}`).join(' · ')}</p><p>Quality ${a.score} / 100 · ${a.ready?`${a.manifest.entries.length} images`:`${repair.critical.length} unresolved source gaps`} · AI repaired ${repair.autoFixed.length} content issues${repair.warnings.length?` · ${repair.warnings.length} warnings`:""}</p>${a.gaps.length?`<p>${escapeHtml(a.gaps[0])}</p>`:''}${a.recommendation==='SKIP'?'<button id="repairNext" class="btn btn-primary" type="button">Skip &amp; Next Good Content →</button>':''}<details id="repairDetails"><summary>View AI Changes</summary>${details.map(i=>`<p>${escapeHtml(i.detail)}</p>`).join('')}${a.verified?'':`<p>${escapeHtml(a.risk.reasons.join(' · '))}</p>`}</details>`;
-  if($('repairNext'))$('repairNext').onclick=()=>continueWithGoodContent();
+  $('factQuestions').hidden=false;$('factQuestions').classList.toggle('repair-ready',a.ready);$('factQuestions').innerHTML=`<p class="eyebrow">AI CONTENT PREPARATION</p><strong>${a.gaps.length?'COMPLETE THIS CONTENT · YOUR RECORD IS KEPT':a.ready?'✓ AI FIXED · READY TO PRODUCE':a.recommendation==='IMPROVE'?'AI PREPARED · IMPROVE':'SKIP · source support or quality insufficient'}</strong><p>${a.preparation.stages.map(s=>`✓ ${escapeHtml(s)}`).join(' · ')}</p><p>Quality ${a.score} / 100 · ${a.ready?`${a.manifest.entries.length} images`:`${repair.critical.length} unresolved source gaps`} · AI repaired ${repair.autoFixed.length} content issues${repair.warnings.length?` · ${repair.warnings.length} warnings`:""}</p>${a.gaps.length?`<p>${escapeHtml(a.gaps[0])}</p>`:''}${a.recommendation==='IMPROVE'||a.gaps.length?'<button id="repairComplete" class="btn btn-primary" type="button">Fix This Content &amp; Continue →</button>':''}<details id="repairDetails"><summary>View AI Changes</summary>${details.map(i=>`<p>${escapeHtml(i.detail)}</p>`).join('')}${a.verified?'':`<p>${escapeHtml(a.risk.reasons.join(' · '))}</p>`}</details>`;
+  if($('repairComplete'))$('repairComplete').onclick=openContentCompletion;
+  $('contentCompletion').hidden=a.ready;
+  $('completionNeeded').textContent=a.gaps.join('\n')||'Add concrete practical instructions or decision points. The compiler handles the hook, caption and CTA.';
+  if(document.activeElement!==$('completionText'))$('completionText').value=state.productionSession.completionDraft??state.productionSession.completion?.text??'';
   $('claimVerification').hidden=a.verified;$('claimReason').textContent=a.risk.reasons.join(' · ');$('claimList').innerHTML=a.claims.map(c=>`<li>${escapeHtml(c)}</li>`).join('');
 }
 function renderProductionSummary(){
@@ -763,7 +766,7 @@ function renderProductionSummary(){
   $('potentialDimensions').innerHTML=Object.entries(a.dimensions).map(([name,value])=>`<div><dt>${escapeHtml(name)}</dt><dd>${value}/10</dd></div>`).join('');
   $('qualityFindings').innerHTML=a.findings.slice(0,5).map(f=>`<li>${escapeHtml(f)}</li>`).join('');
   $('monetizationScore').textContent=`CONTENT POTENTIAL ${a.score}/100`;$('monetizationDetails').textContent=Object.entries(a.dimensions).map(([k,v])=>`${k} ${v}/10`).join(' · ')+' · Internal production score; no guaranteed Facebook earnings.';
-  $('autoImprove').textContent=a.recommendation==='SKIP'?'View Missing Information':'Improve Again';
+  $('autoImprove').textContent=!a.ready?'Fix This Content':'Improve Again';
   $('primaryAction').className='btn btn-primary';$('autoImprove').className='btn btn-info';$('workNext').className='btn btn-neutral';
   renderVisualPlan();
   $('imageQueueProgress').textContent=`${state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length} / ${state.manifest.entries.length} READY`;
@@ -776,8 +779,8 @@ function renderProductionSummary(){
   const row=currentQueueRow();if(row){row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.progress=action.detail;row.nextAction=action.label;}
   const imageCount=state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length;
   const suggested=findNextProductionReadyContent(state.editorialRows);
-  state.quickRow=imageCount?null:suggested;
-  $('resumeHint').textContent=imageCount?`CONTINUE PRODUCTION · ${state.content.contentId} · Images ${imageCount}/${state.manifest.entries.length} · ${action.detail}`:suggested?`NEXT BEST CONTENT · ${suggested.score} · PRODUCE`:`CONTINUE PRODUCTION · ${state.content.contentId} · ${action.detail}`;
+  state.quickRow=imageCount||!a.ready?null:suggested;
+  $('resumeHint').textContent=!a.ready?`CONTINUE THIS CONTENT · ${state.content.contentId} · ${action.detail}`:imageCount?`CONTINUE PRODUCTION · ${state.content.contentId} · Images ${imageCount}/${state.manifest.entries.length} · ${action.detail}`:suggested?`NEXT BEST CONTENT · ${suggested.score} · PRODUCE`:`CONTINUE PRODUCTION · ${state.content.contentId} · ${action.detail}`;
   $('quickTitle').textContent=state.quickRow?.title||state.content.title;
   localStorage.setItem('capc:lastProduction',JSON.stringify({sheetId:state.sourceId,contentId:state.content.contentId}));
   renderFinalPreview();
@@ -788,7 +791,7 @@ async function primaryProductionAction(){
   const {kind}=state.nextBestAction;
   if(kind==='CANONICAL'){const row=currentQueueRow(),better=state.editorialRows.find(r=>queueKey(r)===row?.canonicalKey);return openQueueItem(better);}
   if(kind==='NEXT')return continueWithGoodContent();
-  if(kind==='FACT'||kind==='CLAIM')return continueWithGoodContent();
+  if(kind==='COMPLETE'||kind==='FACT'||kind==='CLAIM')return openContentCompletion();
   if(kind==='IMPROVE')return autoImprove();
   if(kind==='IMAGES'){renderVisualPlan();return goStage('images');}
   if(kind==='BUILD'){await buildAssets();return goStage('assets');}
@@ -797,12 +800,28 @@ async function primaryProductionAction(){
 }
 function autoImprove(){
   if(state.busy||state.batchBusy||!state.originalContent)return;
-  if(state.assessment.recommendation==='SKIP'){goStage('factQuestions');$('repairDetails').open=true;return;}
+  if(!state.assessment.ready)return openContentCompletion();
   const before=state.assessment.score;
   saveProductionSession({iteration:(state.productionSession.iteration||0)+1,override:undefined});
   const selected=state.originalContent;applyContent(selected);renderEditorialQueue();goStage('optimise');
   toast(`Auto Improve complete · ${before} → ${state.assessment.score} · ${state.assessment.recommendation}. Facts preserved.`);
 }
+
+function openContentCompletion(){
+ if(!state.originalContent||state.busy||state.batchBusy)return;
+ goStage('optimise');$('contentCompletion').hidden=false;$('contentCompletion').open=true;$('completionText').focus();
+}
+async function applyContentCompletion(){
+ if(!state.originalContent||state.busy||state.batchBusy)return;
+ const draft=$('completionText').value.trim();if(!draft)return toast('Add the missing facts or paste the completed body here. Your content stays selected.',true);
+ if(draft.length>24000)return toast('Use a production draft of at most 24,000 characters.',true);
+ try{saveProductionSession({completion:{text:draft,sourceStamp:sourceStamp(state.originalContent),inputStamp:changeToken(JSON.stringify(state.originalContent.raw||{})),provenance:'USER_PROVIDED_PRODUCTION_ADDITIONS'},completionDraft:draft,override:undefined});
+ const selected=state.originalContent;applyContent(selected);await state.contentReady;renderEditorialQueue();await refreshProductionBatch();
+ if(state.assessment.ready){goStage('images');toast('Content completed. Continue generating images for '+selected.contentId+'. Original Sheet preserved.');}
+ else{openContentCompletion();toast('Production draft saved. '+(state.assessment.gaps[0]||state.assessment.quality.weaknesses[0]||'More supported detail is needed.')+' The same content is kept.',true);}
+ }catch(error){toast('Completion could not be saved: '+error.message,true);}
+}
+
 function overrideDecision(decision){
   if(state.busy||state.batchBusy||!state.originalContent)return;
   if(decision==='PRODUCE'&&(state.assessment.gaps.length||!state.assessment.verified||state.assessment.duplicateStatus==='HOLD_DUPLICATE'))return toast('Resolve the specific fact, claim or duplicate first.',true);
@@ -812,7 +831,7 @@ function nextSuggested(){return findNextProductionReadyContent(state.editorialRo
 function nextEditorialReview(){return continueWithGoodContent();}
 async function continueWithGoodContent({quick=false}={}){
  if(state.busy||state.batchBusy||state.screeningProduction)return;state.screeningProduction=true;const previous=state.content?.contentId,reason=state.assessment?.skipReason,excluded=quick?[]:[recordKey(state.sourceId,previous)];
- try{if(!state.editorialRows.length)await loadEditorialQueue();for(let attempt=0;attempt<state.editorialRows.length;attempt++){const candidate=findNextProductionReadyContent(state.editorialRows,{excludeKeys:excluded});if(!candidate)break;excluded.push(recordKey(candidate.sheetId,candidate.contentId));await loadSource(String(candidate.sheetId),candidate.contentId);await state.contentReady;candidate.lifecycleStatus=state.originalContent?.lifecycleStatus;candidate.publicationRecorded=(state.resultsSummary?.rows||[]).some(r=>r.contentId===candidate.contentId&&r.postUrl&&Number.isFinite(Date.parse(r.publishedAt)));candidate.downloaded=!!readProductionSession(state.originalContent,candidate.sheetId).downloadedAt;if(state.assessment?.ready&&!candidate.publicationRecorded&&!candidate.downloaded&&!/^(?:posted|published|scheduled_published|results_recorded)$/i.test(candidate.lifecycleStatus||'')){state.deliberateContentSelection=false;goStage('images');if(reason)toast(`Skipped ${previous} · ${reason==='CRITICAL_INFO_MISSING'?'essential source facts unavailable':reason==='DUPLICATE'?'duplicate': 'source support or quality insufficient'}. Loaded next production-ready content.`);return;}candidate.assessment=state.assessment;candidate.recommendation=state.assessment.recommendation;}
+ try{if(!state.editorialRows.length)await loadEditorialQueue();for(let attempt=0;attempt<state.editorialRows.length;attempt++){const candidate=findNextProductionReadyContent(state.editorialRows,{excludeKeys:excluded});if(!candidate)break;excluded.push(recordKey(candidate.sheetId,candidate.contentId));await loadSource(String(candidate.sheetId),candidate.contentId);await state.contentReady;candidate.lifecycleStatus=state.originalContent?.lifecycleStatus;candidate.publicationRecorded=(state.resultsSummary?.rows||[]).some(r=>r.contentId===candidate.contentId&&r.postUrl&&Number.isFinite(Date.parse(r.publishedAt)));candidate.downloaded=!!readProductionSession(state.originalContent,candidate.sheetId).downloadedAt;if(state.assessment?.ready&&!candidate.publicationRecorded&&!candidate.downloaded&&!/^(?:posted|published|scheduled_published|results_recorded)$/i.test(candidate.lifecycleStatus||'')){state.deliberateContentSelection=false;goStage('images');if(reason)toast(`Opened next production-ready content after ${previous}. Your previous work is preserved.`);return;}candidate.assessment=state.assessment;candidate.recommendation=state.assessment.recommendation;}
  toast('No complete, low-risk content remains. Current work is preserved; choose another source record to inspect.',true);
  }catch(error){toast(error.message,true);}finally{state.screeningProduction=false;}
 }
@@ -1124,8 +1143,8 @@ function renderVisualPlan(){
  $('visualPlanCount').textContent=`${entries.length} images required · estimated generations: ${entries.length}`;
  $('visualPlanJobs').innerHTML=entries.map(e=>`<li><b>${String(e.sequence).padStart(2,'0')} ${escapeHtml(e.label)}</b> <small>${escapeHtml(e.expectedFilename)}</small></li>`).join('');
  $('visualPlanHint').textContent=plan?`${plan.previousImageCount} → ${plan.imageCount} source images · all source instructions retained.${plan.aboveTargetReason?' '+plan.aboveTargetReason:''}`:'Every image has a distinct source-defined job.';
- $('startImageProduction').disabled=state.busy||state.batchBusy||!state.assessment;$('startImageProduction').textContent=state.assessment?.ready?'Start Image Production →':'Skip & Next Good Content →';
- if(state.assessment&&!state.assessment.ready)$('slotHelper').textContent=`${state.assessment.gaps.length?'Source incomplete': 'Source support or quality insufficient'} · ${state.assessment.gaps[0]||state.assessment.risk.reasons.join(' · ')} Use Skip & Next Good Content to continue.`;
+ $('startImageProduction').disabled=state.busy||state.batchBusy||!state.assessment;$('startImageProduction').textContent=state.assessment?.ready?'Start Image Production →':'Fix This Content & Continue →';
+ if(state.assessment&&!state.assessment.ready)$('slotHelper').textContent=`${state.assessment.gaps.length?'Source incomplete': 'Source support or quality insufficient'} · ${state.assessment.gaps[0]||state.assessment.risk.reasons.join(' · ')} Use Fix This Content & Continue; this record is kept.`;
  $('regenerateVisualPlan').disabled=state.busy||state.batchBusy;
 }
 function activeProductionBatch(){try{const value=JSON.parse(localStorage.getItem('capc:activeImageBatch')||'null');return value&&Array.isArray(value.posts)?value:null;}catch{return null;}}
@@ -1136,7 +1155,7 @@ async function refreshProductionBatch(){
  for(const row of state.editorialRows||[]){row.assessment=assessProduction(row.content,{session:readProductionSession(row.content,row.sheetId),duplicateStatus:row.duplicateStatus});row.downloaded=!!readProductionSession(row.content,row.sheetId).downloadedAt;}
  const [imagesByKey,assetsByKey]=state.productionBatch?await Promise.all([storedMap('images'),storedMap('assets')]):[new Map(),new Map()];if(token!==state.batchProgressToken)return;
  const visualByKey=new Map(),reviewsByKey=new Map();for(const post of state.productionBatch?.posts||[]){const key=`${post.sheetId}:${post.contentId}`;visualByKey.set(key,localStorage.getItem(`capc:visual:${key}:review:visual`));for(const storageKey of imagesByKey.keys())if(storageKey.startsWith(`${key}:image:`)){const slot=storageKey.slice(`${key}:image:`.length);try{reviewsByKey.set(`${key}:image-review:${slot}`,JSON.parse(localStorage.getItem(`capc:image-review:${key}:image-review:${slot}`)||'null'));}catch{}}}
- const cleanup=reconcileProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey});if(cleanup.changed){persistProductionBatch(cleanup.batch);renderEditorialQueue();}if(cleanup.replacements.length)toast(`${cleanup.replacements.length} incomplete batch posts replaced with screened reserve content.`);
+ const cleanup=reconcileProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey});if(cleanup.changed){persistProductionBatch(cleanup.batch);renderEditorialQueue();}if(cleanup.replacements.length)toast(`${cleanup.replacements.length} ineligible batch posts replaced with screened reserve content.`);
  state.productionBatchResolved=resolveProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey,visualByKey,reviewsByKey});renderProductionBatch();
 }
 function renderProductionBatch(){
@@ -1144,14 +1163,14 @@ function renderProductionBatch(){
  $('productionBatchTitle').textContent=batch?`BATCH ${String(batch.number).padStart(2,'0')} · ${r.posts.length} posts`:'Batch image production';
  $('productionBatchHint').textContent=batch?`${r.posts.length} selected / ${batch.requestedCount} requested · ${r.totalImages} images required · ${r.posts.length?(r.totalImages/r.posts.length).toFixed(1):0} per post${r.posts.length<batch.requestedCount?' · Only strong eligible content selected.':''}`:'Strong complete low-risk posts, with variety and duplicates excluded.';
  $('productionBatchStats').innerHTML=batch?[['Posts Ready',r.posts.filter(p=>p.valid).length],['Images Ready',`${r.imagesReady} / ${r.totalImages}`],['Posts Built',`${r.builtCount} / ${r.posts.length}`],['Ready to Download',r.downloadReady]].map(([name,value])=>`<div class="card card-stats"><span>${name}</span><strong>${value}</strong></div>`).join(''):'';
- $('batchScreeningSummary').textContent=batch?.summary?`Requested ${batch.requestedCount} · Evaluated ${batch.summary.evaluated} · Selected ${batch.summary.selected} · Auto repaired ${batch.summary.autoRepaired} · Skipped incomplete ${batch.summary.skippedIncomplete} · Duplicate ${batch.summary.skippedDuplicate} · Low quality ${batch.summary.skippedLowQuality} · Reserve ${batch.summary.reserve} · Replaced ${batch.summary.replaced}`:'';
- const next=r.next;$('batchNextImage').textContent=next?`NEXT IMAGE · P${String(next.postNumber).padStart(2,'0')} · ${String(next.sequence).padStart(2,'0')} ${next.label}`:batch?'Images complete · build and inspect ready posts.':'Select a batch to begin.';
+ $('batchScreeningSummary').textContent=batch?.summary?`Requested ${batch.requestedCount} · Evaluated ${batch.summary.evaluated} · Selected ${batch.summary.selected} · Auto repaired ${batch.summary.autoRepaired} · Need completion ${batch.summary.skippedIncomplete} · Duplicate ${batch.summary.skippedDuplicate} · Low quality ${batch.summary.skippedLowQuality} · Reserve ${batch.summary.reserve} · Replaced ${batch.summary.replaced}`:'';
+ const next=r.next,needsCompletion=r.posts.filter(p=>p.assessment?.recommendation==='IMPROVE'||p.assessment?.gaps?.length);$('batchNextImage').textContent=next?`NEXT IMAGE · P${String(next.postNumber).padStart(2,'0')} · ${String(next.sequence).padStart(2,'0')} ${next.label}`:needsCompletion.length?`${needsCompletion.length} posts need completion · kept in this batch. Use Fix This Content.`:batch?'Images complete · build and inspect ready posts.':'Select a batch to begin.';
  $('batchContinue').hidden=!batch;$('batchResumeLabel').textContent=batch?`CONTINUE BATCH ${String(batch.number).padStart(2,'0')} · ${r.imagesReady}/${r.totalImages} images ready`:'';
  for(const id of ['batchCopyNext','batchCopyPost'])$(id).disabled=busy||!next;
  $('batchCopyAll').disabled=busy||!next||!r.posts.length;$('batchImport').disabled=busy||!r.entries.some(e=>e.valid);$('batchBuildReady').disabled=busy||!r.readyToBuild;$('batchBuildReady').textContent=`Build ${r.readyToBuild||0} Ready Posts`;
  $('batchDownloadReady').disabled=busy||!r.downloadReady;$('batchDownloadReady').textContent=`Download ${r.downloadReady||0} Ready Posts`;
  document.querySelectorAll('[data-batch-size]').forEach(b=>b.disabled=busy||!state.editorialRows?.length);
- $('productionBatchRows').innerHTML=r.posts.map(p=>`<tr data-batch-post="${p.postNumber}"><td><b>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</b><br><small>${escapeHtml(p.contentId)} · ${escapeHtml(p.content?.contentType||'Source unavailable')}</small></td><td>${p.imageCount}/${p.entries.length}</td><td>${escapeHtml(p.status)}</td><td><button type="button" class="btn btn-neutral" data-batch-open="${p.postNumber}" ${busy?'disabled':''}>${p.built?'Preview Final →':'Open Post →'}</button>${!p.valid?`<button class="btn btn-neutral" data-batch-refresh="${p.postNumber}" ${busy?'disabled':''}>Refresh This Plan</button>`:''}</td></tr>`).join('');
+ $('productionBatchRows').innerHTML=r.posts.map(p=>`<tr data-batch-post="${p.postNumber}"><td><b>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</b><br><small>${escapeHtml(p.contentId)} · ${escapeHtml(p.content?.contentType||'Source unavailable')}</small></td><td>${p.imageCount}/${p.entries.length}</td><td>${escapeHtml(p.status)}</td><td><button type="button" class="btn btn-neutral" data-batch-open="${p.postNumber}" ${busy?'disabled':''}>${p.assessment?.recommendation==='IMPROVE'||p.assessment?.gaps?.length?'Fix This Content →':p.built?'Preview Final →':'Open Post →'}</button>${!p.valid&&p.assessment?.ready?`<button class="btn btn-neutral" data-batch-refresh="${p.postNumber}" ${busy?'disabled':''}>Refresh This Plan</button>`:''}</td></tr>`).join('');
  $('batchImageQueue').innerHTML=r.posts.map(p=>`<li class="batch-post-label"><strong>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</strong></li>${p.entries.map(e=>`<li data-batch-filename="${escapeHtml(e.batchFilename)}"><b>${e.ready?'✓':'○'}</b><span>${escapeHtml(e.label)}</span><small>${escapeHtml(e.batchFilename)}</small></li>`).join('')}`).join('');
  $('productionBatchRows').querySelectorAll('[data-batch-open]').forEach(b=>b.onclick=()=>openBatchPost(Number(b.dataset.batchOpen)));
  $('productionBatchRows').querySelectorAll('[data-batch-refresh]').forEach(b=>b.onclick=async()=>{const p=r.posts.find(p=>p.postNumber===Number(b.dataset.batchRefresh));if(!p?.row?.assessment.ready||p.row.assessment.risk.tier!=='LOW'||!['UNIQUE','CANONICAL'].includes(p.row.duplicateStatus))return toast('This post is no longer eligible. Select a new batch or resolve its source issue.',true);p.stamp=batchPostStamp(p.row);persistProductionBatch({...batch,posts:batch.posts.map(saved=>saved.postNumber===p.postNumber?{...saved,stamp:p.stamp}:saved)});await refreshProductionBatch();});
@@ -1166,7 +1185,7 @@ async function activateBatchPost(post){
  state.batchInternal=true;try{await openQueueItem(post.row);}finally{state.batchInternal=false;}await state.contentReady;
  if(state.content?.contentId!==post.contentId||Number(state.sourceId)!==Number(post.sheetId)||!state.assessment.ready||batchPostStamp({...post.row,assessment:state.assessment})!==post.stamp)throw Error('Post changed while loading. Refresh the affected batch plan.');
 }
-async function openBatchPost(number){if(state.batchBusy||state.busy)return;try{await refreshProductionBatch();const post=state.productionBatchResolved.posts.find(p=>p.postNumber===number);await activateBatchPost(post);goStage(post.built?'assets':'images');}catch(error){toast(error.message,true);}}
+async function openBatchPost(number){if(state.batchBusy||state.busy)return;try{await refreshProductionBatch();const post=state.productionBatchResolved.posts.find(p=>p.postNumber===number);if(post?.row&&!post.valid){await openQueueItem(post.row);return openContentCompletion();}await activateBatchPost(post);goStage(post.built?'assets':'images');}catch(error){toast(error.message,true);}}
 function renderBatchExceptions(){const list=state.batchUnmatched||[];$('batchExceptions').hidden=!list.length;$('batchExceptionRows').innerHTML=list.map((item,i)=>`<div class="unmatched-row"><span>${escapeHtml(item.file.name)} · ${escapeHtml(item.reason)}</span><select data-batch-destination="${i}" aria-label="Batch destination for ${escapeHtml(item.file.name)}"><option value="">Choose post and slot…</option>${state.productionBatchResolved.entries.filter(e=>e.valid).map(e=>`<option value="${escapeHtml(e.batchFilename)}">${escapeHtml(e.batchFilename)}</option>`).join('')}</select><button data-batch-assign="${i}" class="btn btn-neutral" type="button">Assign Image</button></div>`).join('');$('batchExceptionRows').querySelectorAll('[data-batch-assign]').forEach(b=>b.onclick=async()=>{if(state.batchBusy)return;const i=Number(b.dataset.batchAssign),filename=$('batchExceptionRows').querySelector(`[data-batch-destination="${i}"]`).value;if(!filename)return toast('Choose an explicit destination.',true);setBatchBusy(true);try{await refreshProductionBatch();const e=state.productionBatchResolved.entries.find(e=>e.valid&&e.batchFilename===filename);if(!e)throw Error('Destination is no longer current.');await storeBatchImage(e,list[i].file);list.splice(i,1);await refreshProductionBatch();renderBatchExceptions();if(state.content)await loadContentState();}catch(error){toast(error.message,true);}finally{setBatchBusy(false);}});}
 async function storeBatchImage(entry,file){
  const post=state.productionBatchResolved.posts.find(p=>p.postNumber===entry.postNumber);if(!post?.valid)throw Error('Batch plan is no longer current.');
@@ -1202,7 +1221,7 @@ function bindBatchEvents(){
  $('batchCopyNext').onclick=()=>{const e=state.productionBatchResolved?.next;if(e)copyText(batchImagePrompt(state.productionBatch,state.productionBatchResolved,{entry:e}),'Next batch image prompt copied.');};
  for(const [id,scope] of [['batchCopyPost','post'],['batchCopyAll','all']])$(id).onclick=()=>{try{copyText(batchImagePrompt(state.productionBatch,state.productionBatchResolved,scope==='post'?{postNumber:state.productionBatchResolved.next?.postNumber}:{}),'Batch production prompt copied.');}catch(error){toast(error.message,true);}};
  $('batchBuildReady').onclick=buildReadyBatchPosts;$('batchDownloadReady').onclick=downloadReadyBatchPosts;
- $('startImageProduction').onclick=()=>{if(!state.assessment?.ready)return continueWithGoodContent();goStage('images');$('copyNextPrompt').focus();};$('regenerateVisualPlan').onclick=()=>{if(!state.originalContent||state.busy||state.batchBusy)return;applyContent(state.originalContent);renderVisualPlan();toast('Source-based image plan recalculated. Original information preserved.');};
+ $('startImageProduction').onclick=()=>{if(!state.assessment?.ready)return openContentCompletion();goStage('images');$('copyNextPrompt').focus();};$('regenerateVisualPlan').onclick=()=>{if(!state.originalContent||state.busy||state.batchBusy)return;applyContent(state.originalContent);renderVisualPlan();toast('Source-based image plan recalculated. Original information preserved.');};
  if(activeProductionBatch())$('batchProduction').hidden=false;
 }
 
@@ -1212,9 +1231,12 @@ function bindEvents() {
   for(const id of ['queueFilter','queueSearch','queueShowDuplicates'])$(id).addEventListener(id==='queueSearch'?'input':'change',renderEditorialQueue);
   $('primaryAction').addEventListener('click',primaryProductionAction);
   $('autoImprove').addEventListener('click',autoImprove);
+  $('copyCompletionPrompt').onclick=()=>copyText(buildContentCompletionPrompt(state.originalContent,state.assessment),'Completion prompt copied. Use it in ChatGPT, then paste the completed body here.');
+  $('applyCompletion').onclick=applyContentCompletion;
+  $('completionText').addEventListener('input',()=>{try{saveProductionSession({completionDraft:$('completionText').value});}catch(error){toast('Draft could not be saved: '+error.message,true);}});
   $('workNext').addEventListener('click',nextEditorialReview);
   document.querySelectorAll('[data-decision]').forEach(button=>button.addEventListener('click',()=>overrideDecision(button.dataset.decision)));
-  $('quickStart').addEventListener('click',()=>{if(state.images&&Object.keys(state.images).length&&state.assessment?.ready)return primaryProductionAction();return continueWithGoodContent({quick:true});});
+  $('quickStart').addEventListener('click',()=>{if(state.assessment&&!state.assessment.ready)return openContentCompletion();if(state.images&&Object.keys(state.images).length&&state.assessment?.ready)return primaryProductionAction();return continueWithGoodContent({quick:true});});
   $('startNext').addEventListener('click',()=>continueWithGoodContent());
   $('confirmClaim').addEventListener('click',()=>{if(!state.originalContent||state.busy)return;const reference=$('claimReference').value.trim();if(reference.length<8)return toast('Identify the checked support for this claim.',true);saveProductionSession({claimConfirmation:{sourceStamp:sourceStamp(state.originalContent),reference,confirmedAt:new Date().toISOString()},override:undefined});applyContent(state.originalContent);renderEditorialQueue();});
   for(const [id,tab] of [['showOriginal','original'],['showOptimised','optimised']])$(id).addEventListener('click',()=>{document.querySelector('.compare-columns').dataset.compare=tab;$('showOriginal').setAttribute('aria-selected',String(tab==='original'));$('showOptimised').setAttribute('aria-selected',String(tab==='optimised'));});
