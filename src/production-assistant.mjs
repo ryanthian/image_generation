@@ -33,7 +33,7 @@ export function nextProductionAction(assessment,{manifest={entries:[]},images={}
   if(missing){const count=required.filter(e=>images[e.slotId]?.semanticKey===e.semanticKey&&images[e.slotId]?.qc?.status==='PASS').length;return {kind:'IMAGES',label:count?'Continue Images →':'Generate Images →',detail:`${count}/${required.length} ready · next ${String(missing.sequence).padStart(2,'0')} ${missing.label}`,slotId:missing.slotId};}
   if(!plan.length||plan.some(a=>!assets[a.asset_id]||assets[a.asset_id].stale||assets[a.asset_id].qc_status!=='PASS'))return {kind:'BUILD',label:'Build Final Assets →',detail:'Images complete · build the post'};
   if(!visualReviewed)return {kind:'FINAL',label:'View Final Post →',detail:'Final preview · Looks Good or fix the affected image'};
-  return {kind:'DOWNLOAD',label:'Download Post Package',detail:'READY TO DOWNLOAD'};
+  return {kind:'DOWNLOAD',label:'Share / Save Images →',detail:'READY TO POST · share/save images, then copy the caption'};
 }
 export function canImport(assessment){return assessment.contract.failures.length===0;}
 
@@ -46,6 +46,21 @@ export function duplicateAssignments(map){
 /** Already screened automatic production candidates; no incomplete item can stall Quick Production. */
 export function findNextProductionReadyContent(rows,{excludeKeys=[],allowCompleted=false}={}){
  const excluded=new Set(excludeKeys);return rows.filter(row=>{const a=row.assessment;return !excluded.has(`${row.sheetId}:${row.contentId}`)&&a?.ready&&a.recommendation==='PRODUCE'&&a.risk.tier==='LOW'&&['UNIQUE','CANONICAL'].includes(row.duplicateStatus)&&!row.publicationRecorded&&![row.lifecycleStatus,row.content?.lifecycleStatus].some(s=>/^(?:posted|published|scheduled_published|results_recorded)$/i.test(s||''))&&(allowCompleted||!row.downloaded);}).sort((a,b)=>b.assessment.score-a.assessment.score||`${a.sheetId}:${a.contentId}`.localeCompare(`${b.sheetId}:${b.contentId}`))[0]||null;
+}
+
+/** Browser-saved production progress. A prepared/exported post is never evidence of publication. */
+export function deriveProductionProgress(rows=[]){
+ const progress={inProgress:0,readyForImages:0,imagesReady:0,readyToPost:0};
+ for(const row of rows){
+  if(row.publicationRecorded||[row.lifecycleStatus,row.content?.lifecycleStatus].some(s=>/^(?:posted|published|scheduled_published|results_recorded)$/i.test(s||''))||!['UNIQUE','CANONICAL'].includes(row.duplicateStatus))continue;
+  const imagesComplete=row.assessment?.ready&&row.imageTotal>0&&row.imageCount===row.imageTotal;
+  const ready=Boolean(imagesComplete&&row.readyToDownload);
+  if(imagesComplete)progress.imagesReady++;
+  if(ready)progress.readyToPost++;
+  if(row.imageCount>0&&!ready&&!row.downloaded)progress.inProgress++;
+  if(!row.imageCount&&!row.downloaded&&findNextProductionReadyContent([row]))progress.readyForImages++;
+ }
+ return progress;
 }
 
 /** A single same-content completion handoff; factual additions are supplied explicitly, not invented by the compiler. */

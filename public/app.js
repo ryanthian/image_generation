@@ -1,5 +1,5 @@
 import {collectFinalImages,finalImageFiles,canShareFinalFiles,shareFinalFiles,saveFinalFilesToFolder} from '/final-export.mjs';
-import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken,findNextProductionReadyContent,buildContentCompletionPrompt} from '/production-assistant.mjs';
+import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken,findNextProductionReadyContent,buildContentCompletionPrompt,deriveProductionProgress} from '/production-assistant.mjs';
 import {
   buildAssetFilename,
   buildSlotPrompt,
@@ -47,7 +47,6 @@ const state = {
   editorialReviewRecord: null,
   workflow: null,
   resultsSummary: null,
-  currentPublicationId: "",
   visualQcConfirmedFor: "",
   currentSheet: null,
   contentLoadToken: 0,
@@ -55,8 +54,6 @@ const state = {
   editorialRows: [], editorialBatch: null, canonicalMap: null, workById: {}, originalContent: null, appliedWork: false, imageReviews: {}
 };
 const APPROVED_OPPORTUNITIES_SOURCE = "V4.2 Approved Opportunities";
-const WORKFLOW_STAGES = ["IDEA", "COPY_DRAFT", "EDITORIAL_REVIEW", "COPY_APPROVED", "VISUAL_VIDEO_PROMPT", "ASSET_CREATED", "QC_PASSED", "SCHEDULED_PUBLISHED", "RESULTS_RECORDED"];
-const WORKFLOW_LABELS = ["Idea", "Copy draft", "Editorial review", "Copy approved", "Visual/video prompt", "Asset created", "QC passed", "Scheduled / published", "Results recorded"];
 function initialWorkflowStage(content) {
   const status=String(content?.lifecycleStatus||'').trim().toUpperCase();
   if(status==='POSTED'||status==='PUBLISHED')return 'SCHEDULED_PUBLISHED';
@@ -155,12 +152,7 @@ async function apiJson(path, options = {}) {
   return data;
 }
 
-function localDateValue(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+
 
 async function copyText(value, message) {
   try {
@@ -346,7 +338,6 @@ function applyContent(content) {
   state.assets = {};
   state.editorialReviewRecord = null;
   state.workflow = {stage:initialWorkflowStage(content),actor:'',note:'',updatedAt:null};
-  state.currentPublicationId = "";
   state.visualQcConfirmedFor = "";
   state.plan = state.assessment.ready?state.content.resolvedAssetPlan:[];
   state.manifest = state.assessment.ready?state.assessment.manifest:{entries:[],expectedAssets:0};
@@ -357,10 +348,8 @@ function applyContent(content) {
   $("category").textContent = state.content.topic;
   const queueStatus=state.assessment.recommendation;
   $("status").textContent = queueStatus;
-  $("selectedContentStatus").textContent=queueStatus;
   $("status").classList.toggle("posted", state.content.lifecycleStatus === "PUBLISHED" || state.content.lifecycleStatus === "Posted");
   $("title").textContent = state.content.title;
-  $("captionPreview").textContent = state.content.caption;
   $("recipeSelect").value = state.content.contentId;
   $("contentType").textContent = state.content.contentType;
   $("templateType").textContent = state.content.templateType;
@@ -374,10 +363,9 @@ function applyContent(content) {
   renderEditorialWorkspace();
   renderQc();
   renderManifest();
-  renderWorkflow();
-  renderResults();
   const productionOverrideKey=keyFor('production-override','version');
-  state.contentReady=Promise.all([putStored('assets',productionOverrideKey,state.assessment.productionOverride).catch(error=>toast(`Production override could not be persisted: ${error.message}`,true)),loadContentState(token).catch(error=>toast(error.message,true)),loadContentOperations(token).catch(error=>toast(`Editorial/workflow state could not be loaded: ${error.message}`,true))]);
+  $('productionProgress').setAttribute('aria-busy','true');renderProductionProgress();
+  state.contentReady=Promise.all([putStored('assets',productionOverrideKey,state.assessment.productionOverride).catch(error=>toast(`Production override could not be persisted: ${error.message}`,true)),loadContentState(token).catch(error=>toast(error.message,true)),loadContentOperations(token).catch(error=>toast(`Saved production state could not be loaded: ${error.message}`,true))]).finally(()=>{if(token===state.contentLoadToken){$('productionProgress').setAttribute('aria-busy','false');renderProductionProgress();}});
 }
 
 function renderQc() {
@@ -387,7 +375,6 @@ function renderQc() {
   const generation={status:state.assessment.ready?'GENERATION_READY':'GENERATION_BLOCKED',ready:state.assessment.ready,blockers:state.assessment.blockers};
   refreshStale();
   const stale = state.manifest.entries.filter((entry) => state.images[entry.slotId] && state.images[entry.slotId].semanticKey !== entry.semanticKey);
-  const contractStatus = qc.failures.length ? "FAIL" : stale.length || qc.warnings.length ? "WARNING" : "PASS";
   const allFinalAssetsBuilt = state.plan.length > 0 && state.plan.every((item) => {
     const built = state.assets[item.asset_id];
     return built?.qc_status === "PASS" && !built.stale && built.sourceRevision === assetSourceRevision(item);
@@ -408,57 +395,16 @@ function renderQc() {
   if(editorial.status!=='PASS'){publishing.ready=false;publishing.blockers.push('Historical publishing approval is not supplied by an AI check.');}
   if(!gates.technicalImageQc || stale.length) { publishing.ready=false; if(publishing.status!=="PUBLISHED")publishing.status="NOT_READY"; publishing.blockers.push("Technical image QC and current source definitions must pass."); }
   state.gates=gates;
-  $("monetizationScore").textContent=`${quality.score}/100 heuristic score · human editorial approval is separate`;
-  $("monetizationDetails").textContent=quality.issues.map(i=>i.repair).join(" ") || "Complete human editorial and visual review before posting. This internal score does not guarantee Meta eligibility.";
-  setGate("sourceImagesGate","sourceImagesStatus",gates.sourceImagesComplete?"COMPLETE":"INCOMPLETE");
-  setGate("technicalGate","technicalStatus",gates.technicalImageQc?"PASS":"NOT READY");
-  setGate("finalAssetsGate","finalAssetsStatus",gates.finalAssetsBuilt?"BUILT":"REBUILD REQUIRED");
-  setGate("exportGate","exportStatus",gates.exportReady?"READY":"NOT READY");
   $("downloadAll").disabled=!gates.exportReady || state.busy;
   $("exportHint").textContent=gates.exportReady?"Share/save the ordered final PNGs, then copy the Facebook caption. ZIP remains available under More download options.":"Download needs current images, built final assets, automatic QC and Looks Good for this post.";
-  $("nextAction").textContent=!generation.ready?"Next: resolve editorial and generation blockers below.":!gates.sourceImagesComplete?"Next: copy the prompt, generate images, and import the named files.":!gates.finalAssetsBuilt?"Next: build or rebuild the final assets.":visualQcStatus!=="PASS"?"Next: inspect every preview and confirm the visual review checklist.":"Next: download your ordered production ZIP.";
-  const combinedStatus = contractStatus === "FAIL" ? "fail" : editorial.status === "BLOCKED" ? "blocked" : editorial.status === "REVIEW" || generation.status === "GENERATION_BLOCKED" ? "review" : "pass";
-  const details = [
-    ...qc.failures.map((item) => `${item.code}: ${item.detail}`),
-    ...qc.warnings.map((item) => `${item.code}: ${item.detail}`),
-    ...stale.map((entry) => `REGEN REQUIRED: ${entry.label} — source definition changed`),
-    ...editorial.issues.map((item) => `${item.severity} · ${item.code}: ${item.detail}`),
-    ...generation.blockers.map((item) => `GENERATION BLOCKER: ${item}`),
-    ...publishing.blockers.map((item) => `PUBLISHING BLOCKER: ${item}`)
-  ];
-  $("qcSummary").className = `qc-summary qc-${combinedStatus}`;
-  setGate("contractGate", "qcStatus", contractStatus);
-  setGate("editorialGate", "editorialStatus", editorial.status);
-  setGate("generationGate", "generationStatus", generation.status.replace("GENERATION_", ""));
-  setGate("visualGate", "visualStatus", visualQcStatus);
-  setGate("publishingGate", "publishingStatus", publishing.status);
-  $("qcDetails").textContent = details.length ? details.join("\n") : "Contract checks pass. No editorial or production blockers are recorded.";
-  $("editorialNote").textContent = "AI production check and historical human approval are separate. Page settings apply only to publishing.";
-  $("publishHeading").textContent = publishing.status === "PUBLISHED" ? "Already published" : publishing.ready ? "Ready to post" : "NOT READY TO POST";
-  const publicationRecorded = (state.resultsSummary?.rows || []).some((row) => row.contentId === state.content.contentId && row.pageProfileId === state.pageProfile?.profileId && row.postUrl && Number.isFinite(Date.parse(row.publishedAt)));
-  const workflowPublished = ["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(state.workflow?.stage);
-  $("markPosted").disabled = !state.writable || !publishing.ready || !publicationRecorded || !workflowPublished;
-  $("visualQcHint").textContent = allFinalAssetsBuilt
-    ? "Review realism, continuity, correct objects and stages, comparison accuracy, safe crop, readable text, logos and AI artifacts. Confirmation survives reload and resets when dependencies change."
-    : "Build current final assets and choose Looks Good in the post preview.";
   $("copyPrompt").disabled = !generation.ready;
   $("importAll").disabled = !canImport(state.assessment);
   $("buildAssets").disabled = !generation.ready || !gates.technicalImageQc || stale.length > 0 || state.busy;
   $("copyCaption").disabled = !state.assessment.ready;
-  $("copyCaptionBottom").disabled = !state.assessment.ready;
-  $("writeHint").textContent = state.writable
-    ? (publishing.ready && publicationRecorded && workflowPublished ? "Production gates and publication record pass. Mark Posted writes only the Status field." : `Sheet status write is blocked: ${publishing.blockers[0] || (!publicationRecorded ? "save the matching post URL and publish date" : "advance the workflow to Scheduled / Published")}`)
-    : "This source is read-only; production data will not be changed.";
   state.editorialReview = editorial;
   state.generationReadiness = generation;
   state.publishingReadiness = publishing;
   renderProductionSummary();
-}
-
-function setGate(containerId, statusId, value) {
-  const container = $(containerId);
-  container.className = `quality-gate ${String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  $(statusId).textContent = value;
 }
 
 function setFormValue(id, value) {
@@ -504,35 +450,6 @@ function fillProfileForm(profile = {}) {
   $("profileActive").checked = Boolean(profile.active);
 }
 
-function renderWorkflow() {
-  const stage = state.workflow?.stage || "COPY_DRAFT";
-  const index = WORKFLOW_STAGES.indexOf(stage);
-  $("workflowStageBadge").textContent = WORKFLOW_LABELS[Math.max(0, index)] || stage;
-  $("workflowStages").innerHTML = WORKFLOW_LABELS.map((label, step) => `<li class="${step < index ? "done" : step === index ? "current" : ""}"><span>${String(step + 1).padStart(2, "0")}</span> ${escapeHtml(label)}</li>`).join("");
-  const disabled = !state.content || !state.sourceId || state.source === "approved-opportunities" || index < 0 || index >= WORKFLOW_STAGES.length - 1;
-  $("advanceWorkflow").disabled = disabled;
-  const next = WORKFLOW_LABELS[index + 1];
-  $("advanceWorkflow").textContent = next ? `Advance to ${next}` : "Workflow complete";
-  $("workflowHint").textContent = state.workflow?.note
-    ? `Last transition by ${state.workflow.actor || "operator"} · ${state.workflow.updatedAt || "time unavailable"} · ${state.workflow.note}`
-    : "Advance one stage at a time. Asset, visual-QC and publication stages require operator confirmation and a note.";
-}
-
-function renderResults() {
-  const summary = state.resultsSummary;
-  const contentId = state.content?.contentId;
-  const rows = (summary?.rows || []).filter((row) => row.contentId === contentId);
-  const select = $("resultPublication");
-  const selected = state.currentPublicationId;
-  select.innerHTML = `<option value="">New publication</option>${rows.map((row) => `<option value="${escapeHtml(row.publicationId)}">${escapeHtml(row.publishedAt)} · ${escapeHtml(row.contentFormat)}${row.postUrl ? " · URL saved" : ""}</option>`).join("")}`;
-  select.value = rows.some((row) => row.publicationId === selected) ? selected : "";
-  const groupText = (label, entries) => `<section><h3>${escapeHtml(label)}</h3>${entries.length ? entries.map((item) => `<p>${escapeHtml(item.label)} · ${item.publications} posts · qualified views ${item.qualifiedViews ?? "unknown"} · Meta RM ${item.metaEarnings ?? "unknown"} · affiliate RM ${item.affiliateCommission ?? "unknown"}</p>`).join("") : "<p>No recorded results.</p>"}</section>`;
-  $("resultsSummary").innerHTML = summary
-    ? groupText("By Page", summary.byPage) + groupText("By Content Type", summary.byContentType) + groupText("By Format", summary.byFormat) + `<section><h3>Selected content</h3>${rows.length ? rows.map((row) => `<p>${escapeHtml(row.publishedAt)} · ${escapeHtml(row.pageDisplayName || "Page unknown")} · ${escapeHtml(row.contentFormat)} · views ${row.metrics?.qualifiedViews ?? "unknown"}${row.postUrl ? ` · <a href="${escapeHtml(row.postUrl)}" target="_blank" rel="noopener">Post</a>` : ""}</p>`).join("") : "<p>No publication/results recorded for this content.</p>"}</section>`
-    : "<p>No manual results loaded.</p>";
-  $("saveManualResults").disabled = !state.content || !state.sourceId || !state.pageProfileComplete || state.source === "approved-opportunities";
-}
-
 async function loadContentOperations(token = state.contentLoadToken) {
   if (!state.content || !state.sourceId || state.source === "approved-opportunities") return;
   const query = new URLSearchParams({ sheetId: String(state.sourceId), contentId: state.content.contentId });
@@ -547,74 +464,8 @@ async function loadContentOperations(token = state.contentLoadToken) {
   state.workflow = workflowData.workflow || {stage:initialWorkflowStage(state.content),actor:'',note:'',updatedAt:null};
   state.resultsSummary = resultsData.summary;
   renderEditorialForm(state.content.editorialReview || {});
-  renderWorkflow();
-  renderResults();
   renderQc();
   renderSlots();
-}
-
-async function advanceWorkflow() {
-  if (!state.content || !state.sourceId) return;
-  const index = WORKFLOW_STAGES.indexOf(state.workflow?.stage || "COPY_DRAFT");
-  const nextStage = WORKFLOW_STAGES[index + 1];
-  if (!nextStage) return;
-  const requiredImagesPresent = state.manifest.entries.filter((entry) => entry.required).every((entry) => Boolean(state.images[entry.slotId]));
-  const finalAssetsPresent = state.plan.length > 0 && state.plan.every((item) => state.assets[item.asset_id] && !state.assets[item.asset_id].stale);
-  try {
-    const result = await apiJson("/api/production/workflow", { method: "POST", headers: writeHeaders(), body: JSON.stringify({
-      sheetId: state.sourceId, contentId: state.content.contentId, nextStage,
-      actor: $("workflowActor").value, note: $("workflowNote").value,
-      requiredImagesPresent, finalAssetsPresent,
-      visualQcPass: state.visualQcConfirmedFor === reviewSignature()
-    }) });
-    state.workflow = result.workflow;
-    $("workflowNote").value = "";
-    renderWorkflow();
-    toast(`Workflow advanced to ${WORKFLOW_LABELS[WORKFLOW_STAGES.indexOf(result.workflow.stage)]}.`);
-  } catch (error) { toast(error.message, true); }
-}
-
-function selectedPublication() {
-  const id = $("resultPublication").value;
-  return (state.resultsSummary?.rows || []).find((row) => row.publicationId === id) || null;
-}
-
-function fillResultForm(publication) {
-  state.currentPublicationId = publication?.publicationId || "";
-  setFormValue("resultPublishedAt", publication?.publishedAt ? String(publication.publishedAt).slice(0, 10) : localDateValue());
-  setFormValue("resultPostUrl", publication?.postUrl || "");
-  setFormValue("resultFormat", publication?.contentFormat || "Carousel");
-  setFormValue("resultProductionMinutes", publication?.productionMinutes);
-  setFormValue("resultDirectCost", publication?.directCost);
-  setFormValue("resultCurrency", publication?.currency || "MYR");
-  const snapshot = publication?.metrics || {};
-  for (const [id, key] of [["resultReach", "reach"], ["resultQualifiedViews", "qualifiedViews"], ["resultEngagement", "engagement"], ["resultShares", "shares"], ["resultSaves", "saves"], ["resultRetention", "retentionRate"], ["resultMetaEarnings", "metaEarnings"], ["resultAffiliateClicks", "affiliateClicks"], ["resultAffiliateOrders", "affiliateOrders"], ["resultAffiliateCommission", "affiliateCommission"]]) setFormValue(id, snapshot[key]);
-}
-
-async function saveManualResults() {
-  if (!state.content || !state.sourceId || !state.pageProfile?.profileId) return;
-  const fields = {
-    resultReach: "reach", resultQualifiedViews: "qualifiedViews", resultEngagement: "engagement", resultShares: "shares", resultSaves: "saves", resultRetention: "retentionRate", resultMetaEarnings: "metaEarnings", resultAffiliateClicks: "affiliateClicks", resultAffiliateOrders: "affiliateOrders", resultAffiliateCommission: "affiliateCommission", resultProductionMinutes: "productionMinutes", resultDirectCost: "directCost"
-  };
-  const metrics = Object.fromEntries(Object.entries(fields).map(([id, key]) => [key, $(id).value]));
-  const hasMetric = Object.entries(fields).some(([id, key]) => key !== "productionMinutes" && key !== "directCost" && $(id).value !== "");
-  const publication = selectedPublication();
-  const body = {
-    ...metrics, sheetId: state.sourceId, contentId: state.content.contentId,
-    pageProfileId: state.pageProfile.profileId, contentType: state.content.contentType,
-    contentFormat: $("resultFormat").value, publishedAt: $("resultPublishedAt").value,
-    postUrl: $("resultPostUrl").value, currency: $("resultCurrency").value,
-    enteredBy: $("resultEnteredBy").value,
-    ...(publication ? { publicationId: publication.publicationId } : {}),
-    ...(!hasMetric ? { publicationOnly: true } : {})
-  };
-  try {
-    const result = await apiJson("/api/production/results", { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) });
-    state.currentPublicationId = result.publication.publicationId;
-    await loadContentOperations();
-    $("resultPublication").value = state.currentPublicationId;
-    toast(result.snapshot ? "Publication and observed metrics saved." : "Publication details saved. No metrics were recorded as zero.");
-  } catch (error) { toast(error.message, true); }
 }
 
 function clearContentView(message) {
@@ -635,18 +486,10 @@ function clearContentView(message) {
   state.visualQcConfirmedFor = "";
   $("recipeSelect").innerHTML = "";
   $("title").textContent = message;
-  $("selectedContentStatus").textContent="NO RECORD";
   $("contentId").textContent = "—";
   for (const id of ["contentType", "templateType", "visualProfile", "hookType", "hookText"]) $(id).textContent = "—";
-  $("captionPreview").textContent = "";
-  $("publishHeading").textContent = "NOT READY TO POST";
-  $("monetizationScore").textContent = "Not evaluated";
-  $("monetizationDetails").textContent = message;
-  $("editorialNote").textContent = "Choose a valid content record to run the editorial check.";
   $("nextAction").textContent = message;
   $("exportHint").textContent = "Choose a valid content record before exporting.";
-  $("writeHint").textContent = "No content record is selected; status writes are blocked.";
-  for (const [container, status] of [["contractGate", "qcStatus"], ["editorialGate", "editorialStatus"], ["generationGate", "generationStatus"], ["sourceImagesGate", "sourceImagesStatus"], ["technicalGate", "technicalStatus"], ["finalAssetsGate", "finalAssetsStatus"], ["exportGate", "exportStatus"], ["visualGate", "visualStatus"], ["publishingGate", "publishingStatus"]]) setGate(container, status, "NOT RUN");
   $("sideRecipe").textContent = message;
   $("sideId").textContent = "";
   clearPreviewUrls("slots"); clearPreviewUrls("assets");
@@ -662,15 +505,9 @@ function clearContentView(message) {
   $("importAll").disabled = true;
   $("buildAssets").disabled = true;
   $("copyCaption").disabled = true;
-  $("copyCaptionBottom").disabled = true;
-  $("markPosted").disabled = true;
 
-  $("advanceWorkflow").disabled = true;
-  $("saveManualResults").disabled = true;
-  $("qcDetails").textContent = message;
   renderEditorialForm({});
-  renderWorkflow();
-  renderResults();
+  renderProductionProgress();
 }
 
 function renderOptions(records) {
@@ -693,7 +530,7 @@ function renderEditorialQueue(){
   $('queueRows').querySelectorAll('[data-queue-key]').forEach(button=>button.addEventListener('click',()=>openQueueItem(state.editorialRows.find(row=>queueKey(row)===button.dataset.queueKey))));
 }
 async function loadEditorialQueue(){
-  $('queueLoad').disabled=true;$('queueSummary').textContent='Loading production content…';
+  $('productionProgress').dataset.queueReady='false';$('queueLoad').disabled=true;$('queueSummary').textContent='Loading production content…';
   try{
     const [batchResult,mapResult,...sourceResults]=await Promise.all([apiJson('/api/editorial/batch'),apiJson('/api/editorial/canonical-map'),...state.sources.filter(s=>['2026091901','812541719','433728120'].includes(String(s.sheetId))).map(s=>apiJson(`/api/recipes?sheetId=${s.sheetId}`))]);
     state.editorialBatch=batchResult.batch;state.canonicalMap=mapResult.map;
@@ -713,9 +550,10 @@ async function loadEditorialQueue(){
     const imagesByKey=new Map(imageKeys.map((key,i)=>[key,imageRecords[i]])),assetsByKey=new Map(assetKeys.map((key,i)=>[key,assetRecords[i]]));
     for(const row of rows){const a=row.assessment,manifest=a.manifest,images=Object.fromEntries(manifest.entries.map(e=>[e.slotId,imagesByKey.get(`${row.sheetId}:${row.contentId}:image:${e.slotId}`)])),plan=a.content.resolvedAssetPlan,assets=Object.fromEntries(plan.map(p=>[p.asset_id,assetsByKey.get(`${row.sheetId}:${row.contentId}:asset:${p.asset_id}`)]));
       row.imageTotal=manifest.entries.length;row.imageCount=manifest.entries.filter(e=>images[e.slotId]?.semanticKey===e.semanticKey&&images[e.slotId]?.qc?.status==='PASS').length;row.downloaded=!!readProductionSession(row.content,row.sheetId).downloadedAt;
-      const currentAssets=plan.length&&plan.every(p=>assets[p.asset_id]?.semanticKey===assetSemanticKey(p)&&!isStoredAssetStale(p,assets[p.asset_id],images));
+      const currentAssets=plan.length&&plan.every(p=>assets[p.asset_id]?.qc_status==='PASS'&&assets[p.asset_id]?.semanticKey===assetSemanticKey(p)&&!isStoredAssetStale(p,assets[p.asset_id],images));
+      const repairPending=manifest.entries.some(e=>{try{const r=JSON.parse(localStorage.getItem(`capc:image-review:${row.sheetId}:${row.contentId}:image-review:${e.slotId}`)||'null');return r&&r.imageRevision===images[e.slotId]?.revision&&['FIX IMAGE','REGENERATE'].includes(r.status);}catch{return false;}});
       const visual=localStorage.getItem(`capc:visual:${row.sheetId}:${row.contentId}:review:visual`);
-      row.readyToDownload=a.ready&&row.imageCount===row.imageTotal&&currentAssets&&visual===changeToken(sessionSignature(a.content,manifest,images,assets));
+      row.readyToDownload=a.ready&&!repairPending&&row.imageCount===row.imageTotal&&currentAssets&&visual===changeToken(sessionSignature(a.content,manifest,images,assets));
     }
     state.editorialRows=rows.sort((a,b)=>(b.recommendation==='PRODUCE')-(a.recommendation==='PRODUCE')||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();await refreshProductionBatch();
     if(state.originalContent){
@@ -727,8 +565,8 @@ async function loadEditorialQueue(){
       else{state.assessment=completed;renderQc();renderEditorialWorkspace();renderSlots();}
     }
     // Missing content stays selected until its production version is completed.
-    $('platformStatus').textContent=new Set(rows.map(r=>r.sheetId)).size===3?'PRODUCTION READY':'PRODUCTION READY WITH WARNINGS';$('platformHint').textContent=`${sourceResults.length}/3 sources · ${rows.length} records · per-content gates`;
-  }catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
+    $('productionProgress').dataset.queueReady='true';renderProductionProgress();
+  }catch(error){$('productionProgress').dataset.queueReady='false';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
 }
 
 async function openQueueItem(row) {
@@ -762,10 +600,9 @@ function renderProductionSummary(){
   if(!state.assessment)return;
   const a=state.assessment,action=nextProductionAction(a,{manifest:state.manifest,images:state.images,assets:state.assets,plan:state.plan,visualReviewed:state.visualQcConfirmedFor===reviewSignature()});
   state.nextBestAction=action;$('potentialScore').textContent=`${a.score} / 100`;$('recommendation').textContent=a.recommendation;$('riskLevel').textContent=a.risk.tier;$('duplicateLabel').textContent=a.duplicateStatus==='HOLD_DUPLICATE'?'YES':a.duplicateStatus==='REWORK'?'POSSIBLE':'NO';
-  $('decisionHint').textContent=action.detail;$('primaryAction').textContent=action.label;$('primaryAction').disabled=state.busy||state.batchBusy;$('nextAction').textContent=action.detail;$('selectedContentStatus').textContent=a.recommendation;
+  $('decisionHint').textContent=action.detail;$('primaryAction').textContent=action.label;$('primaryAction').disabled=state.busy||state.batchBusy;$('nextAction').textContent=action.detail;
   $('potentialDimensions').innerHTML=Object.entries(a.dimensions).map(([name,value])=>`<div><dt>${escapeHtml(name)}</dt><dd>${value}/10</dd></div>`).join('');
   $('qualityFindings').innerHTML=a.findings.slice(0,5).map(f=>`<li>${escapeHtml(f)}</li>`).join('');
-  $('monetizationScore').textContent=`CONTENT POTENTIAL ${a.score}/100`;$('monetizationDetails').textContent=Object.entries(a.dimensions).map(([k,v])=>`${k} ${v}/10`).join(' · ')+' · Internal production score; no guaranteed Facebook earnings.';
   $('autoImprove').textContent=!a.ready?'Fix This Content':'Improve Again';
   $('primaryAction').className='btn btn-primary';$('autoImprove').className='btn btn-info';$('workNext').className='btn btn-neutral';
   renderVisualPlan();
@@ -775,14 +612,24 @@ function renderProductionSummary(){
   $('copyNextPrompt').disabled=!a.ready||!next;$('copyMaster').disabled=!a.ready;$('imageImport').disabled=!canImport(a);$('imageBuild').disabled=$('buildAssets').disabled;
   for(const id of ['downloadPost','previewDownload'])$(id).disabled=!state.gates?.exportReady||state.busy;
   renderExportCard();
-  const row=currentQueueRow();if(row){row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.progress=action.detail;row.nextAction=action.label;}
+  const row=currentQueueRow();if(row){row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.progress=action.detail;row.nextAction=action.label;row.imageTotal=state.manifest.entries.length;row.imageCount=state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length;row.readyToDownload=Boolean(state.gates?.exportReady);row.downloaded=Boolean(state.productionSession.downloadedAt);}
   const imageCount=state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length;
   const suggested=findNextProductionReadyContent(state.editorialRows);
   state.quickRow=imageCount||!a.ready?null:suggested;
   $('resumeHint').textContent=!a.ready?`CONTINUE THIS CONTENT · ${state.content.contentId} · ${action.detail}`:imageCount?`CONTINUE PRODUCTION · ${state.content.contentId} · Images ${imageCount}/${state.manifest.entries.length} · ${action.detail}`:suggested?`NEXT BEST CONTENT · ${suggested.score} · PRODUCE`:`CONTINUE PRODUCTION · ${state.content.contentId} · ${action.detail}`;
-  $('quickTitle').textContent=state.quickRow?.title||state.content.title;
+  renderProductionProgress();
   localStorage.setItem('capc:lastProduction',JSON.stringify({sheetId:state.sourceId,contentId:state.content.contentId}));
   renderFinalPreview();
+}
+function renderProductionProgress(){
+  const progress=deriveProductionProgress(state.editorialRows),next=nextSuggested();
+  $('productionMetrics').innerHTML=[['In progress',progress.inProgress],['Ready for images',progress.readyForImages],['Images ready',progress.imagesReady],['Ready to post',progress.readyToPost]].map(([label,count])=>`<div class="numbers"><span class="card-category">${label}</span><strong class="card-title">${count}</strong></div>`).join('');
+  $('quickTitle').textContent=state.content?.title||'Choose content to begin';
+  $('productionNextTitle').textContent=next?`${next.title} · ${next.assessment.score} · PRODUCE`:'No further produce-ready content in this queue.';
+  const loading=$('productionProgress').getAttribute('aria-busy')==='true';
+  $('progressNext').disabled=!next||loading||state.busy||state.batchBusy;
+  $('quickStart').disabled=loading||state.busy||state.batchBusy;
+  $('productionProgressScope').textContent='Saved on this browser · ready to post counts reviewed final assets.';
 }
 function goStage(id){location.hash=id;$(id)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.workflow-nav a').forEach(a=>a.classList.toggle('active',a.hash===`#${id}`));}
 async function primaryProductionAction(){
@@ -1109,33 +956,6 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1200);
 }
 
-async function markPosted() {
-  if (!state.writable) return toast("This source is read-only. Status was not changed.", true);
-  if (!state.publishingReadiness?.ready) return toast("Publishing is blocked until editorial, generation, source-image and visual QC gates pass.", true);
-  if (!["SCHEDULED_PUBLISHED", "RESULTS_RECORDED"].includes(state.workflow?.stage)) return toast("Record the post URL/date and advance the production workflow to Scheduled / Published first.", true);
-  const button = $("markPosted");
-  button.disabled = true;
-  button.textContent = "Updating Sheet…";
-  try {
-    const result = await apiJson(`/api/recipes/${encodeURIComponent(state.content.contentId)}/status`, {
-      method: "POST",
-      headers: writeHeaders(),
-      body: JSON.stringify({ technicalImageQcPass: state.gates.technicalImageQc, noStaleAssets: state.gates.finalAssetsBuilt, status: "Posted", sheetId: state.sourceId, requiredImagesPresent: true, finalAssetsPresent: true, visualQcPass: state.visualQcConfirmedFor === reviewSignature() })
-    });
-    if(result.contentId!==state.content.contentId || Number(result.sheetId)!==state.sourceId || result.status!=="Posted")throw Error("Status readback did not match the selected record.");
-    state.content.lifecycleStatus = "Posted";
-    $("status").textContent = "Posted";
-    $("status").classList.add("posted");
-    renderQc();
-    toast(`Status verified in row ${result.rowNumber}.`);
-  } catch (error) {
-    toast(error.message, true);
-  } finally {
-    button.disabled = !state.writable || !state.publishingReadiness?.ready;
-    button.textContent = "Mark Posted";
-  }
-}
-
 function renderVisualPlan(){
  if(!state.content||!$('visualPlanCount'))return;
  const plan=state.content.fastVisualPlan,entries=state.manifest.entries;
@@ -1155,7 +975,9 @@ async function refreshProductionBatch(){
  const [imagesByKey,assetsByKey]=state.productionBatch?await Promise.all([storedMap('images'),storedMap('assets')]):[new Map(),new Map()];if(token!==state.batchProgressToken)return;
  const visualByKey=new Map(),reviewsByKey=new Map();for(const post of state.productionBatch?.posts||[]){const key=`${post.sheetId}:${post.contentId}`;visualByKey.set(key,localStorage.getItem(`capc:visual:${key}:review:visual`));for(const storageKey of imagesByKey.keys())if(storageKey.startsWith(`${key}:image:`)){const slot=storageKey.slice(`${key}:image:`.length);try{reviewsByKey.set(`${key}:image-review:${slot}`,JSON.parse(localStorage.getItem(`capc:image-review:${key}:image-review:${slot}`)||'null'));}catch{}}}
  const cleanup=reconcileProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey});if(cleanup.changed){persistProductionBatch(cleanup.batch);renderEditorialQueue();}if(cleanup.replacements.length)toast(`${cleanup.replacements.length} ineligible batch posts replaced with screened reserve content.`);
- state.productionBatchResolved=resolveProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey,visualByKey,reviewsByKey});renderProductionBatch();
+ state.productionBatchResolved=resolveProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey,visualByKey,reviewsByKey});
+ for(const post of state.productionBatchResolved.posts){const row=state.editorialRows.find(r=>queueKey(r)===`${post.sheetId}:${post.contentId}`);if(row){row.imageCount=post.imageCount;row.imageTotal=post.entries.length;row.readyToDownload=post.valid&&post.reviewed;}}
+ renderProductionProgress();renderProductionBatch();
 }
 function renderProductionBatch(){
  const batch=state.productionBatch,r=state.productionBatchResolved||{posts:[],entries:[]},busy=state.batchBusy||state.busy;
@@ -1237,7 +1059,8 @@ function bindEvents() {
   $('completionText').addEventListener('input',()=>{try{saveProductionSession({completionDraft:$('completionText').value});}catch(error){toast('Draft could not be saved: '+error.message,true);}});
   $('workNext').addEventListener('click',nextEditorialReview);
   document.querySelectorAll('[data-decision]').forEach(button=>button.addEventListener('click',()=>overrideDecision(button.dataset.decision)));
-  $('quickStart').addEventListener('click',()=>{if(state.assessment&&!state.assessment.ready)return openContentCompletion();if(state.images&&Object.keys(state.images).length&&state.assessment?.ready)return primaryProductionAction();return continueWithGoodContent({quick:true});});
+  $('quickStart').addEventListener('click',()=>state.assessment?primaryProductionAction():continueWithGoodContent({quick:true}));
+  $('progressNext').addEventListener('click',()=>continueWithGoodContent());
   $('startNext').addEventListener('click',()=>continueWithGoodContent());
   $('confirmClaim').addEventListener('click',()=>{if(!state.originalContent||state.busy)return;const reference=$('claimReference').value.trim();if(reference.length<8)return toast('Identify the checked support for this claim.',true);saveProductionSession({claimConfirmation:{sourceStamp:sourceStamp(state.originalContent),reference,confirmedAt:new Date().toISOString()},override:undefined});applyContent(state.originalContent);renderEditorialQueue();});
   for(const [id,tab] of [['showOriginal','original'],['showOptimised','optimised']])$(id).addEventListener('click',()=>{document.querySelector('.compare-columns').dataset.compare=tab;$('showOriginal').setAttribute('aria-selected',String(tab==='original'));$('showOptimised').setAttribute('aria-selected',String(tab==='optimised'));});
@@ -1280,18 +1103,6 @@ function bindEvents() {
   $("copyCaption").addEventListener("click", () => {
     if (!state.assessment?.ready) return toast("Resolve the specific content blocker first.", true);
     return copyText(state.content.caption, "✓ Caption copied");
-  });
-  $("copyCaptionBottom").addEventListener("click", () => {
-    if (!state.assessment?.ready) return toast("Resolve the specific content blocker first.", true);
-    return copyText(state.content.caption, "✓ Caption copied");
-  });
-  $("markPosted").addEventListener("click", markPosted);
-  $("advanceWorkflow").addEventListener("click", advanceWorkflow);
-  $("saveManualResults").addEventListener("click", saveManualResults);
-  $("refreshResults").addEventListener("click", () => loadContentOperations().catch((error) => toast(error.message, true)));
-  $("resultPublication").addEventListener("change", (event) => {
-    const publication = (state.resultsSummary?.rows || []).find((row) => row.publicationId === event.target.value);
-    fillResultForm(publication);
   });
   $("refreshSheets").addEventListener("click", () => refreshSheets(true, true));
   $("assignPageProfile").addEventListener("click", assignPageProfile);
@@ -1359,7 +1170,6 @@ async function loadSource(sourceValue, targetContentId = '') {
     renderSourceOptions();
     $("connection").className = "connection offline";
     $("connection").lastElementChild.textContent = `Development handoffs · ${state.records.length} · read-only`;
-    $("writeHint").textContent = "Idea approved for development only. Complete the content specification and editorial review before generation; nothing is published automatically.";
     renderPageProfiles();
     if (!state.records.length) { clearContentView("No valid V4.2 handoffs have been approved for development yet."); reportRejectedRecords(normalized.rejected); return; }
     renderOptions(state.records);

@@ -53,7 +53,10 @@
 
       <div class="content" id="productionView">
         <div id="persistentError" class="persistent-error" role="alert" hidden></div>
-        <section class="card quick-production"><div><p class="eyebrow">QUICK PRODUCTION</p><strong id="quickTitle">Finding the best content…</strong><p id="resumeHint" class="helper"></p></div><div class="production-actions"><button class="btn btn-primary" id="quickStart" type="button">Start Production →</button><button class="btn btn-neutral" id="quickBatch" type="button">Batch</button></div></section>
+        <section class="card quick-production production-progress" id="productionProgress" aria-labelledby="productionProgressTitle" data-queue-ready="false">
+          <div class="production-progress-body"><p class="eyebrow" id="productionProgressTitle">PRODUCTION PROGRESS</p><div class="production-metrics" id="productionMetrics" aria-live="polite"><p class="helper">Loading saved production…</p></div><p class="production-current">Current: <strong id="quickTitle">Loading content…</strong></p><p id="resumeHint" class="helper" hidden></p><p class="production-next">Next: <strong id="productionNextTitle">Checking content…</strong></p><p class="helper progress-scope" id="productionProgressScope">Saved production on this browser.</p></div>
+          <div class="production-actions"><button class="btn btn-primary" id="quickStart" type="button">Continue Production →</button><button class="btn btn-info" id="progressNext" type="button" disabled>Next Good Content →</button><button class="btn btn-neutral" id="quickBatch" type="button">Batch Production →</button></div>
+        </section>
         <nav class="card production-steps" aria-label="Production steps"><a href="#recipe">01 Content</a><a href="#optimise">02 AI Optimise</a><a href="#images">03 Images</a><a href="#assets">04 Final</a><a href="#download">05 Download</a><p id="nextAction" role="status">Choose content to begin.</p></nav>
         <details class="card editorial-queue-card" id="editorialQueue"><summary>Content list · choose what to produce</summary>
           <div class="card-header"><div><p class="eyebrow">CONTENT PRODUCTION</p><h2 id="queueTitle">Content list</h2></div><button class="btn btn-info" id="queueLoad" type="button">Refresh Content</button></div>
@@ -130,25 +133,6 @@
           </section>
           </details>
           <section class="card" id="optimise"><div class="card-header"><div><p class="eyebrow">AI CHECK COMPLETE · SOURCE PRESERVED</p><h2>AI Optimise</h2></div><span class="badge" id="optimiseState">AI OPTIMISED</span></div><div class="compare-tabs" role="tablist"><button id="showOriginal" role="tab" aria-selected="false" type="button">Original</button><button id="showOptimised" role="tab" aria-selected="true" type="button">AI Optimised</button></div><div class="workspace-columns compare-columns" data-compare="optimised"><section class="original-pane"><h3>ORIGINAL</h3><strong id="originalTitle"></strong><pre id="originalBody"></pre><h4>Caption</h4><pre id="originalCaption"></pre></section><section class="optimised-pane"><h3>AI OPTIMISED</h3><h4 id="optimisedTitle"></h4><p id="optimisedHook"></p><pre id="optimisedCaption"></pre><dl class="optimised-outline"><dt>WHAT</dt><dd id="optimisedWhat"></dd><dt>WHY</dt><dd id="optimisedWhy"></dd><dt>ACTION</dt><dd id="optimisedAction"></dd><dt>Reader value</dt><dd id="optimisedValue"></dd><dt>Save value</dt><dd id="optimisedSave"></dd><dt>CTA</dt><dd id="optimisedCta"></dd></dl></section></div><div id="factQuestions" class="fact-questions" hidden></div><details id="contentCompletion" class="advanced-details" hidden><summary>Complete This Content · original source kept</summary><p class="helper">AI has recovered all available facts and improved the structure. Add only the missing factual details, or use the ChatGPT completion prompt and paste the completed body below. This continues the same content without changing Google Sheets.</p><pre id="completionNeeded"></pre><button id="copyCompletionPrompt" type="button" class="btn btn-info">Copy ChatGPT Completion Prompt</button><a class="btn btn-neutral" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT</a><label for="completionText">Missing details or completed content</label><textarea id="completionText" class="form-control" rows="7" maxlength="24000" placeholder="Paste ingredients with quantities and ordered steps, or concrete guide details. No need to fill hook, CTA or editorial metadata."></textarea><button id="applyCompletion" type="button" class="btn btn-primary">Use Content &amp; Continue →</button><p class="helper">Draft saved on this browser. The compiler checks factual completeness and quality before preparing images.</p></details><section id="claimVerification" class="fact-questions" hidden><h3>VERIFY CLAIM</h3><p id="claimReason"></p><ul id="claimList"></ul><label>Supporting reference / checked source<input id="claimReference" type="text" placeholder="Reference for this claim only"></label><button id="confirmClaim" type="button" class="btn btn-warning">Confirm claim support</button><p class="helper">Records your claim confirmation for this source version. It does not mark the content human-approved.</p></section><details class="advanced-details"><summary>Advanced Details · changes, plan and history</summary><p id="optimiseEngine" class="helper"></p><pre id="optimiseChanges"></pre><div id="workspaceAssetPlan" class="workspace-plan"></div><pre id="reviewHistory"></pre></details></section>
-          <details class="advanced-details"><summary>Advanced Details · technical checks and publishing gates</summary>
-          <section class="qc-summary qc-pass" id="qcSummary" aria-label="Production readiness gates" aria-live="polite">
-            <div class="gate-grid">
-              <div class="quality-gate pass" id="contractGate"><span>Contract</span><strong id="qcStatus">CHECKING</strong><small>Structural / deterministic QC</small></div>
-              <div class="quality-gate review" id="editorialGate"><span>Editorial</span><strong id="editorialStatus">CHECKING</strong><small>Content completeness + review</small></div>
-              <div class="quality-gate blocked" id="generationGate"><span>Generation</span><strong id="generationStatus">CHECKING</strong><small>Prompt and input readiness</small></div>
-              <div class="quality-gate" id="sourceImagesGate"><span>Source images</span><strong id="sourceImagesStatus">INCOMPLETE</strong></div>
-              <div class="quality-gate" id="technicalGate"><span>Technical image QC</span><strong id="technicalStatus">NOT READY</strong></div>
-              <div class="quality-gate" id="finalAssetsGate"><span>Final assets</span><strong id="finalAssetsStatus">NOT BUILT</strong></div>
-              <div class="quality-gate" id="exportGate"><span>Export</span><strong id="exportStatus">NOT READY</strong></div>
-              <div class="quality-gate not-run" id="visualGate"><span>Visual QC</span><strong id="visualStatus">NOT RUN</strong><small>Rendered asset inspection</small></div>
-              <div class="quality-gate blocked" id="publishingGate"><span>Publishing</span><strong id="publishingStatus">NOT READY</strong><small>All prior gates required</small></div>
-            </div>
-            <p><b>MONETISATION READINESS</b> <span id="monetizationScore"></span></p><p class="helper" id="monetizationDetails"></p>
-            <p class="editorial-note" id="editorialNote">Separate readiness checks are being calculated…</p>
-            <pre id="qcDetails">Checking current plan…</pre>
-            <small class="helper" id="visualQcHint">Build all final assets before recording a visual review.</small>
-          </section>
-          </details>
           <details class="advanced-details"><summary>Advanced image tools</summary><div class="action-grid">
             <button id="copyPrompt" class="btn btn-primary" type="button"><span>01</span>Copy ChatGPT Image Prompt</button>
             <button id="importAll" class="btn btn-info" type="button"><span>02</span>Import Generated Images</button>
@@ -198,62 +182,6 @@
         </section>
 
         <section class="card" id="download"><div class="card-header"><h2 id="downloadHeading">Ready to Post</h2></div><div class="setup-card-body"><p id="downloadState">Build your post first.</p><p id="finalExportSummary" class="helper"></p><div class="production-actions export-actions"><button id="shareFinalImages" class="btn btn-primary" type="button" disabled>Share / Save All Images</button><button id="copyFinalCaption" class="btn btn-info" type="button" disabled>Copy Facebook Caption</button></div><p id="imageExportStatus" class="helper" role="status" aria-live="polite"></p><button id="exportRebuild" class="btn btn-warning" type="button" hidden>Rebuild</button><details id="moreExportOptions" class="advanced-details"><summary>More download options</summary><div class="production-actions export-actions"><button id="downloadFinalImages" class="btn btn-neutral" type="button" disabled>Download All Images</button><button id="downloadPost" class="btn btn-neutral" type="button" disabled>Download ZIP Package</button><button id="showIndividualImages" class="btn btn-neutral" type="button" disabled>Download Images Individually</button><button id="downloadFinalManifest" class="btn btn-neutral" type="button" disabled>Download Manifest</button></div></details><div id="finalImageDownloads" class="final-image-downloads" hidden aria-label="Ordered final image downloads"></div><div id="nextContentCard" hidden><p class="eyebrow">NEXT GOOD CONTENT</p><strong id="nextContentTitle"></strong><button id="startNext" class="btn btn-info" type="button">Next Good Content →</button></div></div></section>
-        <details class="advanced-details"><summary>Advanced Details · publication and results</summary>
-        <section class="card publish-card" id="publish">
-          <div>
-            <p class="eyebrow">FACEBOOK CAPTION</p>
-            <h2 id="publishHeading">Ready to publish</h2>
-            <pre id="captionPreview"></pre>
-          </div>
-          <div class="publish-actions">
-            <button id="copyCaptionBottom" class="btn btn-success" type="button">Copy exact caption</button>
-            <button id="markPosted" class="btn btn-primary" type="button">Mark Posted</button>
-            <p id="writeHint" class="helper"></p>
-          </div>
-        </section>
-        <section class="card production-ops-card" id="productionWorkflow">
-          <div class="card-header"><div><p class="eyebrow">PRODUCTION WORKFLOW</p><h2>Current stage</h2></div><span class="badge" id="workflowStageBadge">Loading…</span></div>
-          <div class="setup-card-body">
-            <ol id="workflowStages" class="workflow-stages"></ol>
-            <div class="workflow-form">
-              <label><span>Operator</span><input id="workflowActor" type="text" autocomplete="name" placeholder="Name"></label>
-              <label class="wide"><span>Human verification note</span><input id="workflowNote" type="text" placeholder="Required for asset, visual-QC and publish stages"></label>
-              <p class="helper wide" id="workflowPublicationHint">Source images and final assets are checked from this Console. Visual QC uses the attestation above; publication requires a saved URL and date below.</p>
-            </div>
-            <button class="btn btn-primary" id="advanceWorkflow" type="button">Advance one stage</button>
-            <p id="workflowHint" class="helper"></p>
-          </div>
-        </section>
-        <section class="card results-card" id="manualResults">
-          <div class="card-header"><div><p class="eyebrow">MANUAL RESULTS · NO AUTOMATIC ANALYTICS</p><h2>Publication and performance</h2></div><button class="btn btn-neutral" id="refreshResults" type="button">Refresh Results</button></div>
-          <div class="setup-card-body">
-            <p class="helper">Unknown metrics stay blank. Meta earnings and affiliate commission are recorded separately and never inferred from views.</p>
-            <div class="results-form">
-              <label class="wide"><span>Existing publication (optional update)</span><select id="resultPublication"><option value="">New publication</option></select></label>
-              <label><span>Published date</span><input id="resultPublishedAt" type="date"></label>
-              <label><span>Post URL (required to confirm published)</span><input id="resultPostUrl" type="url" placeholder="https://…"></label>
-              <label><span>Format</span><input id="resultFormat" type="text" placeholder="e.g. Carousel"></label>
-              <label><span>Operator</span><input id="resultEnteredBy" type="text" autocomplete="name" placeholder="Name"></label>
-              <label><span>Reach</span><input id="resultReach" type="number" min="0" step="1"></label>
-              <label><span>Qualified views</span><input id="resultQualifiedViews" type="number" min="0" step="1"></label>
-              <label><span>Engagement</span><input id="resultEngagement" type="number" min="0" step="1"></label>
-              <label><span>Shares</span><input id="resultShares" type="number" min="0" step="1"></label>
-              <label><span>Saves</span><input id="resultSaves" type="number" min="0" step="1"></label>
-              <label><span>Retention rate (0–1)</span><input id="resultRetention" type="number" min="0" max="1" step="0.001"></label>
-              <label><span>Meta earnings</span><input id="resultMetaEarnings" type="number" min="0" step="0.01"></label>
-              <label><span>Affiliate clicks</span><input id="resultAffiliateClicks" type="number" min="0" step="1"></label>
-              <label><span>Affiliate orders</span><input id="resultAffiliateOrders" type="number" min="0" step="1"></label>
-              <label><span>Affiliate commission</span><input id="resultAffiliateCommission" type="number" min="0" step="0.01"></label>
-              <label><span>Production minutes</span><input id="resultProductionMinutes" type="number" min="0" step="1"></label>
-              <label><span>Direct production cost</span><input id="resultDirectCost" type="number" min="0" step="0.01"></label>
-              <label><span>Currency</span><input id="resultCurrency" type="text" maxlength="3" value="MYR"></label>
-            </div>
-            <button class="btn btn-primary" id="saveManualResults" type="button">Save Manual Results</button>
-            <div class="results-summary" id="resultsSummary" aria-live="polite"></div>
-          </div>
-        </section>
-        </details>
-        <details class="advanced-details"><summary>Advanced Details · platform status</summary><strong id="platformStatus">CHECKING</strong><p id="platformHint"></p><strong id="selectedContentStatus">NO RECORD</strong></details>
         <section class="card add-sheet-panel" id="addSheetPanel" hidden aria-labelledby="addSheetTitle">
           <div class="card-header">
             <div><p class="eyebrow">SAME GOOGLE WORKBOOK</p><h2 id="addSheetTitle">Create a content worksheet</h2></div>

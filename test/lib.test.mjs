@@ -68,8 +68,9 @@ test("V4.1 renderer uses adaptive Ingredients and Method layouts", () => {
 });
 
 test("separate production gates block posting while keeping final-asset preview available", () => {
-  assert.match(appSource, /publishing\.status === "PUBLISHED" \? "Already published" : publishing\.ready \? "Ready to post" : "NOT READY TO POST"/);
-  assert.match(appSource, /markPosted.*!publishing\.ready/s);
+  assert.match(appSource, /state\.publishingReadiness = publishing/);
+  assert.match(appSource, /publishing\.ready=false/);
+  assert.doesNotMatch(appSource, /function markPosted\(/);
   assert.match(appSource, /function buildAssets\(batchOperation=false\) \{/);
   assert.match(appSource, /copyPrompt.*generationReadiness/s);
   assert.match(appSource, /\.disabled = !state\.assessment\.ready/);

@@ -85,7 +85,8 @@ test("new guide templates normalize while legacy V4 production records remain va
 
 test("approval routes into the existing read-only V4.1 production workflow without publishing", () => {
   assert.match(appSource, /V4\.2 Approved Opportunities/);
-  assert.match(appSource, /Idea approved for development only/);
+  assert.match(appSource, /Development handoffs.*read-only/);
+  assert.doesNotMatch(appSource, /function markPosted\(/);
   assert.match(opportunityUi, /capc-approved-opportunity/);
   assert.match(opportunityUi, /APPROVED FOR DEVELOPMENT · SPECIFICATION NOT READY/i);
   assert.match(opportunityUi, /has not created images, final assets, a Sheet record, a batch, or a Facebook post/i);

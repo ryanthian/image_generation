@@ -22,7 +22,7 @@ page.on('pageerror',error=>errors.push(error.message));
 page.on('console',msg=>{if(msg.type()==='error'){const value=msg.text();if(value.includes("Executing inline script violates")&&value.includes("script-src 'self'"))platformWarnings.push(value);else errors.push(value);}});
 page.on('request',request=>{if(request.method()!=='GET')writes.push({method:request.method(),path:new URL(request.url()).pathname});});
 try{
- await page.goto(base);await page.waitForFunction(()=>document.querySelector('#platformStatus')?.textContent==='PRODUCTION READY',{},{timeout:60000});
+ await page.goto(base);await page.waitForFunction(()=>document.querySelector('#productionProgress')?.dataset.queueReady==='true',{},{timeout:60000});
  console.log('Live application loaded.');
  assert.equal(await page.locator('#workReviewer').count(),0);assert.equal(await page.locator('#editorReviewer').count(),0);
  for(const source of [{id:'2026091901',count:120},{id:'812541719',count:100},{id:'433728120',count:70}]){
@@ -54,7 +54,7 @@ try{
    assert.ok(await page.locator('#finalImage').isVisible());await page.locator('#previewNext').click();await page.locator('#looksGood').click();await page.waitForFunction(()=>!document.querySelector('#downloadPost').disabled);
    const downloadPromise=page.waitForEvent('download');await page.locator('#downloadPost').click();const download=await downloadPromise;const zipPath=`${output}/${item.contentId}.zip`;await download.saveAs(zipPath);
    const finalCount=(await page.locator('#previewPosition').textContent()).split('/')[1].trim();
-   const markPosted=await page.locator('#markPosted').isDisabled();assert.equal(markPosted,true);
+   assert.equal(await page.locator('#markPosted').count(),0);
    // Replacing one image invalidates the final decision and export; rebuild keeps unaffected asset revisions.
    const assetTimes=await page.evaluate(async()=>{const open=indexedDB.open('content-ai-production-console-v1',1);const db=await new Promise(r=>open.onsuccess=()=>r(open.result));const tx=db.transaction('assets','readonly'),store=tx.objectStore('assets'),keys=store.getAllKeys(),values=store.getAll();const result=await new Promise(r=>tx.oncomplete=()=>r(Object.fromEntries(keys.result.map((k,i)=>[k,values.result[i].updatedAt]))));db.close();return result;});
    await page.locator('#allFiles').setInputFiles([files[0]]);await page.waitForFunction(()=>document.querySelector('#downloadPost').disabled);
