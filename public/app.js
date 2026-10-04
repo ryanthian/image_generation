@@ -19,6 +19,7 @@ import {
 import { assetSemanticKey, sourceLabel, imageQc, verifyImageSignature, hashBlob, planImports, fitText, wrapText, sessionSignature, productionGates, exportEntries, createZip, safeFilename, BATCH_LIMIT } from "/production-core.js";
 import { auditContent } from "/content-quality.js";
 import {applyEditorialWork,recordKey} from "/editorial-pipeline.mjs";
+import {createProductionBatch,resolveProductionBatch,planBatchImports,batchImagePrompt,batchPostStamp} from '/batch-production.mjs';
 
 const state = {
   unmatched: [],
@@ -252,35 +253,34 @@ function updateProgress() {
 }
 
 async function saveImage(slotId, file) {
-  if(state.busy) { toast("Wait for the current build or export to finish.",true); return false; }
+  if(state.busy||state.batchBusy) { toast("Wait for the current build or export to finish.",true); return false; }
   if (!state.assessment || !canImport(state.assessment)) { toast("Load a valid image specification before importing.",true); return false; }
   const token=state.contentLoadToken,entry=state.manifest.entries.find(item=>item.slotId===slotId),key=keyFor("image",slotId);
   if(!entry)return false;
   try {
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 35*1024*1024) throw Error("Use PNG, JPEG or WebP up to 35 MB.");
-    if(!await verifyImageSignature(file))throw Error("File signature does not match its declared image type.");
-    const decoded=await loadImage(file);
-    const qc=imageQc({type:file.type,size:file.size,width:decoded.naturalWidth,height:decoded.naturalHeight});
-    if(qc.status==='FAIL')throw Error(qc.errors.join(' '));
-    const hash=await hashBlob(file);
-    const duplicate=Object.entries(state.images).find(([id,image])=>id!==slotId && image.hash===hash);
-    if(duplicate)qc.warnings.push(`Identical image also used in ${duplicate[0]}; verify that the stages are correct.`);
+    const value=await prepareStoredImage(file,entry,state.images);
     if(token!==state.contentLoadToken)return false;
-    const value={blob:file,name:file.name,type:file.type,semanticKey:entry.semanticKey,hash,revision:crypto.randomUUID(),qc,updatedAt:Date.now()};
     await putStored("images",key,value);
     if(token!==state.contentLoadToken)return false;
-    state.images[slotId]=value;delete state.imageReviews[slotId];localStorage.removeItem(slotReviewKey(slotId));invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();return true;
+    state.images[slotId]=value;delete state.imageReviews[slotId];localStorage.removeItem(slotReviewKey(slotId));invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();await refreshProductionBatch();return true;
   } catch(error){toast(`${file.name}: ${error.message}`,true);return false;}
 }
+async function prepareStoredImage(file,entry,existing={}){
+ if(!/^image\/(png|jpeg|webp)$/.test(file.type)||file.size>35*1024*1024)throw Error('Use PNG, JPEG or WebP up to 35 MB.');
+ if(!await verifyImageSignature(file))throw Error('File signature does not match its declared image type.');
+ const decoded=await loadImage(file),qc=imageQc({type:file.type,size:file.size,width:decoded.naturalWidth,height:decoded.naturalHeight});if(qc.status==='FAIL')throw Error(qc.errors.join(' '));
+ const hash=await hashBlob(file),duplicate=Object.entries(existing).find(([id,image])=>id!==entry.slotId&&image?.hash===hash);if(duplicate)qc.warnings.push(`Identical image also used in ${duplicate[0]}; inspect the assigned state.`);
+ return {blob:file,name:file.name,type:file.type,semanticKey:entry.semanticKey,hash,revision:crypto.randomUUID(),qc,updatedAt:Date.now()};
+}
 async function removeImage(slotId) {
-  if(state.busy)return;
+  if(state.busy||state.batchBusy)return;
   const token=state.contentLoadToken;
   await deleteStored("images",keyFor("image",slotId));
   if(token!==state.contentLoadToken)return;
-  delete state.images[slotId];delete state.imageReviews[slotId];localStorage.removeItem(slotReviewKey(slotId));invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();
+  delete state.images[slotId];delete state.imageReviews[slotId];localStorage.removeItem(slotReviewKey(slotId));invalidateReview();refreshStale();renderSlots();renderAssets();renderQc();await refreshProductionBatch();
 }
 async function importMany(files) {
-  if(state.busy || !state.assessment || !canImport(state.assessment))return toast("Load a valid image specification before importing.",true);
+  if(state.busy||state.batchBusy || !state.assessment || !canImport(state.assessment))return toast("Load a valid image specification before importing.",true);
   const list=Array.from(files);
   if(list.length>60 || list.reduce((sum,file)=>sum+file.size,0)>BATCH_LIMIT)return toast("Import at most 60 files / 160 MB in one batch.",true);
   const token=state.contentLoadToken,{matched,unmatched}=planImports(list,state.manifest,matchGenerationSlot);
@@ -375,8 +375,7 @@ function applyContent(content) {
   renderManifest();
   renderWorkflow();
   renderResults();
-  loadContentState(token).catch((error) => toast(error.message, true));
-  loadContentOperations(token).catch((error) => toast(`Editorial/workflow state could not be loaded: ${error.message}`, true));
+  state.contentReady=Promise.all([loadContentState(token).catch(error=>toast(error.message,true)),loadContentOperations(token).catch(error=>toast(`Editorial/workflow state could not be loaded: ${error.message}`,true))]);
 }
 
 function renderQc() {
@@ -699,10 +698,13 @@ async function loadEditorialQueue(){
     state.duplicateAssignments=duplicateAssignments(state.canonicalMap);
     const dup=state.duplicateAssignments,rework=new Set((state.canonicalMap.reviewPairs||[]).flatMap(p=>[p.left,p.right].map(i=>`${i.source}:${i.contentId}`))),rows=[];
     for(const data of sourceResults){const sheetId=Number(data.sheetId||data.sourceState?.sheetId),source=state.sources.find(s=>Number(s.sheetId)===sheetId);if(!sheetId)throw Error('Source identity missing.');
-      for(const original of normalizeContentRecordsSafely(data.records||data.recipes||[]).records){const work=data.editorialWork?.[original.contentId],content=applyEditorialWork(original,work?.stale?null:work,work?.review?.sourceFingerprint).content,key=recordKey(sheetId,content.contentId),assignment=dup[key];const row={sheetId,source:source?.title||source?.name,contentId:content.contentId,title:content.title,contentType:content.contentType,lifecycleStatus:content.lifecycleStatus,duplicateStatus:assignment?.status||(rework.has(`${source?.title||source?.name}:${content.contentId}`)?'REWORK':'UNIQUE'),canonicalKey:assignment?.canonicalKey,content,work};
+      for(const original of normalizeContentRecordsSafely(data.records||data.recipes||[]).records){const work=data.editorialWork?.[original.contentId],content={...applyEditorialWork(original,work?.stale?null:work,work?.review?.sourceFingerprint).content,pageProfile:data.pageProfile||original.pageProfile||null},key=recordKey(sheetId,content.contentId),assignment=dup[key];const row={sheetId,source:source?.title||source?.name,contentId:content.contentId,title:content.title,contentType:content.contentType,lifecycleStatus:content.lifecycleStatus,duplicateStatus:assignment?.status||(rework.has(`${source?.title||source?.name}:${content.contentId}`)?'REWORK':'UNIQUE'),canonicalKey:assignment?.canonicalKey,content,work};
         const a=assessProduction(content,{session:readProductionSession(content,sheetId),duplicateStatus:row.duplicateStatus});Object.assign(row,{assessment:a,recommendation:a.recommendation,score:a.score,riskTier:a.risk.tier});rows.push(row);
       }
     }
+    const publicationResults=await Promise.all([...new Set(rows.map(row=>row.sheetId))].map(sheetId=>apiJson(`/api/production/results?sheetId=${sheetId}`)));
+    const publishedKeys=new Set(publicationResults.flatMap(data=>(data.summary?.rows||[]).filter(p=>p.postUrl&&Number.isFinite(Date.parse(p.publishedAt))).map(p=>recordKey(p.sheetId,p.contentId))));
+    for(const row of rows)row.publicationRecorded=publishedKeys.has(queueKey(row));
     // One cursor per store replaces hundreds of per-slot IndexedDB connections.
     const [imageKeys,assetKeys]=await Promise.all(['images','assets'].map(store=>idb(store,'readonly',objectStore=>objectStore.getAllKeys())));
     const imageRecords=await idb('images','readonly',o=>o.getAll()),assetRecords=await idb('assets','readonly',o=>o.getAll());
@@ -713,14 +715,14 @@ async function loadEditorialQueue(){
       const visual=localStorage.getItem(`capc:visual:${row.sheetId}:${row.contentId}:review:visual`);
       row.readyToDownload=a.ready&&row.imageCount===row.imageTotal&&currentAssets&&visual===changeToken(sessionSignature(a.content,manifest,images,assets));
     }
-    state.editorialRows=rows.sort((a,b)=>(b.recommendation==='PRODUCE')-(a.recommendation==='PRODUCE')||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();
+    state.editorialRows=rows.sort((a,b)=>(b.recommendation==='PRODUCE')-(a.recommendation==='PRODUCE')||b.score-a.score||a.contentId.localeCompare(b.contentId));renderEditorialQueue();await refreshProductionBatch();
     if(state.originalContent){state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderSlots();}
     $('platformStatus').textContent=new Set(rows.map(r=>r.sheetId)).size===3?'PRODUCTION READY':'PRODUCTION READY WITH WARNINGS';$('platformHint').textContent=`${sourceResults.length}/3 sources · ${rows.length} records · per-content gates`;
   }catch(error){$('platformStatus').textContent='NOT PRODUCTION READY';$('queueSummary').textContent=`Content loading failed: ${error.message}`;toast(error.message,true);}finally{$('queueLoad').disabled=false;}
 }
 
 async function openQueueItem(row) {
-  if(!row)return;
+  if(!row||state.batchBusy&&!state.batchInternal)return;
   if(Number(state.sourceId)===Number(row.sheetId)&&state.records.some(item=>item.contentId===row.contentId))applyContent(state.records.find(item=>item.contentId===row.contentId));
   else await loadSource(String(row.sheetId),row.contentId);
   $('recipe').scrollIntoView({behavior:'smooth',block:'start'});
@@ -744,11 +746,13 @@ function renderProductionSummary(){
   if(!state.assessment)return;
   const a=state.assessment,action=nextProductionAction(a,{manifest:state.manifest,images:state.images,assets:state.assets,plan:state.plan,visualReviewed:state.visualQcConfirmedFor===reviewSignature()});
   state.nextBestAction=action;$('potentialScore').textContent=`${a.score} / 100`;$('recommendation').textContent=a.recommendation;$('riskLevel').textContent=a.risk.tier;$('duplicateLabel').textContent=a.duplicateStatus==='HOLD_DUPLICATE'?'YES':a.duplicateStatus==='REWORK'?'POSSIBLE':'NO';
-  $('decisionHint').textContent=action.detail;$('primaryAction').textContent=action.label;$('primaryAction').disabled=state.busy;$('nextAction').textContent=action.detail;$('selectedContentStatus').textContent=a.recommendation;
+  $('decisionHint').textContent=action.detail;$('primaryAction').textContent=action.label;$('primaryAction').disabled=state.busy||state.batchBusy;$('nextAction').textContent=action.detail;$('selectedContentStatus').textContent=a.recommendation;
   $('potentialDimensions').innerHTML=Object.entries(a.dimensions).map(([name,value])=>`<div><dt>${escapeHtml(name)}</dt><dd>${value}/10</dd></div>`).join('');
   $('qualityFindings').innerHTML=a.findings.slice(0,5).map(f=>`<li>${escapeHtml(f)}</li>`).join('');
   $('monetizationScore').textContent=`CONTENT POTENTIAL ${a.score}/100`;$('monetizationDetails').textContent=Object.entries(a.dimensions).map(([k,v])=>`${k} ${v}/10`).join(' · ')+' · Internal production score; no guaranteed Facebook earnings.';
-  $('autoImprove').textContent=state.productionSession?.iteration?'Improve Again':'Auto Improve';
+  $('autoImprove').textContent=state.productionSession?.iteration||a.recommendation==='IMPROVE'?'Improve Again':'Auto Improve';
+  $('primaryAction').className='btn btn-primary';$('autoImprove').className='btn btn-info';$('workNext').className='btn btn-neutral';
+  renderVisualPlan();
   $('imageQueueProgress').textContent=`${state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length} / ${state.manifest.entries.length} READY`;
   const next=state.manifest.entries.find(e=>!state.images[e.slotId]||state.images[e.slotId].semanticKey!==e.semanticKey||state.images[e.slotId].qc?.status!=='PASS');
   $('imageQueueNext').textContent=next?`NEXT IMAGE · ${String(next.sequence).padStart(2,'0')} — ${next.label}`:'Images complete · Build Final Assets';
@@ -767,26 +771,26 @@ function renderProductionSummary(){
 }
 function goStage(id){location.hash=id;$(id)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.workflow-nav a').forEach(a=>a.classList.toggle('active',a.hash===`#${id}`));}
 async function primaryProductionAction(){
-  if(state.busy||!state.nextBestAction)return;
+  if(state.busy||state.batchBusy||!state.nextBestAction)return;
   const {kind}=state.nextBestAction;
   if(kind==='CANONICAL'){const row=currentQueueRow(),better=state.editorialRows.find(r=>queueKey(r)===row?.canonicalKey);return openQueueItem(better);}
   if(kind==='NEXT')return nextEditorialReview();
   if(kind==='FACT'||kind==='CLAIM')return goStage('optimise');
   if(kind==='IMPROVE')return autoImprove();
-  if(kind==='IMAGES')return goStage('images');
+  if(kind==='IMAGES'){renderVisualPlan();return goStage('images');}
   if(kind==='BUILD'){await buildAssets();return goStage('assets');}
   if(kind==='FINAL')return goStage('assets');
   if(kind==='DOWNLOAD'){goStage('download');return downloadPackage();}
 }
 function autoImprove(){
-  if(state.busy||!state.originalContent)return;
+  if(state.busy||state.batchBusy||!state.originalContent)return;
   const before=state.assessment.score;
   saveProductionSession({iteration:(state.productionSession.iteration||0)+1,override:undefined});
   const selected=state.originalContent;applyContent(selected);renderEditorialQueue();goStage('optimise');
   toast(`Auto Improve complete · ${before} → ${state.assessment.score} · ${state.assessment.recommendation}. Facts preserved.`);
 }
 function overrideDecision(decision){
-  if(state.busy||!state.originalContent)return;
+  if(state.busy||state.batchBusy||!state.originalContent)return;
   if(decision==='PRODUCE'&&(state.assessment.gaps.length||!state.assessment.verified||state.assessment.duplicateStatus==='HOLD_DUPLICATE'))return toast('Resolve the specific fact, claim or duplicate first.',true);
   saveProductionSession({override:decision});state.assessment=assessSelected();renderQc();renderEditorialWorkspace();renderEditorialQueue();
 }
@@ -804,13 +808,14 @@ function renderFinalPreview(){
   $('previewPrev').disabled=!pages.length;$('previewNext').disabled=!pages.length;
 }
 function confirmLooksGood(){
+  if(state.batchBusy||state.busy)return;
   renderQc();if(!state.gates?.finalAssetsBuilt||!state.gates?.technicalImageQc||!state.assessment.ready)return toast('Build all current final assets before Looks Good.',true);
   if(state.manifest.entries.some(e=>['FIX IMAGE','REGENERATE'].includes(state.imageReviews[e.slotId]?.status)))return toast('Replace the images marked Fix or Regenerate first.',true);
   for(const entry of state.manifest.entries){const image=state.images[entry.slotId];if(!image)continue;const review={status:'PASS',method:'SIMPLE_FINAL_POST_REVIEW',imageRevision:image.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[entry.slotId]=review;localStorage.setItem(slotReviewKey(entry.slotId),JSON.stringify(review));}
-  state.visualQcConfirmedFor=reviewSignature();localStorage.setItem(`capc:visual:${keyFor('review','visual')}`,state.visualQcConfirmedFor);renderQc();renderSlots();goStage('download');toast('Looks Good saved for this current post.');
+  state.visualQcConfirmedFor=reviewSignature();localStorage.setItem(`capc:visual:${keyFor('review','visual')}`,state.visualQcConfirmedFor);renderQc();renderSlots();refreshProductionBatch().catch(e=>toast(e.message,true));goStage('download');toast('Looks Good saved for this current post.');
 }
-function repairFinal(status){const current=finalPages()[state.previewIndex||0];if(!current)return;const ids=[...(current.item.generation_inputs||[]).map(i=>i.slot_id),...(current.item.source_input_ids||[])];state.repairSlotIds=ids;goStage('images');$('imageQueueNext').textContent=`Choose the affected image below · ${ids.join(', ')}`;if(ids.length===1)saveSimpleImageReview(ids[0],status);else{for(const id of ids)document.querySelector(`[data-slot="${CSS.escape(id)}"]`)?.classList.add('repair-target');toast('Choose Fix Image or Regenerate on the affected slot. Unaffected images remain.');}}
-function saveSimpleImageReview(slotId,status){const image=state.images[slotId],entry=state.manifest.entries.find(e=>e.slotId===slotId);if(!image||!entry)return;const review={status,method:'SIMPLE_IMAGE_REVIEW',imageRevision:image.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[slotId]=review;localStorage.setItem(slotReviewKey(slotId),JSON.stringify(review));invalidateReview();renderSlots();renderQc();if(status!=='PASS')copyText(`FIX / REGENERATE THIS IMAGE ONLY. Preserve other images.\n\n${buildSlotPrompt(state.content,slotId)}`,'Affected image prompt copied.');}
+function repairFinal(status){if(state.busy||state.batchBusy)return;const current=finalPages()[state.previewIndex||0];if(!current)return;const ids=[...(current.item.generation_inputs||[]).map(i=>i.slot_id),...(current.item.source_input_ids||[])];state.repairSlotIds=ids;goStage('images');$('imageQueueNext').textContent=`Choose the affected image below · ${ids.join(', ')}`;if(ids.length===1)saveSimpleImageReview(ids[0],status);else{for(const id of ids)document.querySelector(`[data-slot="${CSS.escape(id)}"]`)?.classList.add('repair-target');toast('Choose Fix Image or Regenerate on the affected slot. Unaffected images remain.');}}
+function saveSimpleImageReview(slotId,status){if(state.busy||state.batchBusy)return;const image=state.images[slotId],entry=state.manifest.entries.find(e=>e.slotId===slotId);if(!image||!entry)return;const review={status,method:'SIMPLE_IMAGE_REVIEW',imageRevision:image.revision,semanticKey:entry.semanticKey,reviewedAt:new Date().toISOString()};state.imageReviews[slotId]=review;localStorage.setItem(slotReviewKey(slotId),JSON.stringify(review));invalidateReview();renderSlots();renderQc();if(status!=='PASS')copyText(`FIX / REGENERATE THIS IMAGE ONLY. Preserve other images.\n\n${buildSlotPrompt(state.content,slotId)}`,'Affected image prompt copied.');}
 
 function moveContent(direction) {
   const index = state.records.findIndex((item) => item.contentId === state.content.contentId);
@@ -921,6 +926,19 @@ async function buildInformationAsset(assetItem) {
 
 async function buildMethodGrid(assetItem) {
   const outputs=[];
+  if(assetItem.method_steps){
+    for(const input of assetItem.generation_inputs){
+      const steps=assetItem.method_steps.filter(s=>s.image_slot_id===input.slot_id);if(!steps.length)continue;
+      const {canvas,context}=canvas2d();context.fillStyle='#f4f3ef';context.fillRect(0,0,1440,1800);
+      coverDraw(context,await loadImage(state.images[input.slot_id].blob),0,0,1440,710);
+      context.fillStyle='#fff';context.fillRect(70,660,1300,1070);context.fillStyle='#f96332';context.textBaseline='top';context.font='700 42px "PingFang SC",sans-serif';
+      context.fillText(`做法 · 步骤 ${assetItem.method_steps.indexOf(steps[0])+1}–${assetItem.method_steps.indexOf(steps.at(-1))+1}`,120,725);
+      context.fillStyle='#66615b';context.font='500 32px "PingFang SC",sans-serif';context.fillText('照片展示其中一个关键状态；完整做法如下',120,790);
+      const copy=steps.map(step=>`${assetItem.method_steps.indexOf(step)+1}. ${step.overlay_text||[step.step_heading,step.step_supporting_text].join('\n')}`).join('\n\n');
+      context.fillStyle='#252422';context.font='500 45px "PingFang SC",sans-serif';drawLines(context,copy,120,858,1200,62,13);outputs.push(canvas);
+    }
+    return outputs;
+  }
   const inputs=assetItem.generation_inputs;
   for(let offset=0;offset<inputs.length;offset+=2) {
     const {canvas,context}=canvas2d();
@@ -965,7 +983,7 @@ async function buildDetailAsset(assetItem) {
 }
 
 async function buildAssetCanvas(assetItem) {
-  if (["method_grid_2x3", "method_grid_adaptive"].includes(assetItem.layout_type) && assetItem.generation_inputs.length > 1) return buildMethodGrid(assetItem);
+  if (["method_grid_2x3", "method_grid_adaptive"].includes(assetItem.layout_type) && (assetItem.method_steps || assetItem.generation_inputs).length > 1) return buildMethodGrid(assetItem);
   if (assetItem.layout_type === "cover_overlay") return [await buildCoverAsset(assetItem)];
   if (assetItem.layout_type === "detail_overlay") return [await buildDetailAsset(assetItem)];
   return [await buildInformationAsset(assetItem)];
@@ -975,11 +993,11 @@ function canvasBlob(canvas) {
   return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Canvas export failed.")), "image/png", 1));
 }
 
-async function buildAssets() {
+async function buildAssets(batchOperation=false) {
   if (!state.generationReadiness?.ready) return toast("Build is blocked until the content is ready to produce.", true);
   const missing = state.manifest.entries.filter((entry) => entry.required && !state.images[entry.slotId]).map((entry) => entry.label);
   if (missing.length) return toast(`Missing required images: ${missing.join(", ")}.`, true);
-  if(state.busy)return;
+  if(state.busy||(state.batchBusy&&batchOperation!==true))return;
   state.busy=true;invalidateReview();
   const token=state.contentLoadToken;
   const button = $("buildAssets");
@@ -1079,7 +1097,93 @@ async function markPosted() {
   }
 }
 
+function renderVisualPlan(){
+ if(!state.content||!$('visualPlanCount'))return;
+ const plan=state.content.fastVisualPlan,entries=state.manifest.entries;
+ $('visualPlanCount').textContent=`${entries.length} images required · estimated generations: ${entries.length}`;
+ $('visualPlanJobs').innerHTML=entries.map(e=>`<li><b>${String(e.sequence).padStart(2,'0')} ${escapeHtml(e.label)}</b> <small>${escapeHtml(e.expectedFilename)}</small></li>`).join('');
+ $('visualPlanHint').textContent=plan?`${plan.previousImageCount} → ${plan.imageCount} source images · all source instructions retained.${plan.aboveTargetReason?' '+plan.aboveTargetReason:''}`:'Every image has a distinct source-defined job.';
+ $('startImageProduction').disabled=!state.assessment?.ready||state.busy||state.batchBusy;
+ $('regenerateVisualPlan').disabled=state.busy||state.batchBusy;
+}
+function activeProductionBatch(){try{const value=JSON.parse(localStorage.getItem('capc:activeImageBatch')||'null');return value&&Array.isArray(value.posts)?value:null;}catch{return null;}}
+function persistProductionBatch(batch){localStorage.setItem('capc:activeImageBatch',JSON.stringify(batch));state.productionBatch=batch;}
+async function storedMap(store){const db=await openDb();return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),s=tx.objectStore(store),keys=s.getAllKeys(),values=s.getAll();tx.oncomplete=()=>resolve(new Map(keys.result.map((key,i)=>[key,values.result[i]])));tx.onerror=()=>reject(tx.error);}).finally(()=>db.close());}
+async function refreshProductionBatch(){
+ const token=state.batchProgressToken=(state.batchProgressToken||0)+1;state.productionBatch=activeProductionBatch();
+ for(const row of state.editorialRows||[]){row.assessment=assessProduction(row.content,{session:readProductionSession(row.content,row.sheetId),duplicateStatus:row.duplicateStatus});row.downloaded=!!readProductionSession(row.content,row.sheetId).downloadedAt;}
+ const [imagesByKey,assetsByKey]=state.productionBatch?await Promise.all([storedMap('images'),storedMap('assets')]):[new Map(),new Map()];if(token!==state.batchProgressToken)return;
+ const visualByKey=new Map(),reviewsByKey=new Map();for(const post of state.productionBatch?.posts||[]){const key=`${post.sheetId}:${post.contentId}`;visualByKey.set(key,localStorage.getItem(`capc:visual:${key}:review:visual`));for(const storageKey of imagesByKey.keys())if(storageKey.startsWith(`${key}:image:`)){const slot=storageKey.slice(`${key}:image:`.length);try{reviewsByKey.set(`${key}:image-review:${slot}`,JSON.parse(localStorage.getItem(`capc:image-review:${key}:image-review:${slot}`)||'null'));}catch{}}}
+ state.productionBatchResolved=resolveProductionBatch(state.productionBatch,state.editorialRows||[],{imagesByKey,assetsByKey,visualByKey,reviewsByKey});renderProductionBatch();
+}
+function renderProductionBatch(){
+ const batch=state.productionBatch,r=state.productionBatchResolved||{posts:[],entries:[]},busy=state.batchBusy||state.busy;
+ $('productionBatchTitle').textContent=batch?`BATCH ${String(batch.number).padStart(2,'0')} · ${r.posts.length} posts`:'Batch image production';
+ $('productionBatchHint').textContent=batch?`${r.posts.length} selected / ${batch.requestedCount} requested · ${r.totalImages} images required · ${r.posts.length?(r.totalImages/r.posts.length).toFixed(1):0} per post${r.posts.length<batch.requestedCount?' · Only strong eligible content selected.':''}`:'Strong complete low-risk posts, with variety and duplicates excluded.';
+ $('productionBatchStats').innerHTML=batch?[['Posts Ready',r.posts.filter(p=>p.valid).length],['Images Ready',`${r.imagesReady} / ${r.totalImages}`],['Posts Built',`${r.builtCount} / ${r.posts.length}`],['Ready to Download',r.downloadReady]].map(([name,value])=>`<div class="card card-stats"><span>${name}</span><strong>${value}</strong></div>`).join(''):'';
+ const next=r.next;$('batchNextImage').textContent=next?`NEXT IMAGE · P${String(next.postNumber).padStart(2,'0')} · ${String(next.sequence).padStart(2,'0')} ${next.label}`:batch?'Images complete · build and inspect ready posts.':'Select a batch to begin.';
+ $('batchContinue').hidden=!batch;$('batchResumeLabel').textContent=batch?`CONTINUE BATCH ${String(batch.number).padStart(2,'0')} · ${r.imagesReady}/${r.totalImages} images ready`:'';
+ for(const id of ['batchCopyNext','batchCopyPost'])$(id).disabled=busy||!next;
+ $('batchCopyAll').disabled=busy||!next||!r.posts.length||r.posts.some(p=>!p.valid);$('batchImport').disabled=busy||!r.entries.some(e=>e.valid);$('batchBuildReady').disabled=busy||!r.readyToBuild;$('batchBuildReady').textContent=`Build ${r.readyToBuild||0} Ready Posts`;
+ $('batchDownloadReady').disabled=busy||!r.downloadReady;$('batchDownloadReady').textContent=`Download ${r.downloadReady||0} Ready Posts`;
+ document.querySelectorAll('[data-batch-size]').forEach(b=>b.disabled=busy||!state.editorialRows?.length);
+ $('productionBatchRows').innerHTML=r.posts.map(p=>`<tr data-batch-post="${p.postNumber}"><td><b>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</b><br><small>${escapeHtml(p.contentId)} · ${escapeHtml(p.content?.contentType||'Source unavailable')}</small></td><td>${p.imageCount}/${p.entries.length}</td><td>${escapeHtml(p.status)}</td><td><button type="button" class="btn btn-neutral" data-batch-open="${p.postNumber}" ${busy?'disabled':''}>${p.built?'Preview Final →':'Open Post →'}</button>${!p.valid?`<button class="btn btn-neutral" data-batch-refresh="${p.postNumber}" ${busy?'disabled':''}>Refresh This Plan</button>`:''}</td></tr>`).join('');
+ $('batchImageQueue').innerHTML=r.posts.map(p=>`<li class="batch-post-label"><strong>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</strong></li>${p.entries.map(e=>`<li data-batch-filename="${escapeHtml(e.batchFilename)}"><b>${e.ready?'✓':'○'}</b><span>${escapeHtml(e.label)}</span><small>${escapeHtml(e.batchFilename)}</small></li>`).join('')}`).join('');
+ $('productionBatchRows').querySelectorAll('[data-batch-open]').forEach(b=>b.onclick=()=>openBatchPost(Number(b.dataset.batchOpen)));
+ $('productionBatchRows').querySelectorAll('[data-batch-refresh]').forEach(b=>b.onclick=async()=>{const p=r.posts.find(p=>p.postNumber===Number(b.dataset.batchRefresh));if(!p?.row?.assessment.ready||p.row.assessment.risk.tier!=='LOW'||!['UNIQUE','CANONICAL'].includes(p.row.duplicateStatus))return toast('This post is no longer eligible. Select a new batch or resolve its source issue.',true);p.stamp=batchPostStamp(p.row);persistProductionBatch({...batch,posts:batch.posts.map(saved=>saved.postNumber===p.postNumber?{...saved,stamp:p.stamp}:saved)});await refreshProductionBatch();});
+}
+function setBatchBusy(value){state.batchBusy=value;for(const id of ['sheetSelect','recipeSelect','search','prev','next','autoImprove','workNext','quickStart','primaryAction','queueLoad','confirmClaim','startImageProduction','regenerateVisualPlan','imageImport','imageBuild','allFiles'])$(id).disabled=value;renderProductionBatch();if(!value&&state.content){renderQc();renderVisualPlan();}}
+async function chooseProductionBatch(count){
+ if(state.batchBusy||state.busy)return;
+ try{await refreshProductionBatch();const number=Number(localStorage.getItem('capc:imageBatchCounter')||0)+1,batch=createProductionBatch(state.editorialRows,count,number);persistProductionBatch(batch);localStorage.setItem('capc:imageBatchCounter',String(number));state.batchUnmatched=[];renderBatchExceptions();await refreshProductionBatch();goStage('batchProduction');}catch(error){toast(error.message,true);}
+}
+async function activateBatchPost(post){
+ if(!post?.valid)throw Error('Post source or plan changed. Refresh the affected plan first.');
+ state.batchInternal=true;try{await openQueueItem(post.row);}finally{state.batchInternal=false;}await state.contentReady;
+ if(state.content?.contentId!==post.contentId||Number(state.sourceId)!==Number(post.sheetId)||!state.assessment.ready||batchPostStamp({...post.row,assessment:state.assessment})!==post.stamp)throw Error('Post changed while loading. Refresh the affected batch plan.');
+}
+async function openBatchPost(number){if(state.batchBusy||state.busy)return;try{await refreshProductionBatch();const post=state.productionBatchResolved.posts.find(p=>p.postNumber===number);await activateBatchPost(post);goStage(post.built?'assets':'images');}catch(error){toast(error.message,true);}}
+function renderBatchExceptions(){const list=state.batchUnmatched||[];$('batchExceptions').hidden=!list.length;$('batchExceptionRows').innerHTML=list.map((item,i)=>`<div class="unmatched-row"><span>${escapeHtml(item.file.name)} · ${escapeHtml(item.reason)}</span><select data-batch-destination="${i}" aria-label="Batch destination for ${escapeHtml(item.file.name)}"><option value="">Choose post and slot…</option>${state.productionBatchResolved.entries.filter(e=>e.valid).map(e=>`<option value="${escapeHtml(e.batchFilename)}">${escapeHtml(e.batchFilename)}</option>`).join('')}</select><button data-batch-assign="${i}" class="btn btn-neutral" type="button">Assign Image</button></div>`).join('');$('batchExceptionRows').querySelectorAll('[data-batch-assign]').forEach(b=>b.onclick=async()=>{if(state.batchBusy)return;const i=Number(b.dataset.batchAssign),filename=$('batchExceptionRows').querySelector(`[data-batch-destination="${i}"]`).value;if(!filename)return toast('Choose an explicit destination.',true);setBatchBusy(true);try{await refreshProductionBatch();const e=state.productionBatchResolved.entries.find(e=>e.valid&&e.batchFilename===filename);if(!e)throw Error('Destination is no longer current.');await storeBatchImage(e,list[i].file);list.splice(i,1);await refreshProductionBatch();renderBatchExceptions();if(state.content)await loadContentState();}catch(error){toast(error.message,true);}finally{setBatchBusy(false);}});}
+async function storeBatchImage(entry,file){
+ const post=state.productionBatchResolved.posts.find(p=>p.postNumber===entry.postNumber);if(!post?.valid)throw Error('Batch plan is no longer current.');
+ const value=await prepareStoredImage(file,entry,post.images);await putStored('images',`${entry.postKey}:image:${entry.slotId}`,value);post.images[entry.slotId]=value;
+ localStorage.removeItem(`capc:image-review:${entry.postKey}:image-review:${entry.slotId}`);localStorage.removeItem(`capc:visual:${entry.postKey}:review:visual`);
+}
+async function importBatchImages(files){
+ if(state.batchBusy||state.busy)return;const list=Array.from(files);if(list.length>200||list.reduce((n,f)=>n+f.size,0)>1024*1024*1024)return toast('Import up to 200 images / 1 GB at a time. Each image remains limited to 35 MB.',true);
+ setBatchBusy(true);try{await refreshProductionBatch();const {matched,unmatched}=planBatchImports(list,state.productionBatchResolved);state.batchUnmatched=unmatched;let imported=0;for(const {file,entry} of matched){try{await storeBatchImage(entry,file);imported++;}catch(error){state.batchUnmatched.push({file,reason:error.message});}}await refreshProductionBatch();renderBatchExceptions();if(state.content)await loadContentState();toast(`${imported} matched · ${state.batchUnmatched.length} need attention.`);}catch(error){toast(error.message,true);}finally{$('batchFiles').value='';setBatchBusy(false);}
+}
+async function buildReadyBatchPosts(){
+ if(state.batchBusy||state.busy)return;setBatchBusy(true);try{await refreshProductionBatch();const posts=state.productionBatchResolved.posts.filter(p=>p.readyToBuild);let built=0;for(const post of posts){$('productionBatchHint').textContent=`Building P${post.postNumber} · ${post.title}`;await activateBatchPost(post);await buildAssets(true);refreshStale();if(!state.gates?.finalAssetsBuilt)throw Error(`P${post.postNumber} did not build. See its error.`);built++;}await refreshProductionBatch();goStage('batchProduction');toast(`${built} posts built. Inspect each Final preview; completed posts can download independently.`);}catch(error){toast(error.message,true);}finally{setBatchBusy(false);}
+}
+function packageFiles(content,plan,assets,assessment,source,extra={}){
+ const entries=exportEntries(content,plan,assets),folder=safeFilename(`${content.contentId}_${content.title}`),prefix=extra.batchPostPrefix?`${extra.batchPostPrefix}_${folder}`:folder;
+ const metadata={Content_ID:content.contentId,Title:content.title,source,template:content.templateType,productionDecision:assessment.recommendation,productionCheck:assessment.mode,editorialStatus:runEditorialReview(content).status,exportedAt:new Date().toISOString(),fastVisualPlan:content.fastVisualPlan,assetOrder:entries.map(({blob,...entry})=>entry),...extra};
+ return {folder:prefix,files:[...entries.map(e=>({name:`${prefix}/${e.filename}`,blob:e.blob})),{name:`${prefix}/caption.txt`,blob:new Blob([content.caption],{type:'text/plain;charset=utf-8'})},{name:`${prefix}/manifest.json`,blob:new Blob([JSON.stringify(metadata,null,2)],{type:'application/json'})}]};
+}
+async function downloadReadyBatchPosts(){
+ if(state.batchBusy||state.busy)return;setBatchBusy(true);try{await refreshProductionBatch();const batch=state.productionBatch,r=state.productionBatchResolved,posts=r.posts.filter(p=>p.reviewed);if(!posts.length)throw Error('Inspect a built Final preview and choose Looks Good before downloading.');
+ const files=posts.flatMap(p=>packageFiles(p.content,p.plan,p.assets,p.assessment,{sheetId:p.sheetId,name:p.row.source},{batchId:batch.id,postNumber:p.postNumber,batchPostPrefix:`P${String(p.postNumber).padStart(2,'0')}`}).files);
+ files.push({name:'batch-manifest.json',blob:new Blob([JSON.stringify({batchId:batch.id,selectedCount:r.posts.length,exportedCount:posts.length,posts:posts.map(p=>({postNumber:p.postNumber,contentId:p.contentId,sheetId:p.sheetId}))},null,2)],{type:'application/json'})});
+ downloadBlob(await createZip(files),`${batch.id}_${posts.length}_ready_posts.zip`);
+ for(const post of posts){const saved=readProductionSession(post.row.content,post.sheetId);localStorage.setItem(productionSessionKey(post.sheetId,post.contentId),JSON.stringify({...saved,sourceStamp:sourceStamp(post.row.content),downloadedAt:new Date().toISOString()}));}await refreshProductionBatch();toast(`${posts.length} current reviewed posts downloaded. Unfinished posts remain in the batch.`);
+ }catch(error){toast(error.message,true);}finally{setBatchBusy(false);}
+}
+function bindBatchEvents(){
+ const open=()=>{$('batchProduction').hidden=false;refreshProductionBatch().then(()=>goStage('batchProduction')).catch(e=>toast(e.message,true));};$('openBatch').onclick=open;$('quickBatch').onclick=open;
+ document.querySelectorAll('[data-batch-size]').forEach(b=>b.onclick=()=>chooseProductionBatch(Number(b.dataset.batchSize)));
+ $('refreshProductionBatch').onclick=()=>refreshProductionBatch().catch(e=>toast(e.message,true));$('continueBatch').onclick=()=>{const e=state.productionBatchResolved?.next;return e?openBatchPost(e.postNumber):goStage('batchProduction');};
+ $('batchImport').onclick=()=>$('batchFiles').click();$('batchFiles').onchange=()=>importBatchImages($('batchFiles').files);
+ const zone=$('batchDropzone');for(const event of ['dragenter','dragover'])zone.addEventListener(event,e=>{e.preventDefault();zone.classList.add('dragover');});for(const event of ['dragleave','drop'])zone.addEventListener(event,e=>{e.preventDefault();zone.classList.remove('dragover');});zone.addEventListener('drop',e=>importBatchImages(e.dataTransfer.files));
+ $('batchCopyNext').onclick=()=>{const e=state.productionBatchResolved?.next;if(e)copyText(batchImagePrompt(state.productionBatch,state.productionBatchResolved,{entry:e}),'Next batch image prompt copied.');};
+ for(const [id,scope] of [['batchCopyPost','post'],['batchCopyAll','all']])$(id).onclick=()=>{try{copyText(batchImagePrompt(state.productionBatch,state.productionBatchResolved,scope==='post'?{postNumber:state.productionBatchResolved.next?.postNumber}:{}),'Batch production prompt copied.');}catch(error){toast(error.message,true);}};
+ $('batchBuildReady').onclick=buildReadyBatchPosts;$('batchDownloadReady').onclick=downloadReadyBatchPosts;
+ $('startImageProduction').onclick=()=>{goStage('images');$('copyNextPrompt').focus();};$('regenerateVisualPlan').onclick=()=>{if(!state.originalContent||state.busy||state.batchBusy)return;applyContent(state.originalContent);renderVisualPlan();toast('Source-based image plan recalculated. Original information preserved.');};
+ if(activeProductionBatch())$('batchProduction').hidden=false;
+}
+
 function bindEvents() {
+  bindBatchEvents();
   $('queueLoad').addEventListener('click',loadEditorialQueue);
   for(const id of ['queueFilter','queueSearch','queueShowDuplicates'])$(id).addEventListener(id==='queueSearch'?'input':'change',renderEditorialQueue);
   $('primaryAction').addEventListener('click',primaryProductionAction);
@@ -1352,14 +1456,11 @@ async function start() {
 start();
 
 async function downloadPackage() {
-  renderQc();if(!state.gates?.exportReady || state.busy)return toast("Complete the export gates first.",true);
+  renderQc();if(!state.gates?.exportReady || state.busy||state.batchBusy)return toast("Complete the export gates first.",true);
   state.busy=true;renderQc();
   try {
-    const entries=exportEntries(state.content,state.plan,state.assets);
-    const folder=safeFilename(`${state.content.contentId}_${state.content.title}`);
-    const metadata={Content_ID:state.content.contentId,Title:state.content.title,source:{name:state.sourceName,sheetId:state.sourceId,kind:state.source},template:state.content.templateType,builtAt:new Date(Math.max(...Object.values(state.assets).map(a=>a.updatedAt))).toISOString(),exportedAt:new Date().toISOString(),qc:state.gates,heuristicContentScore:state.assessment.score,productionDecision:state.assessment.recommendation,productionCheck:state.assessment.mode,editorialStatus:state.editorialReview.status,assetOrder:entries.map(({blob,...entry})=>entry)};
-    const files=entries.map(e=>({name:`${folder}/${e.filename}`,blob:e.blob}));
-    files.push({name:`${folder}/caption.txt`,blob:new Blob([state.content.caption],{type:"text/plain;charset=utf-8"})},{name:`${folder}/manifest.json`,blob:new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"})});
+    const metadata={builtAt:new Date(Math.max(...Object.values(state.assets).map(a=>a.updatedAt))).toISOString(),qc:state.gates,heuristicContentScore:state.assessment.score};
+    const {folder,files}=packageFiles(state.content,state.plan,state.assets,state.assessment,{name:state.sourceName,sheetId:state.sourceId,kind:state.source},metadata);
     downloadBlob(await createZip(files),`${folder}.zip`);toast("One ordered production ZIP downloaded.");saveProductionSession({downloadedAt:new Date().toISOString()});const next=nextSuggested();$("nextContentCard").hidden=!next;$("nextContentTitle").textContent=next?`${next.title} · ${next.score} · PRODUCE`:"No further produce-ready content in this queue.";
   }catch(error){toast(error.message,true);}finally{state.busy=false;renderQc();}
 }

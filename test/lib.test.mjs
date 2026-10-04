@@ -51,8 +51,8 @@ test("dynamic method composition uses stable source IDs and downloads final asse
   assert.match(methodSource, /state\.images\[input\.slot_id\]/);
   assert.match(methodSource, /inputs\.slice\(offset,offset\+2\)/);
   assert.match(methodSource, /outputs\.push\(canvas\)/);
-  assert.match(appSource, /\["method_grid_2x3", "method_grid_adaptive"\]\.includes\(assetItem\.layout_type\) && assetItem\.generation_inputs\.length > 1/);
-  assert.match(appSource, /exportEntries\(state\.content,state\.plan,state\.assets\)/);
+  assert.match(appSource, /\["method_grid_2x3", "method_grid_adaptive"\]\.includes\(assetItem\.layout_type\) && \(assetItem\.method_steps \|\| assetItem\.generation_inputs\)\.length > 1/);
+  assert.match(appSource, /exportEntries\(content,plan,assets\)/);
   assert.match(appSource, /createZip\(files\)/);
   assert.doesNotMatch(appSource, /state\.manifest\.entries\.forEach\(\(item, index\).*downloadBlob/s);
 });
@@ -70,7 +70,7 @@ test("V4.1 renderer uses adaptive Ingredients and Method layouts", () => {
 test("separate production gates block posting while keeping final-asset preview available", () => {
   assert.match(appSource, /publishing\.status === "PUBLISHED" \? "Already published" : publishing\.ready \? "Ready to post" : "NOT READY TO POST"/);
   assert.match(appSource, /markPosted.*!publishing\.ready/s);
-  assert.match(appSource, /function buildAssets\(\) \{/);
+  assert.match(appSource, /function buildAssets\(batchOperation=false\) \{/);
   assert.match(appSource, /copyPrompt.*generationReadiness/s);
   assert.match(appSource, /\.disabled = !state\.assessment\.ready/);
   assert.match(appSource, /Resolve the specific content blocker first/);

@@ -2,6 +2,7 @@
 import {runContentQc,runEditorialReview,buildGenerationManifest,TEMPLATE_REGISTRY} from './content-model.mjs';
 import {classifyClaimRisk} from './editorial-pipeline.mjs';
 import {auditContent} from './content-quality.mjs';
+import {resolveFastVisualPlan} from './fast-visual-plan.mjs';
 export const ASSISTANT_VERSION='2026-10-04.1';
 const text=v=>String(v??'').trim();
 const lines=v=>text(v).split(/\n+/).map(text).filter(Boolean);
@@ -27,7 +28,7 @@ export function optimiseContent(source,{iteration=0,compact=true}={}){
   const originalTitle=text(source.title),title=natural(originalTitle),body=natural(source.contentBody);
   const planResult=compact?compactPlan(source):{plan:structuredClone(source.resolvedAssetPlan),removed:[]};
   let plan=planResult.plan.map(a=>({...a,overlay_text:natural(a.overlay_text),generation_inputs:(a.generation_inputs||[]).map(i=>({...i,overlay_text:natural(i.overlay_text)}))}));
-  const steps=plan.flatMap(a=>a.generation_inputs||[]).map(i=>text(i.overlay_text)).filter(Boolean);
+  const steps=plan.flatMap(a=>a.method_steps||a.generation_inputs||[]).map(i=>text(i.overlay_text)).filter(Boolean);
   const sentences=body.split(/(?<=[。！？；])|\n/).map(text).filter(Boolean);
   const why=sentences.filter(s=>/(?:因为|原因|因此|所以|导致|否则|以免|避免|防止|容易|不能单凭|不能保证|不一定|刚熟)/.test(s)).slice(0,2).join('\n');
   const action=steps.length?steps.join('\n'):sentences.filter(s=>/(?:先|再|检查|观察|挑|选|加入|切|煮|炒|蒸|放|用|保持|避免|不要)/.test(s)).slice(0,6).join('\n');
@@ -53,7 +54,7 @@ export function optimiseContent(source,{iteration=0,compact=true}={}){
   }
   const ingredientAsset=plan.find(a=>a.asset_type==='INGREDIENTS');
   const sourceIngredients=source.sourceIngredients?.length?source.sourceIngredients:(ingredientAsset?.ingredient_items||[]).map(i=>typeof i==='string'?i:i.name).filter(Boolean);
-  const content={...source,title,hookText:hook,contentBody:body,caption,resolvedAssetPlan:plan,coveragePoints,sourceIngredients};
+  const content=resolveFastVisualPlan({...source,title,hookText:hook,contentBody:body,caption,resolvedAssetPlan:plan,coveragePoints,sourceIngredients});
   const finalCard=plan.find(a=>/CHECKLIST|SUMMARY|SAVE|TIPS/.test(a.asset_type));
   const structure=recipe?'Result → Ingredients → Method → Important tip → Final result':source.contentType==='MISTAKE_FIX'?'Problem → Wrong method → Source-backed reason → Correct method → Result':/SELECTION/.test(source.contentType)?'What to inspect → Good/bad signs → Choice → Checklist':/COMPARISON/.test(source.contentType)?'Options → Source-backed differences → Suitability → Decision':/KNOWLEDGE/.test(source.contentType)?'Question → Explanation → Practical implication → Action':'Situation → Practical points → Action → Recap';
   const changes=[];

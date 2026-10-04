@@ -39,7 +39,7 @@ export function assetSemanticKey(item) {
   return JSON.stringify({renderer: RENDER_VERSION, ...item});
 }
 export function sessionSignature(content, manifest, images, assets) {
-  return JSON.stringify({contentId:content.contentId, body:content.contentBody, caption:content.caption, profile:content.pageProfile, plan:content.resolvedAssetPlan, images:manifest.entries.map(e=>[e.slotId,e.semanticKey,images[e.slotId]?.revision || images[e.slotId]?.updatedAt]), assets:Object.entries(assets).map(([id,a])=>[id,a.semanticKey,a.sourceRevision,a.updatedAt,a.stale])});
+  return JSON.stringify({contentId:content.contentId, body:content.contentBody, caption:content.caption, profile:content.pageProfile||null, plan:content.resolvedAssetPlan, images:manifest.entries.map(e=>[e.slotId,e.semanticKey,images[e.slotId]?.revision || images[e.slotId]?.updatedAt]), assets:Object.entries(assets).sort(([a],[b])=>a.localeCompare(b)).map(([id,a])=>[id,a.semanticKey,a.sourceRevision,a.updatedAt,a.stale])});
 }
 export function planImports(files, manifest, matcher) {
   const candidates = files.map(file => ({file, slotId:matcher(file.name, manifest)}));

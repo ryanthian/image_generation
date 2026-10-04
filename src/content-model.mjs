@@ -467,6 +467,8 @@ export function runContentQc(content) {
   const failures = [];
   const warnings = [];
   const plan = content.resolvedAssetPlan || [];
+  const generatedSlots=new Set(plan.flatMap(item=>(item.generation_inputs||[]).map(input=>input.slot_id)));
+  for(const item of plan){for(const id of item.source_input_ids||[])if(!generatedSlots.has(id))failures.push({code:'UNKNOWN_COMPOSITION_IMAGE',detail:`${item.asset_id}: ${id}`});for(const step of item.method_steps||[])if(!generatedSlots.has(step.image_slot_id))failures.push({code:'METHOD_PHOTO_MAPPING_MISSING',detail:`${step.method_step_id||step.slot_id}: ${step.image_slot_id}`});}
   const covered = new Set(plan.flatMap((item) => Array.isArray(item.coverage_point_ids) ? item.coverage_point_ids : []));
   const hasRequiredDrinkStandardAssets = content.templateType === "DRINK_STANDARD"
     && TEMPLATE_REGISTRY.DRINK_STANDARD.required_asset_types.every((assetType) => plan.some((item) => item.asset_type === assetType));
@@ -487,9 +489,9 @@ export function runContentQc(content) {
     purposeKeys.set(key, item.asset_id);
     if (item.asset_type !== "COVER" && item.local_heading === content.title) warnings.push({ code: "TITLE_REPETITION", detail: item.asset_id });
   }
-  const method = plan.find((item) => item.asset_type === "METHOD" && item.generation_inputs.length > 1);
+  const method = plan.find((item) => item.asset_type === "METHOD" && (item.method_steps || item.generation_inputs).length > 1);
   if (method) {
-    method.generation_inputs.forEach((input, index) => {
+    (method.method_steps || method.generation_inputs).forEach((input, index) => {
       const expected = `M${index + 1}`;
       const actual = String(input.method_step_id || input.slot_id).toUpperCase();
       if (actual !== expected) failures.push({ code: "METHOD_MAPPING_MISMATCH", detail: `${actual} != ${expected}` });
@@ -507,7 +509,7 @@ const QUANTITY_PATTERN = /(?:\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升|
 function planText(content) {
   return (content.resolvedAssetPlan || []).flatMap((item) => [
     item.overlay_text, item.purpose, item.local_heading,
-    ...(item.generation_inputs || []).flatMap((input) => [input.step_heading, input.step_supporting_text, input.overlay_text])
+    ...(item.method_steps || item.generation_inputs || []).flatMap((input) => [input.step_heading, input.step_supporting_text, input.overlay_text])
   ]).filter(Boolean).join("\n");
 }
 
@@ -627,7 +629,7 @@ export function runEditorialReview(content) {
       add("RECIPE_QUANTITIES_OR_APPROXIMATION_MISSING", "Add reproducible quantities, or explicitly mark the recipe approximate and explain the limitation.");
     }
     const method = plan.find((item) => item.asset_type === "METHOD");
-    const steps = method?.generation_inputs || [];
+    const steps = method?.method_steps || method?.generation_inputs || [];
     const editorialSteps = steps.map((step, index) => {
       const caption = textValue(step.overlay_text);
       return {

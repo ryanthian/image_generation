@@ -1,3 +1,5 @@
+const FAST_VISUAL_PLAN=__FAST_VISUAL_PLAN_JS__;
+const BATCH_PRODUCTION=__BATCH_PRODUCTION_JS__;
 import { handleIntelligenceApi } from "./intelligence-server.mjs";
 import { logAppsScriptTrace, postAppsScriptRequest } from "./apps-script-bridge.mjs";
 import { buildOpportunityCanary, normalizePerformance } from "./opportunity-engine.mjs";
@@ -409,7 +411,9 @@ export default {
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url, executionContext);
     if (url.pathname === "/styles.css") return new Response(CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
-    if (url.pathname === "/production-core.js") return new Response(PRODUCTION_CORE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
+    if(url.pathname==="/fast-visual-plan.mjs")return new Response(FAST_VISUAL_PLAN,{headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
+    if(url.pathname==="/batch-production.mjs")return new Response(BATCH_PRODUCTION,{headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
+    if (url.pathname === "/production-core.js" || url.pathname === "/production-core.mjs") return new Response(PRODUCTION_CORE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if ((url.pathname === "/content-quality.js" || url.pathname === "/content-quality.mjs")) return new Response(CONTENT_QUALITY, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === '/editorial-pipeline.js' || url.pathname === '/editorial-pipeline.mjs') return new Response(EDITORIAL_PIPELINE, {headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});
     if (url.pathname === "/production-assistant.mjs") return new Response(PRODUCTION_ASSISTANT, {headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});

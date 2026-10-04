@@ -53,7 +53,7 @@
 
       <div class="content" id="productionView">
         <div id="persistentError" class="persistent-error" role="alert" hidden></div>
-        <section class="card quick-production"><div><p class="eyebrow">QUICK PRODUCTION</p><strong id="quickTitle">Finding the best content…</strong><p id="resumeHint" class="helper"></p></div><button class="btn btn-primary" id="quickStart" type="button">Start Production →</button></section>
+        <section class="card quick-production"><div><p class="eyebrow">QUICK PRODUCTION</p><strong id="quickTitle">Finding the best content…</strong><p id="resumeHint" class="helper"></p></div><div class="production-actions"><button class="btn btn-primary" id="quickStart" type="button">Start Production →</button><button class="btn btn-neutral" id="quickBatch" type="button">Batch</button></div></section>
         <nav class="card production-steps" aria-label="Production steps"><a href="#recipe">01 Content</a><a href="#optimise">02 AI Optimise</a><a href="#images">03 Images</a><a href="#assets">04 Final</a><a href="#download">05 Download</a><p id="nextAction" role="status">Choose content to begin.</p></nav>
         <details class="card editorial-queue-card" id="editorialQueue"><summary>Content list · choose what to produce</summary>
           <div class="card-header"><div><p class="eyebrow">CONTENT PRODUCTION</p><h2 id="queueTitle">Content list</h2></div><button class="btn btn-info" id="queueLoad" type="button">Refresh Content</button></div>
@@ -171,8 +171,20 @@
             <div><p class="eyebrow">SOURCE IMAGES</p><h2 id="slotHeading">Images</h2></div>
             <p class="helper" id="slotHelper">Copy the next prompt, then import your downloaded images.</p>
           </div>
+          <div id="visualPlan" class="visual-plan setup-card-body"><p class="eyebrow">IMAGE PLAN</p><strong id="visualPlanCount"></strong><ol id="visualPlanJobs"></ol><p class="helper" id="visualPlanHint"></p><div class="production-actions"><button id="startImageProduction" class="btn btn-primary" type="button">Start Image Production →</button><button id="regenerateVisualPlan" class="btn btn-neutral" type="button">Regenerate Plan</button><button id="openBatch" class="btn btn-info" type="button">Batch</button></div></div>
           <div class="image-queue"><strong id="imageQueueProgress">0 / 0 READY</strong><span id="imageQueueNext"></span><button class="btn btn-primary" id="copyNextPrompt" type="button">Copy Next Prompt</button><button class="btn btn-info" id="imageImport" type="button">Import Images</button><button class="btn btn-neutral" id="copyMaster" type="button">Copy Master Session Prompt</button><button class="btn btn-warning" id="imageBuild" type="button">Build Final Assets →</button></div><div id="slots" class="slot-grid"></div>
           <section id="unmatchedPanel" class="setup-card-body" hidden><h3>Unmatched images</h3><p>Choose each destination explicitly. No image is assigned by upload order.</p><div id="unmatchedList"></div></section>
+        </section>
+
+        <section class="card" id="batchProduction" hidden>
+          <div class="card-header"><div><p class="eyebrow">BATCH IMAGE PRODUCTION</p><h2 id="productionBatchTitle">Batch</h2></div><button id="refreshProductionBatch" class="btn btn-neutral" type="button">Refresh Progress</button></div>
+          <div class="setup-card-body"><div class="production-actions"><button data-batch-size="5" class="btn btn-info" type="button">Auto Select 5</button><button data-batch-size="10" class="btn btn-info" type="button">Auto Select 10</button><button data-batch-size="20" class="btn btn-info" type="button">Auto Select 20</button></div><p id="productionBatchHint" class="helper" role="status">Strong complete low-risk posts, with variety and duplicates excluded.</p>
+          <div id="productionBatchStats" class="batch-stats"></div><div id="batchContinue" hidden><strong id="batchResumeLabel"></strong><button id="continueBatch" class="btn btn-primary" type="button">Continue</button></div>
+          <div class="image-queue" id="batchDropzone"><strong id="batchNextImage">Select a batch to begin.</strong><button id="batchCopyNext" class="btn btn-primary" type="button">Copy Next Prompt</button><button id="batchImport" class="btn btn-info" type="button">Import Images</button><button id="batchCopyPost" class="btn btn-neutral" type="button">Copy Current Post Prompt</button><button id="batchCopyAll" class="btn btn-neutral" type="button">Copy Batch Prompt</button><p class="helper">Drop all batch images here. Filenames map batch → post → slot.</p></div><input id="batchFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+          <div class="production-actions"><button id="batchBuildReady" class="btn btn-warning" type="button">Build Ready Posts</button><button id="batchDownloadReady" class="btn btn-primary" type="button">Download Ready Posts</button></div>
+          <div id="batchExceptions" hidden><h3>Images needing attention</h3><div id="batchExceptionRows"></div></div>
+          </div><div class="table-scroll"><table class="queue-table"><thead><tr><th>Post</th><th>Images</th><th>Progress</th><th>Next action</th></tr></thead><tbody id="productionBatchRows"></tbody></table></div>
+          <details class="advanced-details"><summary>Batch image queue · deterministic filenames</summary><ol id="batchImageQueue" class="manifest-list"></ol></details>
         </section>
 
         <section class="card" id="assets">
