@@ -5,6 +5,7 @@ import { compileV4CanaryCandidate, V4_CANARY_HEADERS } from "./v4-preappend.mjs"
 const DATA = __RECIPES_JSON__;
 const CANARY = __CANARY_JSON__;
 const V42_HISTORY = __V42_HISTORY_JSON__;
+const HQ_TOP20 = __HQ_TOP20_JSON__;
 const INDEX = __INDEX_HTML__;
 const CSS = __STYLES_CSS__;
 const APP = __APP_JS__;
@@ -15,7 +16,8 @@ const SPREADSHEET_ID = "1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s";
 const SHEETS = [
   { name: "Eunice Recipe Draft 20 - 2026-09-19", label: "All Eunice recipes · 120" },
   { name: "Eunice Recipe Draft 100 - 2026-09-20", label: "New ranked batch · 100" },
-  { name: "V4_CANARY", label: "V4 Google Sheet canary · 10" }
+  { name: "V4_CANARY", label: "V4 Google Sheet canary · 70" },
+  { name: "HQ Top 20 Production - 2026-10-04", label: "HQ Top 20 · 20 production-ready" }
 ];
 const CANARY_SOURCE = { name: CANARY.sourceName, label: CANARY.label };
 const SOURCES = [...SHEETS, CANARY_SOURCE];
@@ -27,6 +29,11 @@ function allowedSheet(value) {
 
 function allowedSource(value) {
   return SOURCES.some((source) => source.name === value) ? value : DEFAULT_SHEET;
+}
+
+function snapshotForSheet(sheetName) {
+  if (sheetName === "HQ Top 20 Production - 2026-10-04") return HQ_TOP20;
+  return DATA;
 }
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -90,12 +97,16 @@ async function handleApi(request, env, url) {
     const requestedSource = allowedSource(url.searchParams.get("sheetName"));
     if (requestedSource === CANARY_SOURCE.name) return json({ ok: true, source: "canary", writable: false, sheetName: CANARY_SOURCE.name, sheets: SOURCES, records: CANARY.records });
     const sheetName = allowedSheet(requestedSource);
-    if (!env.GOOGLE_SHEETS_BRIDGE_URL) return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SOURCES, ...DATA });
+    if (!env.GOOGLE_SHEETS_BRIDGE_URL) {
+      const snapshot = snapshotForSheet(sheetName);
+      return json({ ok: true, source: "snapshot", writable: false, sheetName, sheets: SOURCES, ...snapshot });
+    }
     try {
       const result = await bridgeRequest(env, "list", sheetName);
       return json({ ok: true, source: "sheet", writable: true, spreadsheetId: SPREADSHEET_ID, sheetName, sheets: SOURCES, ...result });
     } catch (error) {
-      return json({ ok: true, source: "snapshot", writable: false, sheetName: DEFAULT_SHEET, sheets: SOURCES, warning: error.message, ...DATA });
+      const snapshot = snapshotForSheet(sheetName);
+      return json({ ok: true, source: "snapshot", writable: false, sheetName, sheets: SOURCES, warning: error.message, ...snapshot });
     }
   }
 
