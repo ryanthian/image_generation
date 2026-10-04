@@ -355,3 +355,8 @@ code { color: var(--primary); font-weight: 700; font-size: .86rem; }
 
 /* Same-content completion uses the existing Paper Dashboard text input and button pattern. */
 #contentCompletion label{display:block;color:#66615b;font-size:13px;margin:14px 0 8px}#completionText{display:block;width:100%;max-width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#66615b;font:inherit;resize:vertical;margin-bottom:14px}#completionNeeded{white-space:pre-wrap;overflow-wrap:anywhere}#contentCompletion .btn{margin:6px 6px 6px 0}
+
+/* Existing Paper Dashboard card/buttons, adapted only for final export. */
+.export-actions{align-items:stretch}.export-actions .btn,#exportRebuild{min-height:48px;white-space:normal}.final-image-downloads{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:18px 0}.final-download-image{min-width:0;padding:12px;gap:8px;margin:0}.final-download-image img{display:block;width:100%;aspect-ratio:4/5;object-fit:contain;border-radius:8px}.final-download-image small{overflow-wrap:anywhere;color:#9a9a9a}.final-download-image .btn{min-height:44px}.asset-footer button{display:block!important;min-height:44px;width:100%}#imageExportStatus{overflow-wrap:anywhere}
+@media(max-width:600px){.export-actions{display:grid;grid-template-columns:minmax(0,1fr)}.export-actions .btn{width:100%;margin:0}.final-image-downloads{grid-template-columns:repeat(2,minmax(0,1fr))}#download .setup-card-body{padding:16px}#download .advanced-details{padding:12px}#download .card-header{padding:16px}}
+.final-download-image{display:flex;flex-direction:column}.final-download-image strong,.final-download-image small{display:block}

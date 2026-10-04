@@ -17,6 +17,7 @@ const INDEX = __INDEX_HTML__;
 const CSS = __STYLES_CSS__;
 const APP = __APP_JS__;
 const CONTENT_MODEL = __CONTENT_MODEL_JS__;
+const FINAL_EXPORT = __FINAL_EXPORT_JS__;
 const PRODUCTION_CORE = __PRODUCTION_CORE_JS__;
 const CONTENT_QUALITY = __CONTENT_QUALITY_JS__;
 const PRODUCTION_REPAIR=__PRODUCTION_REPAIR_JS__;
@@ -415,6 +416,7 @@ export default {
     if (url.pathname === "/app.js") return new Response(APP, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if(url.pathname==="/fast-visual-plan.mjs")return new Response(FAST_VISUAL_PLAN,{headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
     if(url.pathname==="/batch-production.mjs")return new Response(BATCH_PRODUCTION,{headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
+    if(url.pathname==="/final-export.mjs")return new Response(FINAL_EXPORT,{headers:{"content-type":"text/javascript; charset=utf-8","cache-control":"no-cache"}});
     if (url.pathname === "/production-core.js" || url.pathname === "/production-core.mjs") return new Response(PRODUCTION_CORE, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if ((url.pathname === "/content-quality.js" || url.pathname === "/content-quality.mjs")) return new Response(CONTENT_QUALITY, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } });
     if (url.pathname === '/editorial-pipeline.js' || url.pathname === '/editorial-pipeline.mjs') return new Response(EDITORIAL_PIPELINE, {headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}});

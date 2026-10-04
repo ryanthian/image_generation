@@ -1,3 +1,4 @@
+import {collectFinalImages,finalImageFiles,canShareFinalFiles,shareFinalFiles,saveFinalFilesToFolder} from '/final-export.mjs';
 import {assessProduction,currentSession,sourceStamp,nextProductionAction,canImport,duplicateAssignments,changeToken,findNextProductionReadyContent,buildContentCompletionPrompt} from '/production-assistant.mjs';
 import {
   buildAssetFilename,
@@ -231,10 +232,9 @@ function renderAssets() {
     for(const page of stored?.pages?.length ? stored.pages : [stored]) {
       const order=++sequence,node=document.createElement("article");
       node.className=`asset${stored?.stale ? " stale" : ""}`;node.dataset.asset=item.asset_id;
-      const filename=`${String(order).padStart(2,"0")}_${safeFilename(item.asset_type)}.png`;
       node.innerHTML=`<div class="asset-preview">${page ? `<img alt="${escapeHtml(item.title)} page ${order}">` : "Not built"}</div><div class="asset-footer"><div><strong>${String(order).padStart(2,"0")} · ${escapeHtml(item.title)}</strong><small>${stored?.stale ? "STALE — REBUILD REQUIRED" : stored ? "CURRENT · 1440 × 1800" : "Build required"}</small></div><button type="button" ${stored && !stored.stale && state.gates?.exportReady ? "" : "disabled"}>Download</button></div>`;
       if(page)node.querySelector("img").src=previewUrl(page.blob,"assets");
-      node.querySelector("button").addEventListener("click",()=>{refreshStale();if(!stored.stale&&state.gates?.exportReady)downloadBlob(page.blob,filename);});node.querySelector(".asset-preview").addEventListener("click",()=>{state.previewIndex=order-1;renderFinalPreview();});container.appendChild(node);
+      node.querySelector("button").addEventListener("click",()=>{refreshStale();downloadOneFinalImage(order);});node.querySelector(".asset-preview").addEventListener("click",()=>{state.previewIndex=order-1;renderFinalPreview();});container.appendChild(node);
     }
   }
   updateProgress();renderFinalPreview();
@@ -415,7 +415,7 @@ function renderQc() {
   setGate("finalAssetsGate","finalAssetsStatus",gates.finalAssetsBuilt?"BUILT":"REBUILD REQUIRED");
   setGate("exportGate","exportStatus",gates.exportReady?"READY":"NOT READY");
   $("downloadAll").disabled=!gates.exportReady || state.busy;
-  $("exportHint").textContent=gates.exportReady?"Review the numbered thumbnails, then download one ZIP with images, caption and manifest.":"Download needs current images, built final assets, automatic QC and Looks Good for this post.";
+  $("exportHint").textContent=gates.exportReady?"Share/save the ordered final PNGs, then copy the Facebook caption. ZIP remains available under More download options.":"Download needs current images, built final assets, automatic QC and Looks Good for this post.";
   $("nextAction").textContent=!generation.ready?"Next: resolve editorial and generation blockers below.":!gates.sourceImagesComplete?"Next: copy the prompt, generate images, and import the named files.":!gates.finalAssetsBuilt?"Next: build or rebuild the final assets.":visualQcStatus!=="PASS"?"Next: inspect every preview and confirm the visual review checklist.":"Next: download your ordered production ZIP.";
   const combinedStatus = contractStatus === "FAIL" ? "fail" : editorial.status === "BLOCKED" ? "blocked" : editorial.status === "REVIEW" || generation.status === "GENERATION_BLOCKED" ? "review" : "pass";
   const details = [
@@ -774,8 +774,7 @@ function renderProductionSummary(){
   $('imageQueueNext').textContent=next?`NEXT IMAGE · ${String(next.sequence).padStart(2,'0')} — ${next.label}`:'Images complete · Build Final Assets';
   $('copyNextPrompt').disabled=!a.ready||!next;$('copyMaster').disabled=!a.ready;$('imageImport').disabled=!canImport(a);$('imageBuild').disabled=$('buildAssets').disabled;
   for(const id of ['downloadPost','previewDownload'])$(id).disabled=!state.gates?.exportReady||state.busy;
-  $('downloadState').textContent=state.gates?.exportReady?'READY TO DOWNLOAD':'Build current assets and choose Looks Good in the final preview.';
-  $('downloadHeading').textContent=state.gates?.exportReady?'Ready to Download':'Download';
+  renderExportCard();
   const row=currentQueueRow();if(row){row.assessment=a;row.recommendation=a.recommendation;row.score=a.score;row.progress=action.detail;row.nextAction=action.label;}
   const imageCount=state.manifest.entries.filter(e=>state.images[e.slotId]?.semanticKey===e.semanticKey&&state.images[e.slotId]?.qc?.status==='PASS').length;
   const suggested=findNextProductionReadyContent(state.editorialRows);
@@ -796,7 +795,7 @@ async function primaryProductionAction(){
   if(kind==='IMAGES'){renderVisualPlan();return goStage('images');}
   if(kind==='BUILD'){await buildAssets();return goStage('assets');}
   if(kind==='FINAL')return goStage('assets');
-  if(kind==='DOWNLOAD'){goStage('download');return downloadPackage();}
+  if(kind==='DOWNLOAD'){goStage('download');return exportFinalImages();}
 }
 function autoImprove(){
   if(state.busy||state.batchBusy||!state.originalContent)return;
@@ -1170,9 +1169,11 @@ function renderProductionBatch(){
  $('batchCopyAll').disabled=busy||!next||!r.posts.length;$('batchImport').disabled=busy||!r.entries.some(e=>e.valid);$('batchBuildReady').disabled=busy||!r.readyToBuild;$('batchBuildReady').textContent=`Build ${r.readyToBuild||0} Ready Posts`;
  $('batchDownloadReady').disabled=busy||!r.downloadReady;$('batchDownloadReady').textContent=`Download ${r.downloadReady||0} Ready Posts`;
  document.querySelectorAll('[data-batch-size]').forEach(b=>b.disabled=busy||!state.editorialRows?.length);
- $('productionBatchRows').innerHTML=r.posts.map(p=>`<tr data-batch-post="${p.postNumber}"><td><b>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</b><br><small>${escapeHtml(p.contentId)} · ${escapeHtml(p.content?.contentType||'Source unavailable')}</small></td><td>${p.imageCount}/${p.entries.length}</td><td>${escapeHtml(p.status)}</td><td><button type="button" class="btn btn-neutral" data-batch-open="${p.postNumber}" ${busy?'disabled':''}>${p.assessment?.recommendation==='IMPROVE'||p.assessment?.gaps?.length?'Fix This Content →':p.built?'Preview Final →':'Open Post →'}</button>${!p.valid&&p.assessment?.ready?`<button class="btn btn-neutral" data-batch-refresh="${p.postNumber}" ${busy?'disabled':''}>Refresh This Plan</button>`:''}</td></tr>`).join('');
+ $('productionBatchRows').innerHTML=r.posts.map(p=>`<tr data-batch-post="${p.postNumber}"><td><b>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</b><br><small>${escapeHtml(p.contentId)} · ${escapeHtml(p.content?.contentType||'Source unavailable')}</small></td><td>${p.imageCount}/${p.entries.length}</td><td>${escapeHtml(p.status)}</td><td><button type="button" class="btn btn-neutral" data-batch-open="${p.postNumber}" ${busy?'disabled':''}>${p.assessment?.recommendation==='IMPROVE'||p.assessment?.gaps?.length?'Fix This Content →':p.built?'Preview Final →':'Open Post →'}</button>${p.reviewed?`<button type="button" class="btn btn-info" data-batch-share="${p.postNumber}" ${busy||state.exportBusy?'disabled':''}>Share This Post</button><button type="button" class="btn btn-neutral" data-batch-caption="${p.postNumber}" ${busy?'disabled':''}>Copy Caption</button>`:''}${!p.valid&&p.assessment?.ready?`<button class="btn btn-neutral" data-batch-refresh="${p.postNumber}" ${busy?'disabled':''}>Refresh This Plan</button>`:''}</td></tr>`).join('');
  $('batchImageQueue').innerHTML=r.posts.map(p=>`<li class="batch-post-label"><strong>P${String(p.postNumber).padStart(2,'0')} · ${escapeHtml(p.title)}</strong></li>${p.entries.map(e=>`<li data-batch-filename="${escapeHtml(e.batchFilename)}"><b>${e.ready?'✓':'○'}</b><span>${escapeHtml(e.label)}</span><small>${escapeHtml(e.batchFilename)}</small></li>`).join('')}`).join('');
  $('productionBatchRows').querySelectorAll('[data-batch-open]').forEach(b=>b.onclick=()=>openBatchPost(Number(b.dataset.batchOpen)));
+ $('productionBatchRows').querySelectorAll('[data-batch-share]').forEach(b=>b.onclick=()=>shareBatchPost(Number(b.dataset.batchShare)));
+ $('productionBatchRows').querySelectorAll('[data-batch-caption]').forEach(b=>b.onclick=()=>{const p=r.posts.find(p=>p.postNumber===Number(b.dataset.batchCaption));if(p?.reviewed)return copyText(p.content.caption,'✓ Caption copied');});
  $('productionBatchRows').querySelectorAll('[data-batch-refresh]').forEach(b=>b.onclick=async()=>{const p=r.posts.find(p=>p.postNumber===Number(b.dataset.batchRefresh));if(!p?.row?.assessment.ready||p.row.assessment.risk.tier!=='LOW'||!['UNIQUE','CANONICAL'].includes(p.row.duplicateStatus))return toast('This post is no longer eligible. Select a new batch or resolve its source issue.',true);p.stamp=batchPostStamp(p.row);persistProductionBatch({...batch,posts:batch.posts.map(saved=>saved.postNumber===p.postNumber?{...saved,stamp:p.stamp}:saved)});await refreshProductionBatch();});
 }
 function setBatchBusy(value){state.batchBusy=value;for(const id of ['sheetSelect','recipeSelect','search','prev','next','autoImprove','workNext','quickStart','primaryAction','queueLoad','confirmClaim','startImageProduction','regenerateVisualPlan','imageImport','imageBuild','allFiles'])$(id).disabled=value;renderProductionBatch();if(!value&&state.content){renderQc();renderVisualPlan();}}
@@ -1247,7 +1248,11 @@ function bindEvents() {
   $('fixFinal').addEventListener('click',()=>repairFinal('FIX IMAGE'));$('regenerateFinal').addEventListener('click',()=>repairFinal('REGENERATE'));
   $('rebuildFinal').addEventListener('click',buildAssets);
   $('previewPrev').addEventListener('click',()=>{const n=finalPages().length;state.previewIndex=(state.previewIndex-1+n)%n;renderFinalPreview();});$('previewNext').addEventListener('click',()=>{const n=finalPages().length;state.previewIndex=(state.previewIndex+1)%n;renderFinalPreview();});
-  $('downloadPost').addEventListener('click',downloadPackage);$('previewDownload').addEventListener('click',downloadPackage);
+  $('downloadPost').addEventListener('click',downloadPackage);$('previewDownload').addEventListener('click',()=>{goStage('download');return exportFinalImages();});
+  $('shareFinalImages').onclick=exportFinalImages;$('downloadFinalImages').onclick=downloadFinalImages;$('showIndividualImages').onclick=()=>showIndividualDownloads();
+  $('copyFinalCaption').onclick=()=>{if(!state.assessment?.ready)return;return copyText(state.content.caption,'✓ Caption copied');};
+  $('downloadFinalManifest').onclick=()=>{try{const entries=currentFinalEntries();downloadBlob(new Blob([JSON.stringify({contentId:state.content.contentId,assetOrder:entries.map(({blob,...entry})=>entry)},null,2)],{type:'application/json'}),'manifest.json');}catch(error){toast(error.message,true);}};
+  $('exportRebuild').onclick=()=>{goStage('assets');return buildAssets();};
   document.addEventListener('keydown',event=>{if(event.altKey&&event.key.toLowerCase()==='n'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){event.preventDefault();nextEditorialReview();}});
   $("sheetSelect").addEventListener("change", (event) => {state.deliberateContentSelection=true;loadSource(event.target.value);});
   $("recipeSelect").addEventListener("change", (event) => {
@@ -1274,11 +1279,11 @@ function bindEvents() {
   $("buildAssets").addEventListener("click", buildAssets);
   $("copyCaption").addEventListener("click", () => {
     if (!state.assessment?.ready) return toast("Resolve the specific content blocker first.", true);
-    return copyText(state.content.caption, "Facebook caption copied.");
+    return copyText(state.content.caption, "✓ Caption copied");
   });
   $("copyCaptionBottom").addEventListener("click", () => {
     if (!state.assessment?.ready) return toast("Resolve the specific content blocker first.", true);
-    return copyText(state.content.caption, "Facebook caption copied.");
+    return copyText(state.content.caption, "✓ Caption copied");
   });
   $("markPosted").addEventListener("click", markPosted);
   $("advanceWorkflow").addEventListener("click", advanceWorkflow);
@@ -1502,12 +1507,75 @@ async function start() {
 
 start();
 
+
+function currentFinalEntries(){
+ refreshStale();return collectFinalImages({content:state.content,plan:state.plan,assets:state.assets,images:state.images,exportReady:state.gates?.exportReady});
+}
+function renderExportCard(){
+ if(!$('shareFinalImages'))return;
+ let entries=[];try{entries=currentFinalEntries();}catch{ /* Existing gates explain what needs building/review. */ }
+ const ready=entries.length>0,files=finalImageFiles(entries),native=ready&&canShareFinalFiles(files),blocked=state.busy||state.batchBusy||state.exportBusy;
+ state.finalShareSupported=native;
+ $('shareFinalImages').textContent=native?`Share / Save ${entries.length} Images`:'Download All Images';
+ for(const id of ['shareFinalImages','downloadFinalImages','showIndividualImages','downloadFinalManifest','downloadPost'])$(id).disabled=!ready||blocked;
+ $('copyFinalCaption').disabled=!state.assessment?.ready||state.busy||state.batchBusy;
+ const stale=state.plan.some(p=>state.assets[p.asset_id]?.stale);
+ $('downloadHeading').textContent=ready?'Ready to Post':'Download';$('downloadState').textContent=ready?`${entries.length} images · 1440 × 1800 · Caption ready`:stale?'Rebuild required':'Build current assets and choose Looks Good in the final preview.';
+ $('finalExportSummary').textContent=ready?(native?'Choose a save/share destination in your device’s share sheet.':'Save the PNGs to a folder where supported, or use the individual Download buttons.'):'Only current final rendered PNGs can be shared or saved.';
+ $('exportRebuild').hidden=!stale;$('exportRebuild').disabled=state.busy||state.batchBusy;
+ if(state.nextBestAction?.kind==='DOWNLOAD')$('primaryAction').textContent=$('shareFinalImages').textContent;
+ $('previewDownload').textContent=ready?$('shareFinalImages').textContent:'Download';
+ $('previewDownload').disabled=!ready||blocked;if(state.nextBestAction?.kind==='DOWNLOAD')$('primaryAction').disabled=blocked;
+ const next=ready?nextSuggested():null;$('nextContentCard').hidden=!next;$('nextContentTitle').textContent=next?`${next.title} · ${next.assessment.score} · PRODUCE`:'';
+ const signature=ready?reviewSignature():'';if(state.finalDownloadPanelSignature!==signature){state.finalDownloadPanelSignature=signature;clearPreviewUrls('downloads');$('finalImageDownloads').replaceChildren();if(ready)for(const entry of entries){const article=document.createElement('article');article.className='card final-download-image';const image=document.createElement('img');image.src=previewUrl(entry.blob,'downloads');image.alt=entry.label;const label=document.createElement('strong');label.textContent=entry.label;const filename=document.createElement('small');filename.textContent=entry.filename;const button=document.createElement('button');button.className='btn btn-neutral';button.type='button';button.textContent='Download';button.dataset.finalSequence=entry.sequence;button.onclick=()=>downloadOneFinalImage(entry.sequence);article.append(image,label,filename,button);$('finalImageDownloads').append(article);}}
+ $('finalImageDownloads').querySelectorAll('button').forEach(b=>b.disabled=!ready||blocked);
+ document.querySelectorAll('#assets .asset-footer button').forEach(b=>b.disabled=!ready||blocked);
+}
+function showIndividualDownloads(message='Download each numbered image. Your post remains ready.'){
+ renderExportCard();$('moreExportOptions').open=true;$('finalImageDownloads').hidden=false;$('imageExportStatus').textContent=message;goStage('download');
+}
+function downloadOneFinalImage(sequence){
+ if(state.busy||state.batchBusy||state.exportBusy)return;
+ try{const entry=currentFinalEntries().find(e=>e.sequence===sequence);if(!entry)throw Error('Rebuild required.');downloadBlob(entry.blob,entry.filename);}catch(error){renderQc();toast(error.message,true);}
+}
+function handleShareResult(result){
+ if(result.status==='SHARED'){$('imageExportStatus').textContent='Share sheet completed. Copy Facebook Caption next.';toast('Images shared. Copy Facebook Caption next.');}
+ else if(result.status!=='CANCELLED')showIndividualDownloads('Native sharing unavailable. Save to a folder, download images individually, or use ZIP.');
+}
+function exportFinalImages(){
+ if(state.busy||state.batchBusy||state.exportBusy)return;
+ try{const files=finalImageFiles(currentFinalEntries());if(!canShareFinalFiles(files))return downloadFinalImages();
+ // Native share is invoked now, before any await, load, timer or rendering.
+ const result=shareFinalFiles(files);state.exportBusy=true;renderExportCard();
+ result.then(handleShareResult).finally(()=>{state.exportBusy=false;renderExportCard();});
+ }catch(error){renderQc();toast(error.message,true);}
+}
+function downloadFinalImages(){
+ if(state.busy||state.batchBusy||state.exportBusy)return;
+ try{const files=finalImageFiles(currentFinalEntries()),signature=reviewSignature();
+ if(!files.length||typeof window.showDirectoryPicker!=='function')return showIndividualDownloads('Download the ordered PNGs below. This browser cannot reliably save several files from one tap.');
+ const folderName=safeFilename(`${state.content.contentId}_${state.content.title}_${Date.now()}`);
+ const result=saveFinalFilesToFolder(files,{showDirectoryPicker:window.showDirectoryPicker.bind(window),folderName,isCurrent:()=>{try{return reviewSignature()===signature&&currentFinalEntries().length===files.length;}catch{return false;}}});
+ state.exportBusy=true;renderExportCard();result.then(r=>{if(r.status==='SAVED'){$('imageExportStatus').textContent=`✓ ${r.count} final images saved. Copy Facebook Caption next.`;toast(`${r.count} final PNGs saved.`);}else if(r.status==='STALE'){renderQc();toast('Rebuild required. Remaining files were not saved.',true);}else if(r.status!=='CANCELLED')showIndividualDownloads('Folder saving unavailable. Download images individually or use ZIP.');}).finally(()=>{state.exportBusy=false;renderExportCard();});
+ }catch(error){renderQc();toast(error.message,true);}
+}
+function shareBatchPost(number){
+ if(state.busy||state.batchBusy||state.exportBusy)return;
+ const post=state.productionBatchResolved?.posts.find(p=>p.postNumber===number);
+ try{if(!post?.valid||!post.reviewed)throw Error('Build and inspect this post before sharing.');
+ // Use live selected state when it is this post, so a newer image revision cannot reuse old batch readiness.
+ const entries=state.content?.contentId===post.contentId&&Number(state.sourceId)===post.sheetId?currentFinalEntries():collectFinalImages({content:post.content,plan:post.plan,assets:post.assets,images:post.images,exportReady:post.reviewed&&post.valid});
+ const files=finalImageFiles(entries);if(!canShareFinalFiles(files))return openBatchPost(number).then(()=>showIndividualDownloads('Save or download this post’s final images below.'));
+ const result=shareFinalFiles(files);state.exportBusy=true;renderProductionBatch();result.then(r=>{if(r.status==='SHARED')toast('Post images shared. Use Copy Caption beside this post.');else if(r.status!=='CANCELLED')return openBatchPost(number).then(()=>showIndividualDownloads('Native sharing unavailable. Download this post’s final images below.'));}).finally(()=>{state.exportBusy=false;renderProductionBatch();});
+ }catch(error){toast(error.message,true);}
+}
+
 async function downloadPackage() {
-  renderQc();if(!state.gates?.exportReady || state.busy||state.batchBusy)return toast("Complete the export gates first.",true);
+  renderQc();if(!state.gates?.exportReady || state.busy||state.batchBusy||state.exportBusy)return toast("Complete the export gates first.",true);
   state.busy=true;renderQc();
   try {
     const metadata={builtAt:new Date(Math.max(...Object.values(state.assets).map(a=>a.updatedAt))).toISOString(),qc:state.gates,heuristicContentScore:state.assessment.score};
     const {folder,files}=packageFiles(state.content,state.plan,state.assets,state.assessment,{name:state.sourceName,sheetId:state.sourceId,kind:state.source},metadata);
-    downloadBlob(await createZip(files),`${folder}.zip`);toast("One ordered production ZIP downloaded.");saveProductionSession({downloadedAt:new Date().toISOString()});const next=nextSuggested();$("nextContentCard").hidden=!next;$("nextContentTitle").textContent=next?`${next.title} · ${next.score} · PRODUCE`:"No further produce-ready content in this queue.";
+    downloadBlob(await createZip(files),`${folder}.zip`);toast("One ordered production ZIP downloaded.");saveProductionSession({downloadedAt:new Date().toISOString()});const next=nextSuggested();$("nextContentCard").hidden=!next;$("nextContentTitle").textContent=next?`${next.title} · ${next.assessment.score} · PRODUCE`:"No further produce-ready content in this queue.";
   }catch(error){toast(error.message,true);}finally{state.busy=false;renderQc();}
 }

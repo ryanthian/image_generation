@@ -12,6 +12,7 @@ const [template, data, canary, performanceHistory, index, css, app, contentModel
   readFile("public/intelligence.js", "utf8"),
   readFile("public/opportunities.js", "utf8")
 ]);
+const finalExport=await readFile('src/final-export.mjs','utf8');
 const productionCore = await readFile("src/production-core.mjs", "utf8");
 const contentQuality = await readFile("src/content-quality.mjs", "utf8");
 const fastVisualPlan=await readFile('src/fast-visual-plan.mjs','utf8');
@@ -25,6 +26,7 @@ const canonicalMap = await readFile('output/canonical-content-map.json','utf8');
 const buildInfo = { commit: (await import("node:child_process")).execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), builtAt: new Date().toISOString() };
 const output = template
   .replace("__BUILD_INFO_JSON__", () => JSON.stringify(buildInfo))
+  .replace('__FINAL_EXPORT_JS__',()=>JSON.stringify(finalExport))
   .replace("__PRODUCTION_CORE_JS__", () => JSON.stringify(productionCore))
   .replace("__CONTENT_QUALITY_JS__", () => JSON.stringify(contentQuality))
   .replace('__FAST_VISUAL_PLAN_JS__',()=>JSON.stringify(fastVisualPlan))
