@@ -1067,7 +1067,7 @@ async function downloadReadyBatchPosts(){
  }catch(error){toast(error.message,true);}finally{setBatchBusy(false);}
 }
 function bindBatchEvents(){
- const open=()=>{$('batchProduction').hidden=false;loadEditorialQueue().then(()=>goStage('batchProduction')).catch(e=>toast(e.message,true));};$('openBatch').onclick=open;$('quickBatch').onclick=open;
+ const open=()=>{$('batchProduction').hidden=false;refreshSheets(true,true).then(()=>loadEditorialQueue()).then(()=>goStage('batchProduction')).catch(e=>toast(e.message,true));};$('openBatch').onclick=open;$('quickBatch').onclick=open;
  document.querySelectorAll('[data-batch-size]').forEach(b=>b.onclick=()=>chooseProductionBatch(Number(b.dataset.batchSize)));
  $('batchTitleSearch').oninput=renderBatchTitlePicker;$('batchSelectVisible').onclick=selectVisibleBatchTitles;$('batchClearSelection').onclick=()=>{state.batchSelectedKeys.clear();renderBatchTitlePicker();};$('batchCreateSelected').onclick=createSelectedProductionBatch;
  $('refreshProductionBatch').onclick=()=>{if(state.batchBusy||state.busy)return;return loadEditorialQueue().catch(e=>toast(e.message,true));};$('continueBatch').onclick=()=>{const e=state.productionBatchResolved?.next;return e?openBatchPost(e.postNumber):goStage('batchProduction');};
