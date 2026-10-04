@@ -7,6 +7,7 @@ import {
   runContentQc,
   validateResolvedContent
 } from "../src/content-model.mjs";
+import { assessProduction } from "../src/production-assistant.mjs";
 
 const snapshot = JSON.parse(await readFile(new URL("../data/hq-top20-production-2026-10-04.json", import.meta.url), "utf8"));
 
@@ -39,4 +40,18 @@ test("HQ Top 20 keeps a fast final-asset plan", () => {
     const finalAssets = content.resolvedAssetPlan.length;
     assert.ok(finalAssets >= 4 && finalAssets <= 5, `${record.Content_ID} has ${finalAssets} final assets`);
   }
+});
+
+test("HQ Top 20 passes the actual production assessment without dead ends", () => {
+  let effectiveJobs = 0;
+  for (const record of snapshot.recipes) {
+    const content = normalizeContentRecord(record);
+    const assessment = assessProduction(content, { duplicateStatus: "UNIQUE" });
+    assert.equal(assessment.ready, true, `${record.Content_ID}: ${assessment.gaps.join("; ")}`);
+    assert.equal(assessment.recommendation, "PRODUCE", record.Content_ID);
+    assert.equal(assessment.risk.tier, "LOW", record.Content_ID);
+    effectiveJobs += assessment.manifest.entries.length;
+  }
+  assert.ok(effectiveJobs <= 82);
+  assert.ok(effectiveJobs / snapshot.recipes.length <= 4.1);
 });
