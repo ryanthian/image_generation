@@ -20,7 +20,7 @@ Gate A: reuse the Paper Dashboard card, buttons and expandable options; centrali
 
 ## Verification before deployment
 
-Gate B/C: implementation reviewed against final-only, activation, stale/dependency safety, ordering, exact-byte output, rollback and no-publication constraints. Tests 251/251, lint PASS, build PASS, git diff --check PASS.
+Gate B/C: implementation reviewed against final-only, activation, stale/dependency safety, ordering, exact-byte output, rollback and no-publication constraints. Tests 253/253, lint PASS, build PASS, git diff --check PASS.
 
 - test/final-export.test.mjs: canonical order/names, continuation pages, legacy final naming, exact File bytes, unreviewed/stale/source-changed/plan-changed/missing/QC-failed/invalid-dimension/non-PNG/empty PNG rejection, real capability detection, synchronous sharing, files-only payload, cancellation/error fallback, synchronous folder picker, exact ordered writes, cancellation/error, pending-picker stale checks, stop-on-revision-change, ZIP STORE byte preservation.
 - output/playwright/final-export-local/report.json: actual source EN-NEW-003, final production renderer, five ordered 1440 × 1800 PNGs, real browser userActivation.isActive=true at the mocked native call, separate exact caption, individual bytes identical by SHA256, ordered folder save, cancellation/error/no-burst fallback, manifest, single-post ZIP, stale blocking/rebuild, all four responsive sizes, reviewed batch single-post sharing, no app errors and zero non-GET requests.
@@ -38,3 +38,9 @@ Primary references: [MDN navigator.share](https://developer.mozilla.org/en-US/do
 ## Deployment evidence
 
 Deployment status and exact commit readback are recorded after publication below. Existing owner-private audience and rollback releases are preserved.
+
+## Source-outage preservation found during live QA
+
+Initial live checks hit a transient Google Apps Script second-redirect rejection. A read-only registry refresh recovered all three sources; the strict redirect guard was preserved. Independently fetched arrays returned 120/100/70 and exactly matched the pre-release JSON SHA256 hashes.
+
+This exposed an existing batch reconciliation defect: a temporarily missing row could be treated as incomplete content. Batch reconciliation now retains the complete batch and reserves if a selected/reserve source record is unavailable. Eligible posts can still build/export independently; unavailable posts remain blocked individually. When full source data returns, older pre-production replacements caused by partial reads are recovered only where the original is currently eligible, not already in the batch, and the replacement has no media. Replacement history is retained with a recovery marker; no original source is edited and started media is never displaced. Meaningful regression tests cover partial-source preservation and safe recovery/media protection. The browser export suite also exercises a temporary V4 outage and source recovery on a real five-post batch.
