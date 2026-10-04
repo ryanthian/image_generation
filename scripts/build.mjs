@@ -1,10 +1,11 @@
 import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 
-const [template, data, canary, performanceHistory, index, css, app, contentModel, intelligence, opportunities] = await Promise.all([
+const [template, data, canary, performanceHistory, hqTop20, index, css, app, contentModel, intelligence, opportunities] = await Promise.all([
   readFile("src/worker.template.mjs", "utf8"),
   readFile("data/recipes.json", "utf8"),
   readFile("data/content-v4-canary.json", "utf8"),
   readFile("data/v4-2-historical-performance.json", "utf8"),
+  readFile("data/hq-top20-production-2026-10-04.json", "utf8"),
   readFile("public/index.html", "utf8"),
   readFile("public/styles.css", "utf8"),
   readFile("public/app.js", "utf8"),
@@ -16,6 +17,7 @@ const output = template
   .replace("__RECIPES_JSON__", data.trim())
   .replace("__CANARY_JSON__", canary.trim())
   .replace("__V42_HISTORY_JSON__", performanceHistory.trim())
+  .replace("__HQ_TOP20_JSON__", hqTop20.trim())
   .replace("__INDEX_HTML__", JSON.stringify(index))
   .replace("__STYLES_CSS__", JSON.stringify(css))
   .replace("__APP_JS__", JSON.stringify(app))
