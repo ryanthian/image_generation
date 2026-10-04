@@ -366,3 +366,23 @@ code { color: var(--primary); font-weight: 700; font-size: .86rem; }
 @media(max-width:1100px){.production-progress{flex-direction:column;align-items:stretch}.production-progress .production-actions{max-width:none}.production-progress .production-actions .btn{width:auto}}
 @media(max-width:520px){.production-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.production-progress{padding:16px}.production-progress .production-actions{display:grid;grid-template-columns:1fr}.production-progress .production-actions .btn{width:100%}}
 @media(max-width:600px){.production-progress .production-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.production-progress .production-actions .btn{width:100%;min-width:0;margin-top:0;padding:12px 8px;font-size:12px}.production-progress #quickStart{grid-column:1/-1}.production-progress .production-next strong{font-size:17px}}
+
+.batch-picker { margin-bottom: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #faf9f6; }
+.batch-picker-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.batch-picker-header .helper { margin: 4px 0 0; }
+.batch-picker-controls { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 10px; margin-bottom: 12px; }
+.batch-picker-controls input { min-width: 0; }
+.batch-title-list { display: grid; gap: 8px; max-height: 390px; overflow: auto; padding-right: 4px; }
+.batch-title-row { display: flex; gap: 12px; align-items: flex-start; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; cursor: pointer; }
+.batch-title-row input { width: 20px; height: 20px; margin-top: 2px; flex: 0 0 auto; }
+.batch-title-row span { display: grid; gap: 3px; }
+.batch-title-row small { color: #66615b; }
+.batch-title-disabled { opacity: .58; cursor: not-allowed; background: #f5f4f1; }
+.batch-or { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+.batch-or::before, .batch-or::after { content: ""; height: 1px; background: var(--border); flex: 1; }
+@media (max-width: 900px) {
+  .batch-picker-controls { grid-template-columns: 1fr 1fr; }
+  .batch-picker-controls input { grid-column: 1 / -1; min-height: 44px; }
+  .batch-picker-controls .btn { width: 100%; }
+  .batch-picker-header { align-items: center; }
+}
