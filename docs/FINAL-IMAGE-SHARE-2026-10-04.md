@@ -44,3 +44,33 @@ Deployment status and exact commit readback are recorded after publication below
 Initial live checks hit a transient Google Apps Script second-redirect rejection. A read-only registry refresh recovered all three sources; the strict redirect guard was preserved. Independently fetched arrays returned 120/100/70 and exactly matched the pre-release JSON SHA256 hashes.
 
 This exposed an existing batch reconciliation defect: a temporarily missing row could be treated as incomplete content. Batch reconciliation now retains the complete batch and reserves if a selected/reserve source record is unavailable. Eligible posts can still build/export independently; unavailable posts remain blocked individually. When full source data returns, older pre-production replacements caused by partial reads are recovered only where the original is currently eligible, not already in the batch, and the replacement has no media. Replacement history is retained with a recovery marker; no original source is edited and started media is never displaced. Meaningful regression tests cover partial-source preservation and safe recovery/media protection. The browser export suite also exercises a temporary V4 outage and source recovery on a real five-post batch.
+
+## Final release readback
+
+PLATFORM STATUS: PRODUCTION READY WITH WARNINGS (existing hosting-injected inline challenge CSP warning; no app errors). Final deployment is Sites **v30**, after v29 introduced sharing and v30 added the source-outage batch preservation fix.
+
+DEPLOYED CODE SHA: **1c41262280d677ffd9909bea624a3a3654402c4a**
+
+SAVED VERSION: appgprj_6aae8cef935081919aead96f8cd34f7a~appgver_5520bf225bcc8191806b9098967c49c4
+
+DEPLOYMENT ID: appgdep_6ac218053398819187bbb1c0b21f5f6f
+
+NATIVE STATUS: succeeded; https://content-ai-production-console.ryanthian.chatgpt.site/
+
+ARCHIVE SHA256: b002fee5a655ecfccc62fe53eb68bc046bf820cf48e26ed83a9b44c507b480f8
+
+LIVE /api/build: same exact SHA; builtAt 2026-10-04T09:10:00.088Z. Owner-only audience unchanged. Native version listing retains v28 and v20 rollback archives.
+
+LIVE EXPORT SMOKE: PASS — output/playwright/final-export-v30-live/report.json. All three sources loaded 120/100/70. Final share Files, canonical names/order, 1440 × 1800 PNG headers, real browser click activation, caption-only copying, exact individual/folder bytes, cancellation, unsupported/error fallback, no automatic download burst, manifest and single-post ZIP, stale blocking and rebuild, four responsive sizes, batch Share This Post and a temporary V4 read outage all pass. Batch/reserve JSON remains identical during the simulated outage, then resumes when the source returns. App errors: zero; non-GET browser requests: zero. Hosting challenge CSP warning is isolated; CSP is not weakened.
+
+SOURCE READBACK: output/final-export-live/source-readback.json. Original row arrays unchanged: 2026091901 / 120 / 59afd5567894d8abdd9575521718f1383db119d170bc1782708af37088a4f22d; 812541719 / 100 / 90cfa219646170191b541819ba018bba1b28edbeaf97baa0a6d6aed4862f066c; 433728120 / 70 / ff32fa1dcfe95ede0c487bd346e8fc03202ba4aa39e8d0b2bf5cf120cb72a2b2. No Sheet status/content write or Facebook publication was performed.
+
+OPERATOR READBACK: existing working tab refreshed to v30. GS-V4-EXP-047 remains selected, its completion draft remains empty and no facts have been injected. Batch 01 remains 20 posts with 10 reserves and now 85 image jobs after eligible unstarted posts were recovered from historical partial-source replacements; its active replacement count is 4, with complete historical records retained. No synthetic test media was inserted into the operator browser. This recovery changes the batch selection; it does not imply any human editorial or image approval.
+
+REMAINING DEVICE VALIDATION: real iOS/iPadOS native destinations and physical Windows/macOS save dialogs require device testing. API contracts and real-browser user activation are verified using mocks; the native Photos/Facebook destination is not claimed. Sharing/saving does not prove publication.
+
+LIVE BATCH ZIP REGRESSION: PASS — output/playwright/final-export-v30-batch-live/report.json verifies exact v30 SHA, all source counts, source instruction preservation, bulk/shuffled import and explicit unmatched assignment, resume, independent builds, two-post partial ZIP, complete five-post ZIP, selective stale-post blocking, Auto Select 20 and phone layout. Independent Python zipfile CRC validation passes for the single-post ZIP (5 PNGs), partial two-post ZIP (10 PNGs) and complete five-post ZIP (26 PNGs, including continuation pages).
+
+Gate C: final tests 253/253, lint/build PASS, both live suites PASS, source hashes unchanged, self-review and blind-spot traceability complete. Native OS dialogs remain the explicit unverified device boundary.
+
+Gate D: implementation and source-recovery decisions recorded here and in the production audit. Application code is deployed at the SHA above; a documentation-only evidence commit follows it. GitHub feature branch fix/production-console-end-to-end-audit receives the validated implementation and report. No main merge, new approval workflow, Sheet write or Facebook publication was performed. Rollback: deploy the saved v28 version; v20 also remains available.
