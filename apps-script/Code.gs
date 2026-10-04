@@ -2,7 +2,8 @@ const ALLOWED_SPREADSHEET_ID = '1AVWQTZarym7Q4nhCYrZdARVVJDluWCMol8maPR_aN4s';
 const ALLOWED_SHEET_NAMES = [
   'Eunice Recipe Draft 20 - 2026-09-19',
   'Eunice Recipe Draft 100 - 2026-09-20',
-  'V4_CANARY'
+  'V4_CANARY',
+  'HQ Top 20 Production - 2026-10-04'
 ];
 
 function doGet(e) {
