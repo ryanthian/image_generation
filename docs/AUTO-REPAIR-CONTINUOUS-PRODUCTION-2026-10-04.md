@@ -44,3 +44,56 @@ Evidence: `output/playwright/repair-local/report.json`, `repair-regression-local
 ## Release and live handoff
 
 Exact version/commit/deployment and live operator Batch 01 readback will be recorded after publication. Real ChatGPT photographs and human visual judgment remain unverified. All image fixtures are isolated, synthetic and never imported into the operator browser. No Sheet update or Facebook publication is part of validation.
+
+### Verified v25 release
+
+- PLATFORM STATUS: **PRODUCTION READY WITH WARNINGS**. Application checks pass; the unchanged strict CSP blocks the hosting-injected Cloudflare challenge inline script. No application console/page error or weakened security policy was observed.
+- DEPLOYED VERSION: **Sites v25**, native status **succeeded**, owner-private.
+- DEPLOYMENT COMMIT / live `/api/build`: **`bd8f9ab91e72e4920a672d683538e2f0623358ca`**; build time `2026-10-04T03:11:38.402Z`.
+- Deployment ID: `appgdep_6ac1c40a3d6081919ddc10ddb03af892`.
+- Saved version ID: `appgprj_6aae8cef935081919aead96f8cd34f7a~appgver_45a32ebfbcec8191b64b10e04ad3fdf0`.
+- Native version history confirms v25's source/deployment; v24/v23/v20 remain available for rollback.
+- AUTO REPAIR: **PASS**; FALSE-POSITIVE FACT DETECTION FIX: **PASS**; AUTO SKIP: **PASS**; AUTO NEXT GOOD CONTENT: **PASS**.
+- BATCH AUTO REPLACE: **PASS**; RESERVE CANDIDATES: **PASS**; NO FACT INVENTION: **PASS** for the specified extraction/non-invention acceptance cases.
+- GS-V4-EXP-047: **SKIPPED**. Its enabled Skip & Next control loads EN-NEW-009 with prompts enabled. Quick Production also continues. EN-NEW-003 repairs automatically and its master prompt retains source `2朵`.
+- Tests **206/206**; lint **PASS**; build **PASS**; live smoke **PASS**.
+- All three live source dropdowns load **120 / 100 / 70** records. Readback SHA-256 of each raw-record array matches its pre-change snapshot exactly; source data/status unchanged.
+- Live Auto Select 5 / 10 / 20 screens before admission; reserves **5 / 5 / 10**. Replacement on an accepted post becoming incomplete passes in an isolated GET-response simulation, with unchanged Google Sheets. The actual operator batch additionally exercises real replacements of already incomplete source records.
+- Live existing batch regression: 9 → 5 legacy photos, all six method instructions/quantities retained, bulk import and explicit exceptions, resume, independent builds, partial ZIP and stale-post isolation pass. ZIP binary readback: partial **2 posts / 10 PNGs / 2 captions**; complete **5 posts / 26 PNGs / 5 captions**. Every PNG is **1440×1800** with safe ordered paths and per-post manifests.
+- Mobile **390×844**, no horizontal overflow. Application console/page errors **0**. Non-GET browser requests **0**. No Sheet write or Facebook publication.
+- Evidence: `output/playwright/repair-live/report.json`, `source-readback.json`, `repair-regression-live/report.json`, `zip-readback.json`, screenshots and ZIPs.
+
+### Actual operator Batch 01 cleanup
+
+The existing operator tab was reloaded to v25, then its saved batch and collection were read back. **20 posts / 11 auto repaired / 4 skipped-and-replaced / 82 image jobs / average 4.1 / 10 reserves**. The corpus screening summary excludes 28 critically incomplete candidates, 101 duplicate/rework candidates and 18 low-quality candidates; these are pool exclusions, separate from the four replacements in Batch 01.
+
+The collection now reads **20 prepared · 20 PRODUCE · 0 IMPROVE · 0 SKIP**. Operator media remain **0/82 imported**, **0/20 built**, **0 real-image approvals**. No synthetic test media were imported into this browser. It is left open on Batch 01.
+
+| Post | Content ID | Image jobs | Cleanup |
+| --- | --- | ---: | --- |
+| P01 | EN-NEW-009 | 5 | Retained |
+| P02 | EN-NEW-067 | 5 | Replaces GS-V4-EXP-002 |
+| P03 | GS-V4-EXP-038 | 4 | Retained |
+| P04 | GS-V4-SG-002 | 6 | Retained |
+| P05 | GS-V4-EXP-027 | 3 | Retained |
+| P06 | GS-V4-EXP-054 | 3 | Retained |
+| P07 | EN-NEW-052 | 5 | Retained |
+| P08 | EN-NEW-068 | 5 | Replaces GS-V4-EXP-003 |
+| P09 | GS-V4-EXP-029 | 3 | Retained |
+| P10 | GS-V4-EXP-056 | 3 | Retained |
+| P11 | EN-NEW-070 | 5 | Retained |
+| P12 | GS-V4-EXP-016 | 3 | Retained |
+| P13 | GS-V4-EXP-043 | 3 | Retained |
+| P14 | EN-NEW-086 | 5 | Replaces GS-V4-EXP-004 |
+| P15 | EN-NEW-105 | 5 | Retained |
+| P16 | GS-V4-EXP-017 | 3 | Retained |
+| P17 | GS-V4-EXP-028 | 3 | Retained |
+| P18 | GS-V4-EXP-045 | 3 | Retained |
+| P19 | EN-NEW-089 | 5 | Replaces GS-V4-EXP-005 |
+| P20 | EN-NEW-020 | 5 | Retained |
+
+Diversity after replacing the incomplete drinks: 9 recipes, 3 reference guides, 3 selection guides, 3 collections and 2 comparisons. All replacements are screened; absence of usable same-type drinks causes fallback to strong recipes.
+
+Gate B: implementation/files/tests identified. Gate C: unit tests, self-review, traceability, exact deployed identity and live acceptance passed. Gate D: release log and this handoff recorded. The initial packaging approval review rejected a request carrying the opening baseline SHA; retry explicitly named the verified current SHA and the workflow returned that same SHA before native deployment. No unresolved approval remains.
+
+Remaining human work: generate actual ChatGPT photographs, import and inspect their factual/visual quality, use the existing Looks Good/Fix/Regenerate controls, and download. No new editorial approval is required for screened low-risk production. Real-image verification is not claimed by synthetic media tests.

@@ -93,3 +93,7 @@ Operator screenshot: `output/playwright/batch-live/operator-batch-01.jpg`. The e
 - Evidence: `output/playwright/batch-live/report.json`, `zip-readback.json`, saved ZIPs and screenshots.
 
 Gate C: acceptance criteria, tests, source-information preservation, UI consistency, exact deployment identity and live readback verified. Gate D: update log, operator Batch 01 and resumable handoff recorded. Remaining work is actual ChatGPT photo generation and the operator's image judgment; no critical engineering blocker remains.
+
+### Superseding Batch 01 cleanup on v25
+
+The v24 operator table above is release history. v25's stricter same-record factual screen found four drinks without essential source quantities and replaced them automatically. Current actual Batch 01: **20 posts / 82 source images / average 4.1 / 11 auto repaired / 4 replacements / 10 reserves**, all 20 PRODUCE. Original sources and existing media remain intact. See [repair release and replacement table](AUTO-REPAIR-CONTINUOUS-PRODUCTION-2026-10-04.md).
