@@ -37,3 +37,8 @@ Draft 20 `EN-NEW-009`, Draft 100 `EN-NEW-022`, and V4 `GS-V4-SG-002` passed isol
 **CONTENT STATUS is per item.** Batch 01 remains **AI PREPARED 20 / HUMAN APPROVED 0 / NEEDS FIX 0**. Actual ChatGPT-image validation is pending: no real generated image was claimed as reviewed. The legacy adapter passed isolated Draft 20 (`EN-NEW-009`) and Draft 100 (`EN-NEW-022`) review/manifest/synthetic-ZIP dry runs, and the V4 dry run (`GS-V4-SG-002`) passed the same mechanics; none confers a new human approval. Ordered ZIP output works with synthetic fixtures, while production ZIP export continues to require current, reviewed source images and final assets. `PAGE PROFILE: INCOMPLETE` blocks Page-dependent publishing only. No actual Facebook auto-publishing exists.
 
 Remaining human work is per content: inspect Batch 01 copy and evidence, approve selected items, generate real ChatGPT images, review every slot and final asset, and add a genuine Page profile before any Page-dependent publishing step. The rest of the corpus can move through the queue progressively.
+
+
+### v23 single-operator release — 2026-10-04
+
+Deployed source `2d034c59af4fa33f896aa8cf5516035f70102388`, Sites v23, deployment `appgdep_6ac1a2e0558481919eb25b52c9da7704` succeeded. Full release matrix, local/live workflow evidence and the non-blocking Cloudflare CSP warning are in [Single-operator release log](SINGLE-OPERATOR-PRODUCTION-2026-10-04.md). Three live Sheets load 120 / 100 / 70 records. Tests 160/160; lint/build pass. Routine low-risk production uses automatic source-based checks; human editorial approval is not invented. Real generated-image validation remains pending user media.

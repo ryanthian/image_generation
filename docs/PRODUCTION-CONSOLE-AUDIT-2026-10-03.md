@@ -126,3 +126,8 @@ The final report itself is a local documentation follow-up to the deployed v22 s
 ## Phase 3 — Single-operator simplification, 2026-10-04
 
 Continued from clean current v22 documentation commit `8356334444681c2961c82e0ec9121790a8bfccf2`. The new user requirement removes routine human-review metadata from low-risk image production and export. Source-based automatic checks and optimisation now drive Produce / Improve / Skip; specific missing facts, unresolved risky claims and held duplicates remain per-content blockers. Human visual review becomes Looks Good / Fix Image / Regenerate rather than a questionnaire. Historical human editorial approval is preserved separately. See [implementation and release evidence](SINGLE-OPERATOR-PRODUCTION-2026-10-04.md).
+
+
+### v23 single-operator release — 2026-10-04
+
+Deployed source `2d034c59af4fa33f896aa8cf5516035f70102388`, Sites v23, deployment `appgdep_6ac1a2e0558481919eb25b52c9da7704` succeeded. Full release matrix, local/live workflow evidence and the non-blocking Cloudflare CSP warning are in [Single-operator release log](SINGLE-OPERATOR-PRODUCTION-2026-10-04.md). Three live Sheets load 120 / 100 / 70 records. Tests 160/160; lint/build pass. Routine low-risk production uses automatic source-based checks; human editorial approval is not invented. Real generated-image validation remains pending user media.
